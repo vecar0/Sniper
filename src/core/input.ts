@@ -17,7 +17,9 @@ export class Input {
   /** 핀치 줌 배율(곱) – 프레임마다 소비 */
   zoomFactor = 1;
   /** 최근 시선 이동 속도(rad/s) – 방아쇠 흔들림 계산용 */
-  enabled = false;
+  private _enabled = false;
+  /** 활성화 직후 잠깐은 시선 입력을 무시한다(화면 전환 때 브라우저가 보내는 가짜 mousemove 방지) */
+  private enabledAt = 0;
   pointerLocked = false;
   readonly isTouch: boolean;
   /** 키 재설정 대기 중이면 다음 입력을 이 콜백으로 보낸다 */
@@ -25,8 +27,8 @@ export class Input {
   private readonly el: HTMLElement;
   private readonly disposers: (() => void)[] = [];
   onPointerLockChange: ((locked: boolean) => void) | null = null;
-  /** 게임 외 상황에서도 받는 키(메뉴 단축키) */
-  onKeyDown: ((code: string, e: KeyboardEvent) => void) | null = null;
+  /** 게임 외 상황에서도 받는 키(메뉴 단축키). true를 돌려주면 그 키는 게임 행동으로 처리하지 않는다. */
+  onKeyDown: ((code: string, e: KeyboardEvent) => boolean) | null = null;
 
   constructor(el: HTMLElement, keys: Record<Action, string>) {
     this.el = el;
@@ -46,6 +48,15 @@ export class Input {
     });
     // 포커스를 잃으면 눌린 키를 모두 해제(키가 눌린 채로 남는 문제 방지)
     this.listen(window, 'blur', () => this.releaseAll());
+  }
+
+  get enabled(): boolean {
+    return this._enabled;
+  }
+
+  set enabled(v: boolean) {
+    if (v && !this._enabled) this.enabledAt = performance.now();
+    this._enabled = v;
   }
 
   private listen(target: EventTarget, type: string, fn: (e: Event) => void, opts?: AddEventListenerOptions): void {
@@ -87,7 +98,8 @@ export class Input {
       cb(e.code);
       return;
     }
-    if (isDown) this.onKeyDown?.(e.code, e);
+    // 메뉴가 처리한 키(예: 일시정지 해제용 Esc)가 같은 이벤트로 다시 일시정지를 걸지 않게 한다
+    if (isDown && this.onKeyDown?.(e.code, e)) return;
     const action = this.codeToAction.get(e.code);
     if (!action) return;
     // 게임 중 브라우저 기본 동작(Tab 포커스 이동, 스페이스 스크롤) 방지
@@ -113,9 +125,14 @@ export class Input {
 
   private handleMove(e: MouseEvent): void {
     if (!this.enabled) return;
+    if (performance.now() - this.enabledAt < 150) return;
+    const dx = e.movementX || 0;
+    const dy = e.movementY || 0;
+    // 한 이벤트에 비정상적으로 큰 이동(포인터 락 전환·창 포커스 복귀 때 생김)은 버린다
+    if (Math.abs(dx) > 400 || Math.abs(dy) > 400) return;
     // 포인터 락이 없으면(일부 브라우저·테스트 환경) 커서가 화면 안에 있을 때의 이동량을 사용
-    this.lookX += e.movementX || 0;
-    this.lookY += e.movementY || 0;
+    this.lookX += dx;
+    this.lookY += dy;
   }
 
   private handleWheel(e: WheelEvent): void {
@@ -176,12 +193,17 @@ export class Input {
     return false;
   }
 
-  /** 프레임 끝: 소비되지 않은 일회성 입력을 버린다 */
-  endFrame(): void {
-    this.pressedQueue.clear();
-    this.releasedQueue.clear();
+  /**
+   * 프레임 끝 정리. 시선 이동은 매 프레임 소비되므로 항상 비운다.
+   * 일회성 입력(클릭·탭·줌)은 게임 로직 스텝이 실제로 돌았을 때만 비운다:
+   * 히트스톱이나 144Hz 이상 화면에서 로직 스텝이 없는 프레임에 클릭이 사라지지 않게.
+   */
+  endFrame(logicRan = true): void {
     this.lookX = 0;
     this.lookY = 0;
+    if (!logicRan) return;
+    this.pressedQueue.clear();
+    this.releasedQueue.clear();
     this.zoomSteps = 0;
     this.zoomFactor = 1;
   }

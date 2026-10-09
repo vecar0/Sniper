@@ -253,6 +253,7 @@ export class Game {
 
   private frame(real: number): void {
     const playing = this.fsm.is('playing');
+    let logicRan = true;
     if (playing) {
       this.handleFrameInput(real);
       // 히트스톱: 실제 시간으로 잠깐 정지
@@ -270,12 +271,13 @@ export class Game {
         n++;
       }
       if (n >= 30) this.accumulator = 0;
+      logicRan = n > 0 || !this.fsm.is('playing');
       this.updateBulletCamScale(real);
       this.trackPerformance(real);
     } else if (this.fsm.is('menu', 'briefing', 'loading')) {
       this.menuT += real;
     }
-    this.input.endFrame();
+    this.input.endFrame(logicRan);
     this.updateCamera(real);
     this.render();
   }

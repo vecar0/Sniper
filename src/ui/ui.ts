@@ -750,39 +750,62 @@ export class UI {
   }
 
   // ───────────────────────── 키 ─────────────────────────
-  private onKey(code: string, e: KeyboardEvent): void {
+  /** @returns 키를 메뉴에서 처리했으면 true */
+  private onKey(code: string, e: KeyboardEvent): boolean {
     const st = this.game.fsm.state;
     if (document.querySelector('.confirm')) {
       if (code === 'Escape') document.querySelector('.confirm')?.remove();
-      return;
+      return true;
     }
-    if (st === 'playing') return;
+    if (st === 'playing') return false;
+    const keys = this.save.data.settings.keys;
     const back = code === 'Escape';
     if (this.screen === 'pause') {
-      if ((back || code === this.save.data.settings.keys.pause) && performance.now() - this.pausedAt > 350) this.resumeGame();
-      else if (code === this.save.data.settings.keys.restart) this.restartGame();
-      return;
+      if (back || code === keys.pause) {
+        if (performance.now() - this.pausedAt > 350) this.resumeGame();
+        return true;
+      }
+      if (code === keys.restart) {
+        this.restartGame();
+        return true;
+      }
+      return false;
     }
     if (this.screen === 'result') {
       if (code === 'Enter') {
         e.preventDefault();
         this.screens.querySelector<HTMLButtonElement>('[data-primary]')?.click();
-      } else if (code === this.save.data.settings.keys.restart) this.restartGame();
-      else if (back) this.screens.querySelector<HTMLButtonElement>('[data-act="missions"]')?.click();
-      return;
+        return true;
+      }
+      if (code === keys.restart) {
+        this.restartGame();
+        return true;
+      }
+      if (back) {
+        this.screens.querySelector<HTMLButtonElement>('[data-act="missions"]')?.click();
+        return true;
+      }
+      return false;
     }
     if (this.screen === 'briefing') {
       if (code === 'Enter' && !(e.target instanceof HTMLButtonElement && !e.target.dataset.start)) {
         e.preventDefault();
         this.startMission();
-      } else if (back) this.backFromBriefing();
-      return;
+        return true;
+      }
+      if (back) {
+        this.backFromBriefing();
+        return true;
+      }
+      return false;
     }
     if (back) {
       if (this.screen === 'settings') this.leaveSettings();
       else if (this.screen === 'controls') this.controlsReturn === 'pause' ? this.renderPause() : this.showMenu();
       else if (this.screen === 'missions' || this.screen === 'credits') this.showMenu();
+      return true;
     }
+    return false;
   }
 
   private onState(to: GameState, _from: GameState): void {

@@ -95,10 +95,15 @@ test.describe('스트레스', () => {
     expect(w.errors).toEqual([]);
   });
 
-  test('일시정지 · 재개 · 재시작 12회 반복: 상태·메모리 안정', async ({ page }) => {
+  test('일시정지 · 재개 · 재시작 14회 반복: 상태·메모리 안정', async ({ page }) => {
     const w = watch(page);
-    const before = await stats(page);
-    for (let i = 0; i < 12; i++) {
+    let before: any = null;
+    for (let i = 0; i < 14; i++) {
+      // 처음 2회는 준비 구간(이펙트·탄 궤적이 처음 GPU에 올라가는 것)
+      if (i === 2) {
+        await waitGameTime(page, 1.5);
+        before = await stats(page);
+      }
       await page.keyboard.press('Escape');
       await expect(page.locator('.screen-pause')).toBeVisible();
       expect(await state(page)).toBe('paused');
@@ -115,7 +120,8 @@ test.describe('스트레스', () => {
     await waitGameTime(page, 1.5);
     const after = await stats(page);
     expect(after.sceneChildren).toBe(before.sceneChildren);
-    expect(after.geometries).toBeLessThanOrEqual(before.geometries + 4);
+    expect(after.geometries).toBe(before.geometries);
+    expect(after.textures).toBe(before.textures);
     expect(after.bullets).toBeLessThanOrEqual(2);
     expect(w.errors).toEqual([]);
   });
@@ -171,7 +177,13 @@ test.describe('장시간 · 콘텐츠', () => {
           const g = (window as any).__longshot.game;
           g.testAimAt(n % 15);
           if (n % 3 === 0) g.rifle.elevMil = 0; // 일부는 빗나가게
+          // 볼트 조작을 건너뛰어 테스트 시간을 줄인다(발사 직후 지연 boltDelay 포함)
           g.rifle.boltTimer = 0;
+          g.rifle.boltDelay = 0;
+          g.rifle.reloadTimer = 0;
+          g.recoil = 0;
+          g.recoilV = 0;
+          g.shake = 0;
           g.rifle.chambered = true;
           g.rifle.inMag = Math.max(1, g.rifle.inMag);
           (window as any).__longshot.input.tapVirtual('fire');
