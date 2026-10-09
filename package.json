@@ -1,0 +1,27 @@
+{
+  "name": "long-shot",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "LONG SHOT - 장거리 저격 훈련 시뮬레이터 (3D 브라우저 게임)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check": "npm run typecheck && npm run test && npm run build && npm run test:e2e"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.10.2",
+    "@types/three": "0.170.0",
+    "typescript": "5.7.3",
+    "vite": "6.2.0",
+    "vitest": "3.0.5"
+  }
+}
