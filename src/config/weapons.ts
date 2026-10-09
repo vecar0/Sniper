@@ -129,6 +129,12 @@ export const WEAPONS: WeaponSpec[] = [
   },
 ];
 
+/**
+ * 소음기: 총성 전파 범위를 줄이고(BALANCE.targets.hearRadius) 섬광을 없앤다.
+ * 대가: 총구 속도 1.5% 감소 → 탄도표가 조금 달라진다, 반동은 20% 감소.
+ */
+export const SUPPRESSOR = { velocityMul: 0.985, recoilMul: 0.8 } as const;
+
 export function getWeapon(id: string): WeaponSpec {
   return WEAPONS.find((w) => w.id === id) ?? WEAPONS[0];
 }

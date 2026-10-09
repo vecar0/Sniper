@@ -97,6 +97,20 @@ export const BALANCE = {
     /** 머리 판정 관대함 배율. 눈에 보이는 것보다 5% 크게 → 아슬아슬한 명중을 인정. */
     headHitboxScale: 1.05,
     speedOfSound: 343,
+    /**
+     * 총성 전파 규칙(소음기 × 탄종). 반경(m) 안의 사람만 듣는다. Infinity = 전부.
+     * 일반탄: 초음속 파열음이 남아 소음기를 달아도 400m 안은 듣지만, 방향을 헷갈려 반응이 1.8배 느리다.
+     * 아음속탄 + 소음기: 총성 없음(착탄음만).
+     */
+    hearRadius: { std: Infinity, stdSuppressed: 400, sub: 250, subSuppressed: 0 },
+    suppressedReactionMul: 1.8,
+    /** 순찰·대기 중인 사람이 시신을 발견하는 거리(m)와 반응 시간(초) */
+    bodyDiscoveryRadius: 14,
+    bodyDiscoveryDelay: 0.8,
+    /** 스코프로 이 시간(초) 관측하면 식별 태그가 붙는다 */
+    tagObserveTime: 0.7,
+    /** 관측 판정 반경: 조준점이 사람 중심에서 이 각도(mil) 안 */
+    tagObserveMil: 2.5,
   },
 
   feedback: {

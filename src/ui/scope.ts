@@ -46,7 +46,7 @@ export class ScopeOverlay {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = this.el.clientWidth;
     const hh = this.el.clientHeight;
-    const key = `${w}x${hh}@${dpr}:${h.pxPerMil.toFixed(3)}:${this.color}:${h.predicted ? `${h.predicted.x.toFixed(2)},${h.predicted.y.toFixed(2)}` : ''}`;
+    const key = `${w}x${hh}@${dpr}:${h.pxPerMil.toFixed(3)}:${this.color}:${h.elev}:${h.wind}:${h.predicted ? `${h.predicted.x.toFixed(2)},${h.predicted.y.toFixed(2)}` : ''}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
     if (this.canvas.width !== Math.round(w * dpr) || this.canvas.height !== Math.round(hh * dpr)) {
@@ -132,11 +132,14 @@ export class ScopeOverlay {
         ctx.fillText(String(m), cx + 16, cy + p);
       }
     }
-    // 중앙 점
-    ctx.fillStyle = col.line;
+    // 중앙 점(조명식 – 어두운 배경에서도 보이게)
+    ctx.fillStyle = 'rgba(255, 60, 40, 0.95)';
+    ctx.shadowColor = 'rgba(255, 60, 40, 0.8)';
+    ctx.shadowBlur = 4;
     ctx.beginPath();
-    ctx.arc(cx, cy, 1.4, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 1.6, 0, Math.PI * 2);
     ctx.fill();
+    ctx.shadowBlur = 0;
     // 예상 탄착점(훈련병)
     if (h.predicted) {
       const px = cx + h.predicted.x * ppm;
@@ -157,5 +160,15 @@ export class ScopeOverlay {
       ctx.fillText(`예상 탄착 ${Math.round(h.predicted.dist)}m`, px + 9, py);
     }
     ctx.restore();
+    // 접안부 링 판독값
+    ctx.font = '13px "Share Tech Mono", ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(232, 163, 61, 0.9)';
+    const wl = h.wind === 0 ? '0.0' : `${Math.abs(h.wind).toFixed(1)}${h.wind > 0 ? 'R' : 'L'}`;
+    const lx = cx - radius * 0.66;
+    const ly = cy + radius * 0.6;
+    ctx.fillText(`${h.zoom.toFixed(1)}×`, lx, ly);
+    ctx.fillText(`E ${h.elev.toFixed(1)}`, lx, ly + 16);
+    ctx.fillText(`W ${wl}`, lx, ly + 32);
   }
 }

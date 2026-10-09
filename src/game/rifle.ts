@@ -3,7 +3,7 @@
  * 순수 로직(렌더링 없음).
  */
 import { BALANCE } from '../config/balance';
-import type { AmmoSpec, WeaponSpec } from '../config/weapons';
+import { SUPPRESSOR, type AmmoSpec, type WeaponSpec } from '../config/weapons';
 import { airDensity, speedOfSound } from '../ballistics/atmosphere';
 import { buildDope, NO_WIND, solveZeroAngle, type BallisticEnv, type DopeRow, type ProjectileParams } from '../ballistics/solver';
 
@@ -31,8 +31,11 @@ export class RifleState {
   zeroAngles: number[] = [];
   private dopeCache = new Map<string, DopeRow[]>();
 
-  constructor(weapon: WeaponSpec) {
+  readonly suppressor: boolean;
+
+  constructor(weapon: WeaponSpec, suppressor = false) {
     this.weapon = weapon;
+    this.suppressor = suppressor;
     const std: BallisticEnv = { density: airDensity(0, 15), soundSpeed: speedOfSound(15), gravity: BALANCE.sim.gravity, windAt: NO_WIND };
     this.zeroAngles = weapon.ammo.map((a) => solveZeroAngle(this.params(a), std, weapon.sightHeight, weapon.zeroRange));
   }
@@ -46,7 +49,8 @@ export class RifleState {
   }
 
   params(a: AmmoSpec = this.ammo): ProjectileParams {
-    return { muzzleVelocity: a.muzzleVelocity, bcG7: a.bcG7, stability: this.weapon.stability };
+    const v = a.muzzleVelocity * (this.suppressor ? SUPPRESSOR.velocityMul : 1);
+    return { muzzleVelocity: v, bcG7: a.bcG7, stability: this.weapon.stability };
   }
 
   reset(totalAmmo: number): void {
@@ -156,7 +160,7 @@ export class RifleState {
 
   /** 미션 대기 조건에서의 탄도표 */
   dope(altitude: number, temperature: number, maxRange: number): DopeRow[] {
-    const key = `${this.weapon.id}:${this.ammoIndex}:${altitude}:${temperature}:${maxRange}`;
+    const key = `${this.weapon.id}:${this.suppressor}:${this.ammoIndex}:${altitude}:${temperature}:${maxRange}`;
     const cached = this.dopeCache.get(key);
     if (cached) return cached;
     const env: BallisticEnv = { density: airDensity(altitude, temperature), soundSpeed: speedOfSound(temperature), gravity: BALANCE.sim.gravity, windAt: NO_WIND };

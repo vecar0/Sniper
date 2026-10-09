@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { BALANCE } from '../config/balance';
 import { DIFFICULTIES, type DifficultySpec } from '../config/difficulty';
 import type { HintTrigger, MissionDef, ObjectiveDef } from '../config/missions';
-import { getWeapon } from '../config/weapons';
+import { getWeapon, SUPPRESSOR } from '../config/weapons';
 import { airDensity, speedOfSound } from '../ballistics/atmosphere';
 import { createProjectile, flatTrajectory, speedOf, stepProjectile, type BallisticEnv, type Projectile, type V3 } from '../ballistics/solver';
 import { WindField, windClock } from '../ballistics/wind';
@@ -18,13 +18,14 @@ import { analyzeShot, basisToward, boreDir, muzzleFrom, solveFiringSolution, typ
 import { Effects } from './fx';
 import { RifleState } from './rifle';
 import { ShooterModel } from './shooter';
-import { Target, TargetMaterials, ZONE_LABEL, type HitResult } from './targets';
+import { ROLE_LABEL, Target, TargetMaterials, ZONE_LABEL, type HitResult } from './targets';
+import type { Role } from '../config/missions';
 import { SHOOTER_GROUND } from './terrain';
 import { ViewModel } from './viewmodel';
 import { segmentBox, World, type QualityLevel } from './world';
 
 export interface HitInfo {
-  kind: 'plate' | 'kill' | 'headshot' | 'wound';
+  kind: 'plate' | 'kill' | 'headshot' | 'wound' | 'civilian';
   title: string;
   detail: string;
 }
@@ -65,6 +66,21 @@ export interface GameHooks {
   onMissionEnd(r: MissionResult): void;
   onStateChange(to: GameState, from: GameState): void;
   onMuzzleFlash(): void;
+  onTag(info: TagInfo): void;
+}
+
+export interface TagInfo {
+  label: string;
+  role: Role | null;
+  distance: number;
+}
+
+export interface MarkerInfo {
+  x: number;
+  y: number;
+  label: string;
+  role: Role | 'plate' | 'unknown';
+  alert: boolean;
 }
 
 export interface HudSnapshot {
@@ -100,6 +116,14 @@ export interface HudSnapshot {
   rangefinderAllowed: boolean;
   canSwitchAmmo: boolean;
   weaponName: string;
+  suppressor: boolean;
+  /** 시선 방위각(도, 0 = 정면 북쪽, 시계 방향 +) */
+  heading: number;
+  /** 식별된 사람들의 방위(나침반 표시용) */
+  bearings: { bearing: number; role: Role; down: boolean }[];
+  /** 사수 위치 바람(나침반 다이얼용): 속도와 불어오는 방향(도, 사격 방향 기준) */
+  windNow: { speed: number; fromDeg: number } | null;
+  pitchDeg: number;
 }
 
 interface ActiveBullet {
@@ -134,7 +158,7 @@ export class Game {
   targets: Target[] = [];
   private mats = new TargetMaterials();
   private fx: Effects | null = null;
-  private readonly viewModel = new ViewModel();
+  private readonly viewModel: ViewModel;
   rifle: RifleState;
   readonly shooter = new ShooterModel(1.7);
   private wind: WindField | null = null;
@@ -198,12 +222,16 @@ export class Game {
     this.renderer.setPixelRatio(this.pixelRatio());
     this.renderer.autoClear = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // 영화 같은 대비(ACES 톤매핑) – 노출은 작전 시간대별로 조정
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.1;
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.id = 'game-canvas';
     this.camera = new THREE.PerspectiveCamera(BALANCE.camera.baseFov, 1, 0.1, 7000);
     this.vmCamera = new THREE.PerspectiveCamera(BALANCE.camera.baseFov, 1, 0.01, 10);
-    this.rifle = new RifleState(getWeapon(s.weapon));
-    this.viewModel.build(this.rifle.weapon);
+    this.rifle = new RifleState(getWeapon(s.weapon), s.suppressor);
+    this.viewModel = new ViewModel(this.renderer);
+    this.viewModel.build(this.rifle.weapon, s.suppressor);
     this.fsm.onChange((to, from) => this.hooks?.onStateChange(to, from));
     const onResize = () => this.resize();
     window.addEventListener('resize', onResize);
@@ -325,7 +353,7 @@ export class Game {
   }
 
   private prepareWorld(mission: MissionDef, seed: number): void {
-    const key = `${mission.id}:${mission.theme}:${seed}:${this.quality}`;
+    const key = `${mission.id}:${mission.theme}:${mission.timeOfDay}:${seed}:${this.quality}`;
     if (key !== this.worldKey || !this.world) {
       this.fx?.dispose();
       this.world?.dispose();
@@ -333,6 +361,9 @@ export class Game {
       this.fx = new Effects((x, z) => this.world!.terrain.height(x, z), this.world.theme.groundLow);
       this.world.scene.add(this.fx.group);
       this.worldKey = key;
+      const th = this.world.theme;
+      this.renderer.toneMappingExposure = th.exposure;
+      this.viewModel.setLighting(th.sun, th.hemiSky, th.hemiGround, th.sunIntensity);
     }
   }
 
@@ -342,9 +373,9 @@ export class Game {
     const seed = mission.id.split('').reduce((a, c) => a + c.charCodeAt(0) * 31, 17);
     this.prepareWorld(mission, seed);
     const weaponId = mission.weaponLock ?? s.weapon;
-    if (this.rifle.weapon.id !== weaponId) {
-      this.rifle = new RifleState(getWeapon(weaponId));
-      this.viewModel.build(this.rifle.weapon);
+    if (this.rifle.weapon.id !== weaponId || this.rifle.suppressor !== s.suppressor) {
+      this.rifle = new RifleState(getWeapon(weaponId), s.suppressor);
+      this.viewModel.build(this.rifle.weapon, s.suppressor);
     }
     this.difficulty = DIFFICULTIES[s.difficulty];
     for (const t of this.targets) t.dispose();
@@ -646,12 +677,18 @@ export class Game {
     this.updateBullets(dt);
 
     // 표적
+    this.updateTagging(dt);
+    this.checkBodies();
     for (const t of this.targets) {
       const r = t.update(dt);
       if (r.becameAlert) {
-        this.stats.alerts++;
-        this.audio.play('alert');
-        this.hooks?.onAlert(`${t.def.label ?? '표적'} 경계! 도주 중`);
+        if (t.isCivilian) {
+          this.hooks?.onAlert(`민간인이 놀라 달아납니다`);
+        } else {
+          this.stats.alerts++;
+          this.audio.play('alert');
+          this.hooks?.onAlert(`${t.def.label ?? '표적'} 경계! 도주 중`);
+        }
       }
       if (r.escaped && t.def.required && !this.ended) {
         this.fail(`${t.def.label ?? '표적'}이(가) 엄폐물 뒤로 탈출했습니다.`, '첫 발 이후 나머지 표적은 약 2~3초 뒤 도주합니다. 도주 거리가 긴 표적을 나중에 쏘세요.');
@@ -675,6 +712,51 @@ export class Game {
     }
 
     this.checkEnd(dt);
+  }
+
+  /** 스코프로 사람을 일정 시간 관측하면 식별 태그를 붙인다 */
+  private updateTagging(dt: number): void {
+    if (this.scopeT < 0.9 || this.camBullet) {
+      for (const t of this.targets) t.observe = Math.max(0, t.observe - dt * 2);
+      return;
+    }
+    const q = this.losQuaternion(new THREE.Quaternion());
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+    const c = new THREE.Vector3();
+    const T = BALANCE.targets;
+    for (const t of this.targets) {
+      if (!t.isPerson || t.tagged || !t.active || t.isDown) continue;
+      c.copy(t.position);
+      c.y += 1.2;
+      const ang = c.sub(this.eye).normalize().angleTo(f) * 1000;
+      if (ang < T.tagObserveMil) {
+        t.observe += dt;
+        if (t.observe >= T.tagObserveTime) this.tag(t);
+      } else t.observe = Math.max(0, t.observe - dt);
+    }
+  }
+
+  private tag(t: Target): void {
+    if (t.tagged) return;
+    t.tagged = true;
+    this.audio.play('tag', { pitch: t.isCivilian ? 0.8 : t.role === 'hvt' ? 1.25 : 1 });
+    this.hooks?.onTag({ label: t.def.label ?? ROLE_LABEL[t.role ?? 'guard'], role: t.role, distance: t.position.distanceTo(this.eye) });
+    this.trigger('tag');
+  }
+
+  /** 대기·순찰 중인 사람이 근처 시신을 보면 경계한다 */
+  private checkBodies(): void {
+    const R = BALANCE.targets.bodyDiscoveryRadius;
+    for (const body of this.targets) {
+      if (!body.isPerson || !body.isDown) continue;
+      for (const o of this.targets) {
+        if (o === body || !o.isPerson || !o.active || o.alerted || o.isDown) continue;
+        if (o.position.distanceTo(body.position) < R && !o.alertPending) {
+          o.alert(BALANCE.targets.bodyDiscoveryDelay);
+          if (!o.isCivilian) this.hooks?.onAlert(`${o.def.label ?? '경비'}이(가) 시신을 발견했습니다!`);
+        }
+      }
+    }
   }
 
   private checkEnd(dt: number): void {
@@ -765,19 +847,25 @@ export class Game {
     this.save.data.progress.stats.shots++;
     this.rifle.fire();
     this.shooter.onShot();
-    this.recoilV += w.recoilKick * 9;
-    this.viewModel.kick(w.recoilKick * 0.35);
-    if (this.save.data.settings.screenShake) this.shake = Math.min(1, w.recoilKick / 14);
-    this.audio.play(ammo.subsonic ? 'shotSub' : 'shot', { weight: w.loudness });
-    if (!ammo.subsonic) this.hooks?.onMuzzleFlash();
+    const sup = this.rifle.suppressor;
+    const kick = w.recoilKick * (sup ? SUPPRESSOR.recoilMul : 1);
+    this.recoilV += kick * 9;
+    const flash = !sup && !ammo.subsonic;
+    this.viewModel.kick(kick * 0.35, flash && !this.save.data.settings.reduceFlashes);
+    if (this.save.data.settings.screenShake) this.shake = Math.min(1, kick / 14);
+    this.audio.play(sup ? 'shotSup' : ammo.subsonic ? 'shotSub' : 'shot', { weight: w.loudness, volume: sup && ammo.subsonic ? 0.6 : 1 });
+    if (flash) this.hooks?.onMuzzleFlash();
     this.trigger('fire');
 
-    // 총성 전파 → 표적 경계
+    // 총성 전파 → 표적 경계 (소음기 × 탄종 규칙)
+    const H = BALANCE.targets.hearRadius;
+    const radius = ammo.subsonic ? (sup ? H.subSuppressed : H.sub) : sup ? H.stdSuppressed : H.std;
+    const slow = sup && !ammo.subsonic ? BALANCE.targets.suppressedReactionMul : 1;
     for (const t of this.targets) {
-      if (!t.isBot || !t.active) continue;
+      if (!t.isPerson || !t.active) continue;
       const d = t.position.distanceTo(this.eye);
-      if (ammo.subsonic && d > 60) continue;
-      t.alert(d / BALANCE.targets.speedOfSound + t.reaction / w.loudness);
+      if (d > radius) continue;
+      t.alert(d / BALANCE.targets.speedOfSound + (t.reaction * slow) / w.loudness);
     }
 
     const bullet: ActiveBullet = {
@@ -808,7 +896,7 @@ export class Game {
     const dir = new THREE.Vector3();
     for (const t of this.targets) {
       if (!t.active || t.done) continue;
-      const pts = t.isBot
+      const pts = t.isPerson
         ? [new THREE.Vector3(0, 1.66, 0), new THREE.Vector3(0, 1.3, 0)]
         : [new THREE.Vector3(0, 0.7 + (t.def.h ?? 0.6) / 2, 0)];
       for (const lp of pts) {
@@ -861,7 +949,7 @@ export class Game {
     const mode = this.save.data.settings.bulletCam;
     if (mode === 'off' || !this.mission || this.mission.isRange) return false;
     const pred = this.predictHit(proj);
-    if (!pred || !pred.target.isBot || pred.zone === 'arm' || pred.zone === 'leg') return false;
+    if (!pred || !pred.target.isPerson || pred.target.isCivilian || pred.zone === 'arm' || pred.zone === 'leg') return false;
     if (pred.target.position.distanceTo(this.eye) < 250) return false;
     if (mode === 'always') return true;
     const remaining = this.targets.filter((t) => t.def.required && !t.done);
@@ -1002,33 +1090,39 @@ export class Game {
     this.save.data.progress.stats.longestHit = Math.max(this.save.data.progress.stats.longestHit, Math.round(dist));
     if (this.rifle.windMil !== 0 || (b.record && b.record.windDial !== 0)) this.stats.windDialOnHit = true;
     const fb = BALANCE.feedback;
-    if (!t.isBot) {
+    if (!t.isPerson) {
       this.fx!.impactSteel(hit.point, dist);
       this.audio.play('impactSteel', { delay: soundDelay, volume: Math.max(0.35, 1 - dist / 2000), pan });
       this.hooks?.onHit({ kind: 'plate', title: '명중!', detail: `${t.def.label ?? '강철판'} · ${Math.round(dist)}m · 비행 ${b.proj.t.toFixed(2)}초` });
       if (!b.cam) this.hitStop = fb.hitStop;
     } else if (killed) {
       const head = hit.zone === 'head';
+      this.fx!.personDown(hit.point, t.position, vel.clone().normalize(), dist);
+      this.audio.play('botHit', { delay: soundDelay, volume: Math.max(0.4, 1 - dist / 2000), pan });
+      if (t.isCivilian) {
+        // 민간인 사살: 작전 즉시 중단
+        this.hooks?.onHit({ kind: 'civilian', title: '민간인 사살', detail: `${t.def.label ?? '민간인'} · 작전이 중단됩니다` });
+        this.fail('민간인을 사살했습니다. 작전이 중단됐습니다.', '쏘기 전에 스코프로 1초 관측해 식별 태그를 확인하세요. 브리핑의 표적 특징(옷 색)과 비교하세요.');
+        this.trigger('hit');
+        return;
+      }
       this.stats.kills++;
       this.save.data.progress.stats.kills++;
       if (head) {
         this.stats.headshots++;
         this.save.data.progress.stats.headshots++;
       }
-      const center = t.position.clone();
-      center.y += 1.1;
-      this.fx!.botDestroyed(center, vel.clone().normalize(), dist, head);
-      this.audio.play('botHit', { delay: soundDelay, volume: Math.max(0.4, 1 - dist / 2000), pan });
       if (head) this.audio.play('headshot', { delay: 0.05 });
+      const hvt = t.role === 'hvt';
       this.hooks?.onHit({
         kind: head ? 'headshot' : 'kill',
-        title: head ? '헤드샷!' : '무력화',
+        title: head ? '헤드샷' : hvt ? '표적 제거' : '제거',
         detail: `${t.def.label ?? '표적'} · ${ZONE_LABEL[hit.zone]} · ${Math.round(dist)}m · ${Math.round(energy)}J`,
       });
       if (!b.cam) this.hitStop = head ? fb.headshotHitStop : fb.hitStop;
       // 목격 → 경계
       for (const o of this.targets) {
-        if (o === t || !o.isBot || !o.active) continue;
+        if (o === t || !o.isPerson || !o.active) continue;
         if (o.position.distanceTo(t.position) < BALANCE.targets.witnessRadius) o.alert(BALANCE.targets.witnessDelay);
       }
     } else {
@@ -1061,10 +1155,10 @@ export class Game {
     }
   }
 
-  /** 아음속탄 착탄음: 근처 로봇만 듣는다 */
+  /** 아음속탄 착탄음: 근처 사람만 듣는다 */
   private alertNear(p: THREE.Vector3): void {
     for (const t of this.targets) {
-      if (!t.isBot || !t.active) continue;
+      if (!t.isPerson || !t.active) continue;
       const d = t.position.distanceTo(p);
       if (d < BALANCE.targets.subsonicImpactHearRadius) t.alert(t.reaction);
     }
@@ -1123,7 +1217,11 @@ export class Game {
     const d = this.raycast(this.eye, dir, 2500);
     this.audio.play('beep');
     this.hooks?.onRangefinder(d, true);
-    if (d !== null) this.lastRange = d;
+    if (d !== null) {
+      this.lastRange = d;
+      const end = this.eye.clone().addScaledVector(dir, d + 0.5);
+      for (const t of this.targets) if (t.isPerson && !t.tagged && t.intersect(this.eye, end)) this.tag(t);
+    }
   }
 
   /** 시선 레이: 표적 → 장애물 → 지형 순으로 가장 가까운 거리 */
@@ -1416,29 +1514,52 @@ export class Game {
       rangefinderAllowed: this.rangefinderAllowed(),
       canSwitchAmmo: r.weapon.ammo.length > 1,
       weaponName: r.weapon.name,
+      suppressor: r.suppressor,
+      heading: ((-this.yaw * 180) / Math.PI + 360) % 360,
+      bearings: this.targets
+        .filter((t) => t.isPerson && t.tagged && t.state !== 'escaped')
+        .map((t) => ({
+          bearing: ((Math.atan2(t.position.x - this.eye.x, -(t.position.z - this.eye.z)) * 180) / Math.PI + 360) % 360,
+          role: t.role!,
+          down: t.isDown,
+        })),
+      windNow: this.wind && this.difficulty.windMeter !== 'none' ? (() => {
+        const w = this.wind!.sample(0, this.missionTime);
+        return { speed: w.speed, fromDeg: (w.dir + 180) % 360 };
+      })() : null,
+      pitchDeg: (this.pitch * 180) / Math.PI,
     };
   }
 
   /**
-   * 맨눈 시야에서 남은 표적 위치 표시(훈련병·저격수). 스코프를 보면 숨긴다.
-   * 처음 하는 사람이 "어디를 봐야 하는지" 막히지 않게 한다.
+   * 맨눈 시야의 표적 표시. 식별(태그)된 사람만 보인다 – 관측이 먼저다.
+   * 훈련병 난이도는 아직 식별하지 않은 필수 표적도 "?"로 보여줘 처음 하는 사람이 막히지 않게 한다.
    */
-  markers(): { x: number; y: number; label: string; alert: boolean }[] {
-    if (!this.fsm.is('playing') || this.scopeT > 0.3 || this.camBullet || this.difficulty.id === 'expert') return [];
-    const out: { x: number; y: number; label: string; alert: boolean }[] = [];
+  markers(): MarkerInfo[] {
+    if (!this.fsm.is('playing') || this.scopeT > 0.3 || this.camBullet) return [];
+    const out: MarkerInfo[] = [];
     const el = this.renderer.domElement;
     const v = new THREE.Vector3();
+    const expert = this.difficulty.id === 'expert';
+    const showDist = this.rangefinderAllowed();
     for (const t of this.targets) {
-      if (!t.active || t.done || (!t.def.required && !this.mission?.isRange)) continue;
+      if (!t.isPerson && (t.done || expert)) continue;
+      if (t.isPerson && (t.state === 'escaped' || t.isDown)) continue;
+      if (!t.isPerson && !t.def.required && !this.mission?.isRange) continue;
+      const unknownHint = t.isPerson && !t.tagged && t.def.required && this.difficulty.id === 'recruit';
+      if (t.isPerson && !t.tagged && !unknownHint) continue;
       v.copy(t.position);
-      v.y += t.isBot ? 2.2 : 1.6 + (t.def.h ?? 0.6);
+      v.y += t.isPerson ? 2.25 : 1.6 + (t.def.h ?? 0.6);
       v.project(this.camera);
       if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue;
-      const showDist = this.rangefinderAllowed();
+      const d = `${Math.round(t.position.distanceTo(this.eye))}m`;
+      const role: MarkerInfo['role'] = !t.isPerson ? 'plate' : unknownHint ? 'unknown' : t.role!;
+      const name = role === 'plate' ? '' : role === 'unknown' ? '?' : role === 'civilian' ? '민간인' : (t.def.label ?? ROLE_LABEL[role]);
       out.push({
         x: ((v.x + 1) / 2) * el.clientWidth,
         y: ((1 - v.y) / 2) * el.clientHeight,
-        label: showDist ? `${Math.round(t.position.distanceTo(this.eye))}m` : '',
+        label: [name, showDist ? d : ''].filter(Boolean).join(' · '),
+        role,
         alert: t.alerted,
       });
     }
@@ -1461,7 +1582,7 @@ export class Game {
     const t = this.targets[index];
     if (!t || !this.env) return false;
     const p = t.position.clone();
-    p.y += t.isBot ? 1.3 : 0.7 + (t.def.h ?? 0.6) / 2;
+    p.y += t.isPerson ? 1.3 : 0.7 + (t.def.h ?? 0.6) / 2;
     const sol = solveFiringSolution({
       params: this.rifle.params(),
       env: this.envAt(this.missionTime),

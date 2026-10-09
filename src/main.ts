@@ -2,6 +2,9 @@
  * 진입점: 로딩 화면 → 게임/UI 생성 → 메인 메뉴.
  * 예기치 못한 오류는 빈 화면 대신 안내 화면으로 보여준다.
  */
+import '@fontsource/rajdhani/600.css';
+import '@fontsource/rajdhani/700.css';
+import '@fontsource/share-tech-mono/400.css';
 import './ui/styles.css';
 import { AudioEngine } from './audio/audio';
 import { MISSIONS } from './config/missions';
@@ -54,9 +57,10 @@ async function boot(): Promise<void> {
   await nextFrame();
   const game = new Game(gameEl, save, audio, input);
 
-  setProgress(0.6, '훈련장 지형 생성 중…');
+  setProgress(0.6, '작전 지역 지형 생성 중…');
   await nextFrame();
-  game.loadBackdrop(MISSIONS[0]);
+  // 메뉴 배경: 새벽 숲 초소 작전(경비병이 서 있는 장면)
+  game.loadBackdrop(MISSIONS[3]);
 
   setProgress(0.85, '셰이더 준비 중…');
   await nextFrame();

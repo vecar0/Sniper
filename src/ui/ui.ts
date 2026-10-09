@@ -5,16 +5,21 @@
 import { BALANCE } from '../config/balance';
 import { DIFFICULTIES, type DifficultyId } from '../config/difficulty';
 import { buildDailyMission, buildRangeMission, MISSIONS, todayKey, type MissionDef } from '../config/missions';
-import { WEAPONS, type WeaponSpec } from '../config/weapons';
+import * as THREE from 'three';
+import { getWeapon, WEAPONS, type WeaponSpec } from '../config/weapons';
 import { windClock } from '../ballistics/wind';
 import type { AudioEngine } from '../audio/audio';
 import { keyCodeLabel, type Input } from '../core/input';
 import { ACTION_LABELS, DEFAULT_KEYS, type Action, type SaveStore, type Settings } from '../core/save';
 import type { GameState } from '../core/stateMachine';
 import type { Analysis } from '../game/analysis';
-import type { Game, HitInfo, HudSnapshot, MissionResult } from '../game/game';
+import type { Game, HitInfo, HudSnapshot, MissionResult, TagInfo } from '../game/game';
+import { buildHuman, HumanMaterials } from '../game/models/human';
+import { buildRifle } from '../game/models/rifle';
 import { RifleState } from '../game/rifle';
-import { THEMES } from '../game/themes';
+import { atmosphereFor, THEMES } from '../game/themes';
+import { PreviewStage } from './preview';
+import { drawTacticalMap } from './tacmap';
 import { ScopeOverlay } from './scope';
 import { TouchControls } from './touch';
 
@@ -142,6 +147,7 @@ export class UI {
       onMissionEnd: (r) => this.onMissionEnd(r),
       onStateChange: (to, from) => this.onState(to, from),
       onMuzzleFlash: () => this.muzzleFlash(),
+      onTag: (t) => this.showTag(t),
     };
     this.applySettings();
     const loop = () => {
@@ -174,6 +180,7 @@ export class UI {
   }
 
   private show(name: ScreenName, html = ''): void {
+    this.disposePreviews();
     this.screen = name;
     this.screens.innerHTML = html;
     this.screens.className = `screens screen-${name}`;
@@ -190,24 +197,51 @@ export class UI {
     const p = this.save.data.progress;
     const total = this.save.totalStars();
     const next = this.nextMission();
-    const primaryLabel = p.firstRun ? '훈련 시작' : next ? `계속: ${next.name}` : '미션 선택';
+    const cleared = MISSIONS.filter((m) => p.missions[m.id]?.cleared).length;
+    const primaryLabel = p.firstRun ? '자격 심사 시작' : next ? '이어하기' : '작전 목록';
+    const primarySub = p.firstRun ? '처음이라면 여기서 시작하세요' : next ? `${next.codename} · ${next.name}` : '모든 작전 완료';
+    const acc = p.stats.shots ? Math.round((p.stats.hits / p.stats.shots) * 100) : 0;
+    const unlocked = WEAPONS.filter((w) => this.weaponUnlocked(w)).map((w) => w.name);
+    const radio = [
+      '[무전] 본부: 고스트-7, 다음 계약이 대기 중이다.',
+      '[무전] 관측수: 오늘 계곡 바람이 심상치 않다. 깃발을 잘 봐라.',
+      '[무전] 본부: 민간인 피해는 용납하지 않는다. 쏘기 전에 식별하라.',
+      '[무전] 정비반: 소음기는 총성을 줄이지만 탄속이 조금 떨어진다.',
+    ];
     this.show(
       'menu',
-      `<div class="panel menu-panel">
-        <div class="logo"><span class="logo-mark" aria-hidden="true"></span><h1>LONG SHOT</h1></div>
-        <p class="tagline">장거리 저격 훈련 시뮬레이터 — 바람을 읽고, 한 발로 끝낸다</p>
-        <div class="menu-buttons">
-          <button class="btn primary big" data-primary data-go="next">${esc(primaryLabel)}</button>
-          <button class="btn" data-go="missions">미션 선택</button>
-          <button class="btn" data-go="range">사격장 (자유 연습)</button>
-          <button class="btn" data-go="daily">일일 챌린지 <span class="badge">${esc(todayKey())}</span></button>
-          <div class="row">
-            <button class="btn small" data-go="settings">설정</button>
-            <button class="btn small" data-go="controls">조작법</button>
-            <button class="btn small" data-go="credits">크레딧</button>
+      `<div class="menu-layout">
+        <div class="menu-left">
+          <div class="brand">
+            <span class="brand-tag">GHOST PROTOCOL <i>//</i> CONTRACT SNIPER</span>
+            <h1>LONG SHOT</h1>
+            <p class="tagline">바람을 읽고, 숨을 멈추고, 한 발로 끝낸다.</p>
           </div>
+          <nav class="menu-list" aria-label="메인 메뉴">
+            <button class="menu-item primary" data-primary data-go="next"><span class="mi-idx">01</span><span class="mi-text"><b>${esc(primaryLabel)}</b><small>${esc(primarySub)}</small></span><span class="mi-arrow" aria-hidden="true">›</span></button>
+            <button class="menu-item" data-go="missions"><span class="mi-idx">02</span><span class="mi-text"><b>작전 목록</b><small>자격 심사 3 · 실전 작전 5</small></span><span class="mi-arrow" aria-hidden="true">›</span></button>
+            <button class="menu-item" data-go="daily"><span class="mi-idx">03</span><span class="mi-text"><b>일일 계약</b><small>${esc(todayKey())} · 매일 바뀌는 표적</small></span><span class="mi-arrow" aria-hidden="true">›</span></button>
+            <button class="menu-item" data-go="range"><span class="mi-idx">04</span><span class="mi-text"><b>사격장</b><small>100~1500m 자유 연습</small></span><span class="mi-arrow" aria-hidden="true">›</span></button>
+            <div class="menu-row">
+              <button class="btn ghost small" data-go="settings">설정</button>
+              <button class="btn ghost small" data-go="controls">조작법</button>
+              <button class="btn ghost small" data-go="credits">크레딧</button>
+            </div>
+          </nav>
         </div>
-        <div class="menu-foot"><span>★ ${total} / ${MISSIONS.length * 3}</span><span>최장 명중 ${p.stats.longestHit}m</span><span>명중률 ${p.stats.shots ? Math.round((p.stats.hits / p.stats.shots) * 100) : 0}%</span></div>
+        <aside class="operator frame" aria-label="요원 기록">
+          <header><span>OPERATOR FILE</span><span class="mono">GHOST-7</span></header>
+          <div class="op-grid">
+            <div><small>작전 진행</small><b class="mono">${cleared}<i>/${MISSIONS.length}</i></b></div>
+            <div><small>확인 제거</small><b class="mono">${p.stats.kills}</b></div>
+            <div><small>최장 명중</small><b class="mono">${p.stats.longestHit}<i>m</i></b></div>
+            <div><small>명중률</small><b class="mono">${acc}<i>%</i></b></div>
+          </div>
+          <div class="op-bar"><i style="--v:${Math.round((cleared / MISSIONS.length) * 100)}%"></i></div>
+          <div class="menu-foot"><span>★ ${total} / ${MISSIONS.length * 3}</span><span>헤드샷 ${p.stats.headshots}</span><span>플레이 ${Math.round(p.stats.playSeconds / 60)}분</span></div>
+          <div class="op-gear"><small>지급 장비</small>${unlocked.map((n) => `<span class="chip">${esc(n)}</span>`).join('')}<span class="chip">소음기</span></div>
+        </aside>
+        <div class="radio" aria-hidden="true"><span>${esc(radio[Math.floor(Date.now() / 60000) % radio.length])}</span></div>
       </div>`,
     );
     this.bind('[data-go]', (el) => {
@@ -237,28 +271,55 @@ export class UI {
 
   showMissions(): void {
     const prog = this.save.data.progress.missions;
-    const cards = MISSIONS.map((m, i) => {
+    const row = (m: MissionDef, i: number) => {
       const unlocked = this.missionUnlocked(i);
       const p = prog[m.id];
-      const dists = m.targets.map((t) => t.dist);
-      return `<button class="mission-card ${unlocked ? '' : 'locked'}" data-mission="${i}" ${unlocked ? '' : 'disabled aria-disabled="true"'}>
-        <span class="mc-num">${String(i + 1).padStart(2, '0')}</span>
+      const dists = m.targets.filter((t) => t.required).map((t) => t.dist);
+      const range = `${Math.min(...dists)}${Math.max(...dists) !== Math.min(...dists) ? `~${Math.max(...dists)}` : ''}m`;
+      return `<button class="mission-card ${unlocked ? '' : 'locked'} ${p?.cleared ? 'cleared' : ''}" data-mission="${i}" ${unlocked ? '' : 'disabled aria-disabled="true"'}>
+        <span class="mc-num mono">${m.category === 'qualification' ? 'QUAL' : 'OP'}-${String(i + 1).padStart(2, '0')}</span>
+        <span class="mc-code">${esc(m.codename)}</span>
         <span class="mc-name">${esc(m.name)}</span>
-        <span class="mc-sub">${esc(m.subtitle)} · ${Math.min(...dists)}${dists.length > 1 && Math.max(...dists) !== Math.min(...dists) ? `~${Math.max(...dists)}` : ''}m</span>
-        <span class="mc-stars">${unlocked ? stars(p?.stars ?? [false, false, false]) : '🔒 이전 미션 클리어 필요'}</span>
-        ${p?.bestTime ? `<span class="mc-best">최고 ${formatTime(p.bestTime)}</span>` : ''}
+        <span class="mc-sub">${esc(m.subtitle)} · ${range}</span>
+        <span class="mc-stars">${unlocked ? stars(p?.stars ?? [false, false, false]) : '🔒 이전 작전 완료 필요'}</span>
+        ${p?.bestTime ? `<span class="mc-best mono">BEST ${formatTime(p.bestTime)}</span>` : ''}
+        ${p?.cleared ? '<span class="mc-stamp">완료</span>' : ''}
       </button>`;
-    }).join('');
+    };
     this.show(
       'missions',
-      `<div class="panel wide">
-        <div class="panel-head"><h2>미션 선택</h2><button class="btn small" data-back>뒤로 (Esc)</button></div>
-        <div class="mission-grid">${cards}</div>
+      `<div class="panel wide frame">
+        <div class="panel-head"><h2><span class="h-tag">OPERATIONS</span>작전 목록</h2><button class="btn small" data-back>뒤로 (Esc)</button></div>
+        <div class="missions-cols">
+          <div>
+            <h3 class="sec">자격 심사 <small>강철판 · 기본기</small></h3>
+            <div class="mission-grid">${MISSIONS.map((m, i) => (m.category === 'qualification' ? row(m, i) : '')).join('')}</div>
+            <h3 class="sec">실전 작전 <small>표적 식별 · 암살</small></h3>
+            <div class="mission-grid">${MISSIONS.map((m, i) => (m.category === 'operation' ? row(m, i) : '')).join('')}</div>
+          </div>
+          <aside class="mission-preview frame">
+            <canvas class="tacmap" aria-label="전술 지도"></canvas>
+            <div class="mp-info"></div>
+          </aside>
+        </div>
       </div>`,
     );
     this.bind('[data-back]', () => this.showMenu());
     this.bind('[data-mission]', (el) => this.openBriefing(MISSIONS[Number(el.dataset.mission)]));
-    const firstOpen = this.screens.querySelector<HTMLButtonElement>('.mission-card:not(.locked)');
+    const map = this.screens.querySelector<HTMLCanvasElement>('.tacmap')!;
+    const info = this.screens.querySelector<HTMLElement>('.mp-info')!;
+    const preview = (i: number) => {
+      const m = MISSIONS[i];
+      drawTacticalMap(map, m);
+      info.innerHTML = `<b>${esc(m.codename)}</b><p>${esc(m.briefing[0])}</p><small>${esc(THEMES[m.theme].name)} · ${esc(atmosphereFor(THEMES[m.theme], m.timeOfDay).timeName)} · 배울 것: ${esc(m.newSkill)}</small>`;
+    };
+    this.screens.querySelectorAll<HTMLElement>('[data-mission]').forEach((el) => {
+      const i = Number(el.dataset.mission);
+      el.addEventListener('pointerenter', () => preview(i));
+      el.addEventListener('focus', () => preview(i));
+    });
+    const firstOpen = this.screens.querySelector<HTMLButtonElement>('.mission-card:not(.locked):not(.cleared)') ?? this.screens.querySelector<HTMLButtonElement>('.mission-card:not(.locked)');
+    preview(Number(firstOpen?.dataset.mission ?? 0));
     if (firstOpen && !this.input.isTouch) firstOpen.focus({ preventScroll: true });
   }
 
@@ -273,10 +334,10 @@ export class UI {
   private windDesc(m: MissionDef): string {
     const z = m.wind.zones[0];
     if (z.speed === 0 && m.wind.zones.length === 1) return '무풍';
-    const strength = z.speed < 2 ? '약한' : z.speed < 4 ? '보통' : '강한';
-    const zones = m.wind.zones.length > 1 ? ' · 구간마다 다름' : '';
+    const strength = z.speed < 2 ? '약함' : z.speed < 4 ? '보통' : '강함';
+    const zones = m.wind.zones.length > 1 ? ' · 구간별 상이' : '';
     const gust = m.wind.gusts ? ' · 돌풍' : '';
-    return `${strength} 바람 (${windClock(z.dir)}시 방향에서)${zones}${gust}`;
+    return `${strength} · ${windClock(z.dir)}시 방향${zones}${gust}`;
   }
 
   private weaponUnlocked(w: WeaponSpec): boolean {
@@ -295,36 +356,34 @@ export class UI {
       e800,
     };
   }
-
   private renderBriefing(): void {
     const m = this.briefingMission!;
     const s = this.save.data.settings;
     const total = this.save.totalStars();
     const prog = this.save.data.progress.missions[m.id];
-    const th = THEMES[m.theme];
-    const dists = m.targets.filter((t) => t.required || m.isRange).map((t) => t.dist);
+    const atmo = atmosphereFor(THEMES[m.theme], m.timeOfDay);
+    const req = m.targets.filter((t) => t.required || m.isRange);
+    const dists = req.map((t) => t.dist);
     const distText = m.noRangefinder ? '알 수 없음 (직접 측정)' : `약 ${Math.round(Math.min(...dists) / 10) * 10}${Math.max(...dists) - Math.min(...dists) > 20 ? `~${Math.round(Math.max(...dists) / 10) * 10}` : ''}m`;
-    const weaponCards = WEAPONS.map((w) => {
-      const unlocked = this.weaponUnlocked(w);
-      const locked = !unlocked || (m.weaponLock && m.weaponLock !== w.id);
-      const st = this.weaponStats(w);
-      const bar = (label: string, v: number) => `<div class="stat"><span>${label}</span><i style="--v:${Math.round(v * 100)}%"></i></div>`;
-      const req = w.unlockKey ? `★ ${BALANCE.unlocks[w.unlockKey]}개 필요` : '';
-      const sel = (m.weaponLock ? m.weaponLock === w.id : s.weapon === w.id) && !locked;
-      return `<button class="weapon-card ${sel ? 'selected' : ''}" data-weapon="${w.id}" ${locked ? 'disabled aria-disabled="true"' : ''} aria-pressed="${sel}">
-        <span class="wc-name">${w.name} <small>${w.caliber}</small></span>
-        <span class="wc-desc">${!unlocked ? `🔒 ${req}` : m.weaponLock && m.weaponLock !== w.id ? '이 미션에서는 사용 불가' : esc(w.description)}</span>
-        ${bar('정확도', st.acc)}${bar('위력', st.power)}${bar('볼트 속도', st.bolt)}${bar('반동', st.recoil)}
-      </button>`;
-    }).join('');
+    const people = m.targets.filter((t) => t.kind === 'person');
+    const count = (r: string) => people.filter((t) => (t.role ?? 'guard') === r).length;
+    const targetText = m.isRange
+      ? '100~1500m 강철판 15개'
+      : people.length
+        ? [count('hvt') ? `핵심 ${count('hvt')}` : '', count('guard') ? `경비 ${count('guard')}` : '', count('civilian') ? `민간인 ${count('civilian')}` : ''].filter(Boolean).join(' · ') + ` · ${distText}`
+        : `강철판 ${req.length}개 · ${distText}`;
     const diffs = (Object.keys(DIFFICULTIES) as DifficultyId[])
       .map((id) => {
         const d = DIFFICULTIES[id];
         const locked = d.unlockKey && total < BALANCE.unlocks[d.unlockKey];
-        return `<button class="diff-btn ${s.difficulty === id && !locked ? 'selected' : ''}" data-diff="${id}" ${locked ? 'disabled aria-disabled="true"' : ''} aria-pressed="${s.difficulty === id}">${d.name}${locked ? ` 🔒★${BALANCE.unlocks[d.unlockKey!]}` : ''}</button>`;
+        return `<button class="diff-btn ${s.difficulty === id && !locked ? 'selected' : ''}" data-diff="${id}" ${locked ? 'disabled aria-disabled="true"' : ''} aria-pressed="${s.difficulty === id}">${d.name}${locked ? ` <small>🔒★${BALANCE.unlocks[d.unlockKey!]}</small>` : ''}</button>`;
       })
       .join('');
-    const diffDesc = DIFFICULTIES[s.difficulty].description;
+    const weaponTabs = WEAPONS.map((w) => {
+      const unlocked = this.weaponUnlocked(w);
+      const locked = !unlocked || (m.weaponLock && m.weaponLock !== w.id);
+      return `<button class="wtab" data-weapon="${w.id}" ${locked ? 'disabled aria-disabled="true"' : ''} title="${!unlocked && w.unlockKey ? `★ ${BALANCE.unlocks[w.unlockKey]}개 필요` : esc(w.description)}">${w.name}${!unlocked ? ' 🔒' : ''}</button>`;
+    }).join('');
     const rangeControls = m.isRange
       ? `<div class="range-wind">
           <label>풍속 <output id="rw-s">${this.rangeWind.speed.toFixed(1)}</output> m/s<input type="range" id="rw-speed" min="0" max="10" step="0.5" value="${this.rangeWind.speed}"></label>
@@ -334,50 +393,85 @@ export class UI {
     const objectives = m.isRange
       ? '<li>목표 없음 – 자유롭게 연습하세요. 일시정지 메뉴에서 나갈 수 있습니다.</li>'
       : m.objectives.map((o, i) => `<li><span class="star ${prog?.stars[i] ? 'on' : ''}">★</span> ${esc(o.label)}</li>`).join('');
+    const dossier = m.dossier
+      ? `<div class="dossier frame">
+          <header><span>TARGET DOSSIER</span><span class="stamp-red">CLASSIFIED</span></header>
+          <div class="dossier-body">
+            <canvas class="dossier-3d" aria-label="표적 외형"></canvas>
+            <div class="dossier-info">
+              <b>${esc(m.dossier.name)}</b><small>${esc(m.dossier.alias)}</small>
+              <p>${esc(m.dossier.summary)}</p>
+              <ul>${m.dossier.features.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>
+            </div>
+          </div>
+        </div>`
+      : `<div class="dossier frame mini"><header><span>TARGET</span></header><p class="muted">${m.category === 'qualification' || m.isRange ? '강철판 표적 – 명중 시 초록색으로 바뀌고 탄흔이 남습니다.' : '경계병 – 소총과 조끼를 착용했습니다. 스코프로 관측해 식별하세요.'}</p></div>`;
     this.show(
       'briefing',
-      `<div class="panel wide briefing">
-        <div class="panel-head"><h2>${esc(m.name)} <small>${esc(m.subtitle)}</small></h2><button class="btn small" data-back>뒤로 (Esc)</button></div>
+      `<div class="panel wide frame briefing">
+        <div class="panel-head">
+          <h2><span class="h-tag">${m.category === 'qualification' ? 'QUALIFICATION' : m.isRange ? 'RANGE' : m.category === 'contract' ? 'CONTRACT' : 'OPERATION'}</span>${esc(m.codename)} <small>${esc(m.name)}</small></h2>
+          <div class="head-actions"><button class="btn small" data-back>뒤로 (Esc)</button><button class="btn primary start-btn" data-primary data-start>${this.input.isTouch ? '작전 개시' : '작전 개시 (Enter)'}</button></div>
+        </div>
         <div class="brief-cols">
-          <div class="brief-info">
+          <section class="brief-info">
+            <h3 class="sec">INTEL</h3>
             ${m.briefing.map((b) => `<p class="brief-text">${esc(b.replace('{ammo}', `[${this.input.keyLabel('ammo')}]`))}</p>`).join('')}
             <div class="brief-new"><b>배울 것</b> ${esc(m.newSkill)}</div>
             <dl class="brief-env">
-              <dt>지형</dt><dd>${th.name} · 고도 ${m.atmosphere.altitude}m · ${m.atmosphere.temperature}°C</dd>
+              <dt>지형</dt><dd>${atmo.name} · ${atmo.timeName}</dd>
+              <dt>대기</dt><dd class="mono">ALT ${m.atmosphere.altitude}m · ${m.atmosphere.temperature}°C</dd>
               <dt>바람</dt><dd>${m.isRange ? '직접 설정' : this.windDesc(m)}</dd>
-              <dt>표적</dt><dd>${m.isRange ? '100~1500m 강철판 15개' : `${m.targets.filter((t) => t.required).length}개 · ${distText}`}</dd>
+              <dt>표적</dt><dd>${targetText}</dd>
               <dt>탄약</dt><dd>${m.ammoTotal > 0 ? `${m.ammoTotal}발` : '무제한'}${m.timeLimit ? ` · 제한 ${formatTime(m.timeLimit)}` : ''}</dd>
             </dl>
+            ${m.intel?.length ? `<ul class="intel">${m.intel.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
             ${rangeControls}
-            <h3>목표</h3>
+            <h3 class="sec">목표</h3>
             <ul class="objectives">${objectives}</ul>
-          </div>
-          <div class="brief-loadout">
-            <h3>총기</h3>
-            <div class="weapon-list">${weaponCards}</div>
-            <h3>난이도</h3>
+          </section>
+          <section class="brief-mid">
+            <canvas class="tacmap" aria-label="전술 지도"></canvas>
+            ${dossier}
+          </section>
+          <section class="brief-loadout">
+            <h3 class="sec">LOADOUT</h3>
+            <div class="weapon-stage frame"><canvas class="weapon-3d" aria-label="총기 미리보기"></canvas><div class="ws-name"></div></div>
+            <div class="wtabs" role="group" aria-label="총기 선택">${weaponTabs}</div>
+            <div class="wstats"></div>
+            <button class="toggle ${s.suppressor ? 'on' : ''}" data-suppressor aria-pressed="${s.suppressor}"><span>소음기</span><small></small><i aria-hidden="true"></i></button>
+            <h3 class="sec">난이도</h3>
             <div class="diff-row">${diffs}</div>
-            <p class="muted diff-desc">${esc(diffDesc)}</p>
-          </div>
-        </div>
-        <div class="brief-actions">
-          <button class="btn primary big" data-primary data-start>${this.input.isTouch ? '시작' : '시작 (Enter)'}</button>
+            <p class="muted diff-desc">${esc(DIFFICULTIES[s.difficulty].description)}</p>
+          </section>
         </div>
       </div>`,
     );
+    drawTacticalMap(this.screens.querySelector<HTMLCanvasElement>('.tacmap')!, m);
     this.bind('[data-back]', () => this.backFromBriefing());
     this.bind('[data-start]', () => this.startMission());
     this.bind('[data-weapon]', (el) => {
       s.weapon = el.dataset.weapon!;
       this.save.save();
       this.game.loadMission(m);
-      this.renderBriefing();
+      this.refreshLoadout();
+    });
+    this.bind('[data-suppressor]', () => {
+      s.suppressor = !s.suppressor;
+      this.save.save();
+      this.game.loadMission(m);
+      this.refreshLoadout();
     });
     this.bind('[data-diff]', (el) => {
       s.difficulty = el.dataset.diff as DifficultyId;
       this.save.save();
       this.game.loadMission(m);
-      this.renderBriefing();
+      this.screens.querySelectorAll<HTMLElement>('[data-diff]').forEach((b) => {
+        const on = b.dataset.diff === s.difficulty;
+        b.classList.toggle('selected', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
+      this.screens.querySelector('.diff-desc')!.textContent = DIFFICULTIES[s.difficulty].description;
     });
     const sp = this.screens.querySelector<HTMLInputElement>('#rw-speed');
     const dr = this.screens.querySelector<HTMLInputElement>('#rw-dir');
@@ -392,12 +486,71 @@ export class UI {
       const commit = () => {
         this.briefingMission = buildRangeMission(this.rangeWind.speed, this.rangeWind.dir);
         this.game.loadMission(this.briefingMission);
+        drawTacticalMap(this.screens.querySelector<HTMLCanvasElement>('.tacmap')!, this.briefingMission);
       };
       sp.addEventListener('change', commit);
       dr.addEventListener('change', commit);
     }
+    // 3D 미리보기(WebGL 실패 시 조용히 생략)
+    try {
+      const wc = this.screens.querySelector<HTMLCanvasElement>('.weapon-3d');
+      if (wc) this.weaponStage = new PreviewStage(wc, { fov: 26, distance: 2.4, height: 0.35, lookY: 0, spin: 0.3 });
+      const dc = this.screens.querySelector<HTMLCanvasElement>('.dossier-3d');
+      if (dc && m.dossier) {
+        this.dossierStage = new PreviewStage(dc, { fov: 28, distance: 4.2, height: 1.3, lookY: 1.0, spin: 0.5 });
+        const mats = new HumanMaterials();
+        const rig = buildHuman(m.dossier.outfit, mats);
+        this.dossierStage.show(rig.root, () => mats.dispose());
+      }
+    } catch {
+      /* 미리보기 없이 진행 */
+    }
+    this.refreshLoadout();
   }
 
+  private weaponStage: PreviewStage | null = null;
+  private dossierStage: PreviewStage | null = null;
+
+  private disposePreviews(): void {
+    this.weaponStage?.dispose();
+    this.dossierStage?.dispose();
+    this.weaponStage = null;
+    this.dossierStage = null;
+  }
+
+  /** 장비 패널만 다시 그린다(3D 미리보기 컨텍스트를 재사용) */
+  private refreshLoadout(): void {
+    const m = this.briefingMission!;
+    const s = this.save.data.settings;
+    const wid = m.weaponLock ?? (this.weaponUnlocked(getWeapon(s.weapon)) ? s.weapon : 'r308');
+    const w = getWeapon(wid);
+    this.screens.querySelectorAll<HTMLElement>('[data-weapon]').forEach((b) => {
+      const on = b.dataset.weapon === w.id;
+      b.classList.toggle('selected', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    const st = this.weaponStats(w);
+    const bar = (label: string, v: number, val: string) => `<div class="stat"><span>${label}</span><i style="--v:${Math.round(v * 100)}%"></i><em class="mono">${val}</em></div>`;
+    const wstats = this.screens.querySelector<HTMLElement>('.wstats');
+    if (wstats)
+      wstats.innerHTML = `<p class="w-desc">${esc(w.caliber)} · ${esc(w.description)}</p>${bar('정확도', st.acc, `${w.ammo[0].dispersionMoa}MOA`)}${bar('위력', st.power, `${Math.round(st.e800)}J@800`)}${bar('볼트', st.bolt, `${w.boltTime}s`)}${bar('반동', st.recoil, `${w.recoilKick}`)}<p class="w-ammo">${w.ammo.map((a) => esc(a.name)).join(' / ')} · 탄창 ${w.magazine}발 · ${w.zoomMin}-${w.zoomMax}×</p>`;
+    const sup = this.screens.querySelector<HTMLElement>('[data-suppressor]');
+    if (sup) {
+      sup.classList.toggle('on', s.suppressor);
+      sup.setAttribute('aria-pressed', String(s.suppressor));
+      sup.querySelector('small')!.textContent = s.suppressor ? '장착 – 총성 범위↓ · 섬광 없음 · 탄속 −1.5%' : '미장착 – 총성이 전장에 울린다';
+    }
+    const name = this.screens.querySelector<HTMLElement>('.ws-name');
+    if (name) name.innerHTML = `<b>${esc(w.name)}</b><small class="mono">${esc(w.caliber)}${s.suppressor ? ' · SUPPRESSED' : ''}</small>`;
+    if (this.weaponStage) {
+      const rig = buildRifle(w, s.suppressor);
+      rig.group.position.z = 0.2;
+      rig.group.rotation.y = Math.PI / 2;
+      const holder = new THREE.Group();
+      holder.add(rig.group);
+      this.weaponStage.show(holder, () => rig.dispose());
+    }
+  }
   private backFromBriefing(): void {
     this.game.toMenu();
     if (this.briefingMission && !this.briefingMission.isRange && !this.briefingMission.id.startsWith('daily-')) this.showMissions();
@@ -441,17 +594,18 @@ export class UI {
 
   private renderPause(): void {
     const isRange = !!this.game.mission?.isRange;
+    const m = this.game.mission;
     this.show(
       'pause',
-      `<div class="panel narrow">
-        <h2>일시정지</h2>
-        <p class="muted">${esc(this.game.mission?.name ?? '')} · ${formatTime(this.game.hud().time)}</p>
+      `<div class="panel narrow frame">
+        <div class="panel-head"><h2><span class="h-tag">PAUSED</span>작전 일시중지</h2></div>
+        <p class="muted mono">${esc(m?.codename ?? '')} · T+${formatTime(this.game.hud().time)}</p>
         <div class="menu-buttons">
           <button class="btn primary big" data-primary data-act="resume">계속 ${this.input.isTouch ? '' : '(Esc)'}</button>
           <button class="btn" data-act="restart">처음부터 다시 ${this.input.isTouch ? '' : '(R)'}</button>
           <button class="btn" data-act="settings">설정</button>
           <button class="btn" data-act="controls">조작법</button>
-          <button class="btn" data-act="quit">${isRange ? '사격장 나가기' : '미션 나가기'}</button>
+          <button class="btn danger" data-act="quit">${isRange ? '사격장 나가기' : '작전 포기'}</button>
         </div>
       </div>`,
     );
@@ -470,7 +624,6 @@ export class UI {
       }
     });
   }
-
   private resumeGame(): void {
     if (!this.game.fsm.is('paused')) return;
     if (this.portrait()) {
@@ -503,28 +656,35 @@ export class UI {
     const next = r.success && idx >= 0 && idx + 1 < MISSIONS.length ? MISSIONS[idx + 1] : null;
     const acc = r.shots ? Math.round((r.hits / r.shots) * 100) : 0;
     const daily = m.id.startsWith('daily-');
-    const analysis = r.lastAnalysis && (!r.success || r.lastAnalysis) ? r.lastAnalysis : null;
+    const analysis = r.lastAnalysis;
+    const grade = ['D', 'C', 'B', 'A'][r.success ? r.stars.filter(Boolean).length : 0];
     this.show(
       'result',
-      `<div class="panel result ${r.success ? 'win' : 'lose'}">
-        <h2>${r.success ? '임무 완료' : '임무 실패'}</h2>
+      `<div class="panel result frame ${r.success ? 'win' : 'lose'}">
+        <div class="aar-head"><span class="h-tag">AFTER ACTION REPORT</span><span class="mono">${esc(m.codename)}</span></div>
+        <div class="aar-title">
+          <h2>${r.success ? '임무 완수' : '임무 실패'}</h2>
+          <span class="aar-stamp">${r.success ? 'MISSION COMPLETE' : 'MISSION FAILED'}</span>
+          <span class="aar-grade mono" aria-label="평가 ${grade}">${grade}</span>
+        </div>
         ${r.failReason ? `<p class="fail-reason">${esc(r.failReason)}</p>` : ''}
         <div class="result-stars" aria-label="별 ${r.stars.filter(Boolean).length}개">${r.stars.map((v, i) => `<span class="star big ${v ? 'pending' : ''}" data-i="${i}">★</span>`).join('')}</div>
         <ul class="objectives">${r.objectives.map((o, i) => `<li class="${o.done ? 'done' : ''}"><span class="check">${o.done ? '✔' : '✖'}</span> ${esc(o.label)} ${r.prevStars[i] && !o.done ? '<small class="muted">(이전에 달성)</small>' : ''}</li>`).join('')}</ul>
         <div class="result-stats">
-          <div><b>${formatTime(r.time)}</b><span>시간${r.newBestTime ? ' · 신기록!' : ''}</span></div>
-          <div><b>${r.hits}/${r.shots}</b><span>명중 (${acc}%)</span></div>
-          <div><b>${r.headshots}</b><span>헤드샷</span></div>
-          <div><b>${Math.round(r.longest)}m</b><span>최장 명중</span></div>
-          ${daily ? `<div><b>${r.score}</b><span>점수 (오늘 최고 ${r.bestScore})</span></div>` : ''}
+          <div><b class="mono">${formatTime(r.time)}</b><span>작전 시간${r.newBestTime ? ' · 신기록' : ''}</span></div>
+          <div><b class="mono">${r.hits}/${r.shots}</b><span>명중 (${acc}%)</span></div>
+          <div><b class="mono">${r.kills}</b><span>제거</span></div>
+          <div><b class="mono">${r.headshots}</b><span>헤드샷</span></div>
+          <div><b class="mono">${Math.round(r.longest)}m</b><span>최장 명중</span></div>
+          ${daily ? `<div><b class="mono">${r.score}</b><span>점수 (오늘 최고 ${r.bestScore})</span></div>` : ''}
         </div>
         ${r.unlocked.length ? `<div class="unlocks">${r.unlocked.map((u) => `<p>🔓 ${esc(u)}</p>`).join('')}</div>` : ''}
         ${r.tip ? `<div class="tip"><b>다음엔 이렇게</b> ${esc(r.tip)}</div>` : ''}
         ${analysis && !r.success ? `<details class="analysis-details"><summary>마지막 빗나간 탄 분석</summary>${analysis.lines.map((l) => `<p>${esc(l)}</p>`).join('')}</details>` : ''}
         <div class="menu-buttons row-buttons">
-          ${next ? `<button class="btn primary big" data-primary data-act="next">다음 미션 ${this.input.isTouch ? '' : '(Enter)'}</button>` : ''}
+          ${next ? `<button class="btn primary big" data-primary data-act="next">다음 작전 ${this.input.isTouch ? '' : '(Enter)'}</button>` : ''}
           <button class="btn ${next ? '' : 'primary big'}" ${next ? '' : 'data-primary'} data-act="retry">다시 하기 ${this.input.isTouch ? '' : '(R)'}</button>
-          <button class="btn" data-act="missions">${daily ? '메인 메뉴' : '미션 선택'}</button>
+          <button class="btn" data-act="missions">${daily ? '메인 메뉴' : '작전 목록'}</button>
         </div>
       </div>`,
     );
@@ -535,7 +695,7 @@ export class UI {
         el.classList.remove('pending');
         el.classList.add('on', 'pop');
         this.audio.play('star', { pitch: 1 + i * 0.12 });
-      }, 300 + i * 320);
+      }, 400 + i * 320);
     });
     this.bind('[data-act]', (el) => {
       const a = el.dataset.act;
@@ -549,8 +709,6 @@ export class UI {
         });
     });
   }
-
-  // ───────────────────────── 설정 ─────────────────────────
   showSettings(ret: ScreenName): void {
     this.settingsReturn = ret;
     const s = this.save.data.settings;
@@ -722,7 +880,10 @@ export class UI {
               <li>빗나가면 <b>탄착 분석</b>을 보고 보정한다. 흙먼지가 보인 위치도 단서다.</li>
             </ol>
             <h3>판정</h3>
-            <p class="small-text">로봇: 머리·흉부·복부 명중 시 무력화, 팔·다리는 부상(경계 후 도주). 총성은 음속(343m/s)으로 퍼져 다른 로봇이 듣고 반응한다. 아음속탄은 총성이 작지만 탄이 크게 떨어진다.</p>
+            <p class="small-text">사람: 머리·흉부·복부 명중 시 무력화, 팔·다리는 부상(경계 후 도주). 총성은 음속(343m/s)으로 퍼져 다른 사람이 듣고 반응한다.</p>
+            <h3>식별과 은밀성</h3>
+            <p class="small-text">스코프로 사람을 1초 관측하거나 레이저로 조사하면 식별 태그(핵심 표적·경비·민간인)가 붙습니다. <b>민간인을 쏘면 작전 실패</b>입니다. 쓰러진 사람은 그 자리에 남고, 근처(14m)를 지나는 사람이 발견하면 경보를 울립니다.</p>
+            <p class="small-text">총성이 들리는 범위: 일반탄 = 전체 · 일반탄+소음기 = 400m(반응 느림) · 아음속탄 = 250m · 아음속탄+소음기 = 없음.</p>
           </section>
         </div>
       </div>`,
@@ -733,24 +894,21 @@ export class UI {
   showCredits(): void {
     this.show(
       'credits',
-      `<div class="panel narrow credits">
-        <div class="panel-head"><h2>크레딧</h2><button class="btn small" data-primary data-back>뒤로 (Esc)</button></div>
-        <p><b>LONG SHOT</b> v1.0</p>
+      `<div class="panel narrow frame credits">
+        <div class="panel-head"><h2><span class="h-tag">CREDITS</span>크레딧</h2><button class="btn small" data-primary data-back>뒤로 (Esc)</button></div>
+        <p><b>LONG SHOT</b> v2.0 – Ghost Protocol</p>
         <p>기획 · 개발: vecar0 with Claude Code</p>
-        <h3>기술</h3>
-        <p>Three.js (MIT License) · TypeScript · Vite</p>
-        <h3>그래픽 · 사운드</h3>
-        <p>모든 3D 모델과 효과음, 배경음은 코드로 실시간 생성했습니다. 외부 에셋을 사용하지 않았습니다.</p>
-        <h3>탄도 모델</h3>
-        <p>G7 표준 항력 함수, ICAO 표준 대기, Litz 스핀 드리프트 근사식을 사용했습니다. 실제 사격에 사용하지 마세요.</p>
-        <p class="muted">표적은 모두 훈련용 로봇과 강철판입니다.</p>
+        <h3 class="sec">기술</h3>
+        <p>Three.js (MIT) · TypeScript · Vite · Rajdhani / Share Tech Mono 글꼴 (SIL OFL)</p>
+        <h3 class="sec">그래픽 · 사운드</h3>
+        <p>모든 3D 모델, 효과음, 배경음은 코드로 실시간 생성했습니다. 외부 이미지·음원을 사용하지 않았습니다.</p>
+        <h3 class="sec">탄도 모델</h3>
+        <p>G7 표준 항력 함수, ICAO 표준 대기, Litz 스핀 드리프트 근사식. 게임용 근사치이며 실제 사격에 사용하지 마세요.</p>
+        <p class="muted">이 게임은 허구의 이야기이며 실존 인물·단체와 관계가 없습니다. 유혈 표현은 없습니다.</p>
       </div>`,
     );
     this.bind('[data-back]', () => this.showMenu());
   }
-
-  // ───────────────────────── 키 ─────────────────────────
-  /** @returns 키를 메뉴에서 처리했으면 true */
   private onKey(code: string, e: KeyboardEvent): boolean {
     const st = this.game.fsm.state;
     if (document.querySelector('.confirm')) {
@@ -831,34 +989,38 @@ export class UI {
   // ───────────────────────── HUD ─────────────────────────
   private hudTemplate(): string {
     return `
-      <div class="hud-tl">
+      <div class="hud-vignette" aria-hidden="true"></div>
+      <div class="hud-tl frame-lite">
+        <div class="hud-code mono"></div>
         <div class="hud-mission"></div>
         <div class="hud-targets"></div>
-        <div class="hud-time"></div>
+        <div class="hud-time mono"></div>
       </div>
+      <canvas class="hud-compass" width="440" height="40" aria-hidden="true"></canvas>
       <div class="hud-tr"><button class="hud-pause" aria-label="일시정지">II</button></div>
       <div class="hud-hint" role="status" aria-live="polite"></div>
       <div class="hud-alert" role="alert"></div>
-      <div class="hud-cross" aria-hidden="true"></div>
+      <div class="hud-cross" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <div class="hud-hit"><b></b><span></span></div>
-      <div class="hud-range"></div>
+      <div class="hud-range mono"></div>
       <div class="hud-analysis"><div class="ha-lines"></div><div class="ha-tip"></div></div>
       <div class="hud-bl">
+        <canvas class="hud-winddial" width="72" height="72" aria-hidden="true"></canvas>
         <div class="hud-wind"></div>
       </div>
-      <div class="hud-br">
-        <div class="hud-turret"><span class="ht-e"></span><span class="ht-w"></span></div>
-        <div class="hud-zoom"></div>
-        <div class="hud-ammo"><b class="ha-count"></b><span class="ha-name"></span><span class="ha-status"></span></div>
+      <div class="hud-br frame-lite">
+        <div class="hud-weapon"><b class="hw-name"></b><span class="hw-sup">SUPPRESSED</span></div>
+        <div class="hud-turret mono"><span class="ht-e"></span><span class="ht-w"></span><span class="hud-zoom"></span></div>
+        <div class="hud-ammo"><span class="ha-pips"></span><b class="ha-count mono"></b><span class="ha-name"></span></div>
+        <span class="ha-status"></span>
       </div>
-      <div class="hud-breath"><i></i><span></span></div>
+      <div class="hud-breath"><span class="hb-label"></span><i></i></div>
       <div class="hud-restart"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" /></svg><span>재시작</span></div>
       <div class="hud-dope"></div>
       <div class="hud-cam"><span>불릿캠 · 클릭하면 건너뜀</span></div>
       <div class="hud-lock">화면을 클릭하면 마우스가 고정됩니다</div>
       <div class="hud-markers" aria-hidden="true"></div>`;
   }
-
   private q(sel: string): HTMLElement {
     return this.hudEl.querySelector<HTMLElement>(sel)!;
   }
@@ -893,32 +1055,47 @@ export class UI {
     }
   }
 
+  private lastCompass = '';
+  private lastDial = '';
+
   private updateHud(h: HudSnapshot): void {
+    const m = this.game.mission;
+    this.setText('.hud-code', m ? `${m.codename}` : '');
     this.setText('.hud-mission', h.missionName);
-    this.setText('.hud-targets', h.isRange ? `${h.weaponName} · 자유 연습` : `표적 ${h.targetsTotal - h.targetsLeft} / ${h.targetsTotal}`);
-    const timeText = h.timeLimit > 0 ? `남은 시간 ${formatTime(h.timeLimit - h.time)}` : formatTime(h.time);
+    this.setText('.hud-targets', h.isRange ? `${h.weaponName} · 자유 연습` : `◆ 표적 ${h.targetsTotal - h.targetsLeft} / ${h.targetsTotal}`);
+    const timeText = h.timeLimit > 0 ? `T−${formatTime(h.timeLimit - h.time)}` : `T+${formatTime(h.time)}`;
     this.setText('.hud-time', timeText);
     this.q('.hud-time').classList.toggle('danger', h.timeLimit > 0 && h.timeLimit - h.time < 20);
-    this.setText('.ht-e', `고각 ▲ ${h.elev.toFixed(1)}`);
-    this.setText('.ht-w', `좌우 ${h.wind === 0 ? '0.0' : `${Math.abs(h.wind).toFixed(1)}${h.wind > 0 ? 'R' : 'L'}`} mil`);
+    this.setText('.ht-e', `ELEV ${h.elev.toFixed(1)}`);
+    this.setText('.ht-w', `WIND ${h.wind === 0 ? '0.0' : `${Math.abs(h.wind).toFixed(1)}${h.wind > 0 ? 'R' : 'L'}`}`);
     this.setText('.hud-zoom', `${h.zoom.toFixed(1)}×`);
-    this.setText('.ha-count', `${h.inMag} / ${h.reserve === Infinity ? '∞' : h.reserve}`);
+    this.setText('.hw-name', h.weaponName);
+    this.q('.hw-sup').style.display = h.suppressor ? '' : 'none';
+    const reserve = h.reserve === Infinity ? '∞' : String(h.reserve);
+    this.setText('.ha-count', `${h.inMag} | ${reserve}`);
+    const pipKey = `${h.inMag}`;
+    if (this.hudCache.get('pips') !== pipKey) {
+      this.hudCache.set('pips', pipKey);
+      this.q('.ha-pips').innerHTML = Array.from({ length: Math.min(10, h.inMag) }, () => '<i></i>').join('');
+    }
     this.setText('.ha-name', h.ammoName);
     this.setText('.ha-status', h.status);
     this.q('.ha-status').classList.toggle('warn', h.status !== '장전됨');
     this.q('.ha-name').classList.toggle('sub', h.subsonic);
     const wind = this.q('.hud-wind');
     if (h.windText) {
-      this.setText('.hud-wind', `풍속계 · ${h.windText}`);
+      this.setText('.hud-wind', h.windText);
       wind.style.display = '';
     } else wind.style.display = 'none';
+    this.drawWindDial(h);
+    this.drawCompass(h);
     const breath = this.q('.hud-breath');
     const showBreath = h.scopeT > 0.5 || h.breath < 0.999 || h.holding;
     breath.classList.toggle('show', showBreath);
     breath.classList.toggle('holding', h.holding);
     breath.classList.toggle('exhausted', h.exhausted);
     (breath.querySelector('i') as HTMLElement).style.transform = `scaleX(${h.breath.toFixed(3)})`;
-    this.setText('.hud-breath span', h.exhausted ? `숨 고르는 중 · 심박 ${Math.round(h.heartRate)}` : h.holding ? '숨 참는 중' : `숨 · 심박 ${Math.round(h.heartRate)}`);
+    this.setText('.hb-label', `${h.exhausted ? '호흡 회복 중' : h.holding ? '숨 참는 중' : '호흡'} · ♥ ${Math.round(h.heartRate)}`);
     this.q('.hud-cross').style.display = h.scopeT < 0.3 && !h.bulletCam ? '' : 'none';
     this.hudEl.classList.toggle('scoped', h.scopeT > 0.5);
     this.hudEl.classList.toggle('cam', h.bulletCam);
@@ -931,19 +1108,130 @@ export class UI {
     const dope = this.q('.hud-dope');
     dope.classList.toggle('show', h.dopeOpen);
     if (h.dopeOpen) {
-      const key = `${h.weaponName}:${h.ammoName}:${this.game.mission?.id}`;
+      const key = `${h.weaponName}:${h.ammoName}:${h.suppressor}:${this.game.mission?.id}`;
       if (key !== this.dopeKey) {
         this.dopeKey = key;
         const rows = this.game.dopeRows();
-        const m = this.game.mission!;
-        dope.innerHTML = `<div class="dope-head"><b>탄도표</b> ${esc(h.weaponName)} · ${esc(h.ammoName)}<br><small>영점 100m · 고도 ${m.atmosphere.altitude}m · ${m.atmosphere.temperature}°C · 1클릭 = 0.1mil</small></div>
-          <table><thead><tr><th>거리</th><th>고각</th><th>클릭</th><th>바람 1m/s당</th><th>비행</th><th>에너지</th></tr></thead><tbody>
+        const mm = this.game.mission!;
+        dope.innerHTML = `<div class="dope-head"><span class="h-tag">DOPE CARD</span><b>${esc(h.weaponName)}</b> · ${esc(h.ammoName)}${h.suppressor ? ' · 소음기' : ''}<br><small>영점 100m · 고도 ${mm.atmosphere.altitude}m · ${mm.atmosphere.temperature}°C · 1클릭 = 0.1mil</small></div>
+          <table class="mono"><thead><tr><th>거리</th><th>고각</th><th>클릭</th><th>바람/1m·s</th><th>비행</th><th>에너지</th></tr></thead><tbody>
           ${rows.map((r) => `<tr><td>${r.range}m</td><td>${r.elevationMil.toFixed(1)}</td><td>${Math.round(r.elevationMil * 10)}</td><td>${r.windPerMpsMil.toFixed(2)}</td><td>${r.time.toFixed(2)}s</td><td>${Math.round(r.energy)}J</td></tr>`).join('')}
           </tbody></table><div class="dope-foot">${this.input.isTouch ? '[표] 버튼으로 닫기' : `[${this.input.keyLabel('dope')}] 닫기`} · 스핀 드리프트: 1000m에서 약 0.2mil 오른쪽</div>`;
       }
     }
   }
 
+  /** 상단 나침반: 시선 방위 눈금 + 식별된 사람 방위 표시 */
+  private drawCompass(h: HudSnapshot): void {
+    const key = `${h.heading.toFixed(1)}|${h.bearings.map((b) => `${b.bearing.toFixed(1)}${b.role}${b.down}`).join(',')}|${h.scopeT > 0.5}`;
+    if (key === this.lastCompass) return;
+    this.lastCompass = key;
+    const c = this.q('.hud-compass') as HTMLCanvasElement;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const W = c.width;
+    const H = c.height;
+    ctx.clearRect(0, 0, W, H);
+    const span = 90; // 보이는 각도 범위
+    const pxPerDeg = W / span;
+    const x0 = W / 2;
+    ctx.font = '600 12px "Share Tech Mono", ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    const names: Record<number, string> = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+    for (let d = Math.floor(h.heading - span / 2); d <= h.heading + span / 2; d++) {
+      const dd = ((d % 360) + 360) % 360;
+      const x = x0 + (d - h.heading) * pxPerDeg;
+      const fade = 1 - Math.abs(x - x0) / (W / 2);
+      if (dd % 5 !== 0) continue;
+      ctx.strokeStyle = `rgba(230,236,228,${0.25 + fade * 0.55})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, H - 4);
+      ctx.lineTo(x, H - (dd % 15 === 0 ? 14 : 8));
+      ctx.stroke();
+      if (dd % 15 === 0) {
+        ctx.fillStyle = names[dd] ? `rgba(232,163,61,${0.4 + fade * 0.6})` : `rgba(230,236,228,${0.3 + fade * 0.6})`;
+        ctx.fillText(names[dd] ?? String(dd).padStart(3, '0'), x, H - 18);
+      }
+    }
+    // 표적 방위
+    for (const b of h.bearings) {
+      let rel = b.bearing - h.heading;
+      rel = ((rel + 540) % 360) - 180;
+      const clamped = Math.max(-span / 2 + 2, Math.min(span / 2 - 2, rel));
+      const x = x0 + clamped * pxPerDeg;
+      ctx.fillStyle = b.down ? 'rgba(160,160,160,0.6)' : b.role === 'hvt' ? '#ff5a4a' : b.role === 'civilian' ? '#6cb4ff' : '#e8a33d';
+      ctx.beginPath();
+      ctx.moveTo(x, H - 2);
+      ctx.lineTo(x - 4, H - 8);
+      ctx.lineTo(x + 4, H - 8);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // 중앙 지시선 + 현재 방위
+    ctx.fillStyle = '#e8a33d';
+    ctx.fillRect(x0 - 1, H - 16, 2, 14);
+    ctx.fillStyle = 'rgba(10,14,16,0.75)';
+    ctx.fillRect(x0 - 22, 0, 44, 14);
+    ctx.fillStyle = '#f2f4ee';
+    ctx.fillText(String(Math.round(h.heading) % 360).padStart(3, '0'), x0, 11);
+  }
+
+  /** 풍향 다이얼: 사수 위치 바람이 어느 쪽에서 얼마나 부는지 */
+  private drawWindDial(h: HudSnapshot): void {
+    const c = this.q('.hud-winddial') as HTMLCanvasElement;
+    if (!h.windNow) {
+      c.style.display = 'none';
+      return;
+    }
+    c.style.display = '';
+    const key = `${h.windNow.speed.toFixed(1)}|${Math.round(h.windNow.fromDeg)}`;
+    if (key === this.lastDial) return;
+    this.lastDial = key;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const W = c.width;
+    const r = W / 2 - 6;
+    ctx.clearRect(0, 0, W, W);
+    ctx.save();
+    ctx.translate(W / 2, W / 2);
+    ctx.strokeStyle = 'rgba(230,236,228,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.sin(a) * (r - 4), -Math.cos(a) * (r - 4));
+      ctx.lineTo(Math.sin(a) * r, -Math.cos(a) * r);
+      ctx.stroke();
+    }
+    // 바람이 불어오는 쪽 → 중심으로 향하는 화살표
+    const a = (h.windNow.fromDeg * Math.PI) / 180;
+    const len = Math.min(r - 2, 8 + h.windNow.speed * 4);
+    ctx.strokeStyle = '#7fd3c8';
+    ctx.fillStyle = '#7fd3c8';
+    ctx.lineWidth = 3;
+    const sx = Math.sin(a) * r, sy = -Math.cos(a) * r;
+    const ex = Math.sin(a) * (r - len), ey = -Math.cos(a) * (r - len);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    const ang = Math.atan2(ey - sy, ex - sx);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - Math.cos(ang - 0.5) * 7, ey - Math.sin(ang - 0.5) * 7);
+    ctx.lineTo(ex - Math.cos(ang + 0.5) * 7, ey - Math.sin(ang + 0.5) * 7);
+    ctx.fill();
+    ctx.fillStyle = '#f2f4ee';
+    ctx.font = '600 13px "Share Tech Mono", ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(h.windNow.speed.toFixed(1), 0, 0);
+    ctx.restore();
+  }
   private markerEls: HTMLDivElement[] = [];
 
   private updateMarkers(): void {
@@ -964,12 +1252,11 @@ export class UI {
       }
       el.style.display = '';
       el.style.transform = `translate(${m.x.toFixed(1)}px, ${m.y.toFixed(1)}px)`;
-      el.classList.toggle('alert', m.alert);
+      el.className = `marker r-${m.role}${m.alert ? ' alert' : ''}`;
       const span = el.firstElementChild as HTMLElement;
       if (span.textContent !== m.label) span.textContent = m.label;
     });
   }
-
   private setHint(text: string | null): void {
     const el = this.q('.hud-hint');
     el.textContent = text ?? '';
@@ -988,6 +1275,10 @@ export class UI {
     }
   }
 
+  private showTag(t: TagInfo): void {
+    const role = t.role === 'hvt' ? '핵심 표적' : t.role === 'civilian' ? '민간인 – 사격 금지' : '경비병';
+    this.toast(`식별: ${t.label} · ${role} · ${Math.round(t.distance)}m`);
+  }
   private showAnalysis(a: Analysis | null): void {
     const el = this.q('.hud-analysis');
     if (!a) {

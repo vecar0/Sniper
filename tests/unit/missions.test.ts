@@ -51,7 +51,7 @@ describe('미션 데이터', () => {
 
   it('도주하는 로봇은 반드시 탈출 지점이 있고, 도주 시간이 볼트 2회 이상 확보된다', () => {
     for (const m of MISSIONS) {
-      for (const t of m.targets.filter((x) => x.kind === 'bot' && x.required)) {
+      for (const t of m.targets.filter((x) => x.kind === 'person' && x.required)) {
         expect(t.escape, `${m.id}/${t.id}`).toBeDefined();
         const [ex, ed] = t.escape!;
         const run = Math.hypot(ex - t.x, ed - t.dist);
@@ -136,6 +136,48 @@ describe('미션 데이터', () => {
           expect(Number.isFinite(s.speed) && s.speed >= 0).toBe(true);
         }
       }
+    }
+  });
+});
+
+describe('암살 작전 규칙', () => {
+  it('민간인은 필수 표적이 아니고, 작전의 사람은 모두 역할과 외형이 있다', () => {
+    for (const m of MISSIONS) {
+      for (const t of m.targets.filter((x) => x.kind === 'person')) {
+        expect(t.role, `${m.id}/${t.id}`).toBeDefined();
+        expect(t.outfit, `${m.id}/${t.id}`).toBeDefined();
+        if (t.role === 'civilian') expect(t.required).toBe(false);
+      }
+      if (m.dossier) expect(m.targets.some((t) => t.role === 'hvt' && t.outfit === m.dossier!.outfit)).toBe(true);
+    }
+  });
+  it('민간인이 있는 작전은 민간인 외형이 표적 외형과 다르다(식별 가능)', () => {
+    for (const m of MISSIONS) {
+      const civ = new Set(m.targets.filter((t) => t.role === 'civilian').map((t) => t.outfit));
+      for (const t of m.targets.filter((x) => x.role === 'hvt')) expect(civ.has(t.outfit)).toBe(false);
+    }
+  });
+  it('총성 전파 규칙: 소음기·아음속탄일수록 들리는 범위가 좁다', () => {
+    const H = BALANCE.targets.hearRadius;
+    expect(H.std).toBeGreaterThan(H.stdSuppressed);
+    expect(H.stdSuppressed).toBeGreaterThan(H.sub);
+    expect(H.sub).toBeGreaterThan(H.subSuppressed);
+    expect(H.subSuppressed).toBe(0);
+  });
+  it('M6: 아음속탄+소음기면 모든 보초가 총성을 듣지 못한다(경계 없이 클리어 가능)', () => {
+    const m6 = MISSIONS.find((m) => m.id === 'm6')!;
+    for (const t of m6.targets) expect(Math.hypot(t.x, t.dist)).toBeGreaterThan(BALANCE.targets.hearRadius.subSuppressed);
+    // 보초끼리는 목격 반경 밖에 있다
+    const people = m6.targets.filter((t) => t.behavior !== 'patrol');
+    for (let i = 0; i < people.length; i++)
+      for (let j = i + 1; j < people.length; j++) expect(Math.hypot(people[i].x - people[j].x, people[i].dist - people[j].dist)).toBeGreaterThan(BALANCE.targets.witnessRadius);
+  });
+  it('일일 계약: 표적 1명 + 경호원(선택) + 민간인(선택)', () => {
+    for (let d = 0; d < 60; d++) {
+      const m = buildDailyMission(todayKey(new Date(2026, 3, 1 + d)));
+      expect(m.targets.filter((t) => t.role === 'hvt' && t.required)).toHaveLength(1);
+      expect(m.targets.filter((t) => t.required)).toHaveLength(1);
+      expect(m.dossier).toBeDefined();
     }
   });
 });

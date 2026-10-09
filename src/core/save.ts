@@ -81,6 +81,8 @@ export interface Settings {
   showHints: boolean;
   difficulty: DifficultyId;
   weapon: string;
+  /** 소음기 장착 */
+  suppressor: boolean;
   keys: Record<Action, string>;
 }
 
@@ -134,6 +136,7 @@ export function defaultSettings(): Settings {
     showHints: true,
     difficulty: 'recruit',
     weapon: 'r308',
+    suppressor: false,
     keys: { ...DEFAULT_KEYS },
   };
 }

@@ -7,6 +7,8 @@
 export type SoundName =
   | 'shot'
   | 'shotSub'
+  | 'shotSup'
+  | 'tag'
   | 'impactGround'
   | 'impactSteel'
   | 'botHit'
@@ -237,6 +239,20 @@ export class AudioEngine {
         this.tone('sine', 120, t, 0.002, 0.08, 0.3, bus, 60);
         break;
       }
+      case 'shotSup': {
+        // 소음기: 둔탁한 "퍽" + 기계음, 잔향 적음
+        const bus = ctx.createGain();
+        bus.gain.value = vol * 0.7;
+        bus.connect(out);
+        this.burst(t, 0.16 * w, 'lowpass', 1600 * pitch, 0.9, 0.7, bus, 220);
+        this.tone('sine', 70, t, 0.003, 0.16, 0.5, bus, 40);
+        this.burst(t + 0.03, 0.025, 'bandpass', 3200, 3, 0.18, bus);
+        break;
+      }
+      case 'tag':
+        this.tone('sine', 1760 * (opts.pitch ?? 1), t, 0.003, 0.08, 0.12 * vol, out);
+        this.tone('sine', 2349 * (opts.pitch ?? 1), t + 0.07, 0.003, 0.12, 0.1 * vol, out);
+        break;
       case 'impactGround':
         this.burst(t, 0.18, 'lowpass', 1400 * pitch, 0.8, 0.5 * vol, out, 200);
         break;

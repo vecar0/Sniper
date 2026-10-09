@@ -1,14 +1,18 @@
 /**
- * 표적: 강철판 / 훈련 로봇.
+ * 표적: 강철판(자격 심사) / 사람(경비병 · 핵심 표적 · 민간인).
  * - 판정은 단순 도형(구·상자)으로 분석적으로 계산한다(빠르고 결정론적).
- * - 로봇 AI: 대기/순찰 → (총성·착탄음·목격) → 반응 지연 → 도주 → 탈출
+ * - AI: 대기/순찰 → (총성·착탄음·목격·시신 발견) → 반응 지연 → 도주 → 탈출
+ * - 무력화되면 쓰러져 그 자리에 남는다(유혈 표현 없음). 순찰병이 시신을 보면 경계한다.
  */
 import * as THREE from 'three';
 import { BALANCE } from '../config/balance';
-import type { TargetDef } from '../config/missions';
+import type { Role, TargetDef } from '../config/missions';
+import { buildHuman, HumanMaterials, type HumanRig } from './models/human';
 import type { Terrain } from './terrain';
 
 export type HitZone = 'head' | 'chest' | 'abdomen' | 'arm' | 'leg' | 'plate';
+
+export const ROLE_LABEL: Record<Role, string> = { hvt: '핵심 표적', guard: '경비병', civilian: '민간인' };
 
 export const ZONE_LABEL: Record<HitZone, string> = {
   head: '머리',
@@ -91,33 +95,22 @@ function segBoxLocal(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, h: TH
   return tmin;
 }
 
-/** 로봇·강철판 공용 재질(모든 표적이 공유 → 생성 비용 절약) */
+/** 사람·강철판 공용 재질(모든 표적이 공유 → 생성 비용 절약) */
 export class TargetMaterials {
-  readonly body = new THREE.MeshLambertMaterial({ color: 0xff7a1a, flatShading: true });
-  readonly bodyLight = new THREE.MeshLambertMaterial({ color: 0xf2efe8, flatShading: true });
-  readonly dark = new THREE.MeshLambertMaterial({ color: 0x2a2f36, flatShading: true });
-  readonly visor = new THREE.MeshBasicMaterial({ color: 0x5fe0ff });
-  readonly visorAlert = new THREE.MeshBasicMaterial({ color: 0xff3030 });
   readonly plate = new THREE.MeshLambertMaterial({ color: 0xf4f4f0, flatShading: true });
   readonly plateHit = new THREE.MeshLambertMaterial({ color: 0x56d364, flatShading: true });
   readonly stand = new THREE.MeshLambertMaterial({ color: 0x4a4038, flatShading: true });
-  readonly shadow = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false });
   readonly decal = new THREE.MeshBasicMaterial({ color: 0x3a3a3a, polygonOffset: true, polygonOffsetFactor: -2 });
+  readonly human = new HumanMaterials();
   readonly geos = {
-    head: new THREE.IcosahedronGeometry(0.12, 0),
-    visor: new THREE.BoxGeometry(0.18, 0.05, 0.05),
-    chest: new THREE.BoxGeometry(0.42, 0.36, 0.26),
-    abdomen: new THREE.BoxGeometry(0.34, 0.3, 0.22),
-    arm: new THREE.BoxGeometry(0.12, 0.56, 0.13),
-    leg: new THREE.BoxGeometry(0.16, 0.84, 0.17),
-    shadow: new THREE.CircleGeometry(0.45, 10),
     decal: new THREE.CircleGeometry(0.018, 6),
     post: new THREE.BoxGeometry(0.06, 1, 0.06),
   };
 
   dispose(): void {
-    for (const m of [this.body, this.bodyLight, this.dark, this.visor, this.visorAlert, this.plate, this.plateHit, this.stand, this.shadow, this.decal]) m.dispose();
+    for (const m of [this.plate, this.plateHit, this.stand, this.decal]) m.dispose();
     for (const g of Object.values(this.geos)) g.dispose();
+    this.human.dispose();
   }
 }
 
@@ -133,6 +126,15 @@ export class Target {
   /** 강철판 명중 여부 */
   plateHit = false;
   wounded = false;
+  /** 스코프 관측·레이저로 식별되었는지 */
+  tagged = false;
+  /** 식별을 위한 관측 누적 시간(초) */
+  observe = 0;
+  /** 쓰러짐 진행(0~1) */
+  private fallT = 0;
+  private fallSign = 1;
+  private rig: HumanRig | null = null;
+  private readonly ownGeos: THREE.BufferGeometry[] = [];
   private alertTimer = -1;
   private pathIndex = 1;
   private pauseTimer = 0;
@@ -161,20 +163,32 @@ export class Target {
     this.escapeDistMul = escapeDistMul;
     this.reaction = reaction;
     if (def.kind === 'plate') this.buildPlate();
-    else this.buildBot();
+    else this.buildPerson();
     this.reset();
   }
 
-  get isBot(): boolean {
-    return this.def.kind === 'bot';
+  get isPerson(): boolean {
+    return this.def.kind === 'person';
+  }
+
+  get role(): Role | null {
+    return this.isPerson ? (this.def.role ?? 'guard') : null;
+  }
+
+  get isCivilian(): boolean {
+    return this.role === 'civilian';
+  }
+
+  get isDown(): boolean {
+    return this.state === 'down';
   }
 
   get done(): boolean {
-    return this.isBot ? this.state === 'down' : this.plateHit;
+    return this.isPerson ? this.state === 'down' : this.plateHit;
   }
 
   get active(): boolean {
-    return this.isBot ? this.state !== 'down' && this.state !== 'escaped' : true;
+    return this.isPerson ? this.state !== 'down' && this.state !== 'escaped' : true;
   }
 
   reset(): void {
@@ -189,6 +203,14 @@ export class Target {
     this.hitCount = 0;
     this.plateHit = false;
     this.wounded = false;
+    this.tagged = !this.isPerson;
+    this.observe = 0;
+    this.fallT = 0;
+    if (this.rig) {
+      this.rig.body.rotation.set(0, 0, 0);
+      this.rig.body.position.set(0, 0, 0);
+      this.rig.alertLight.material = this.mats.human.ledOff;
+    }
     this.pathIndex = 1;
     this.pauseTimer = 0;
     this.idleTimer = 1 + Math.random() * 3;
@@ -198,10 +220,11 @@ export class Target {
     this.group.visible = true;
     for (const dcl of this.decals) dcl.visible = false;
     if (this.plateMesh) this.plateMesh.material = this.mats.plate;
-    if (this.parts.visor) (this.parts.visor as THREE.Mesh).material = this.mats.visor;
-    if (d.escape) {
-      const ex = d.escape[0];
-      const ez = -d.escape[1];
+    // 민간인은 탈출 지점이 없으면 사수 반대쪽 옆으로 달아나게 자동 생성
+    const esc = d.escape ?? (this.isCivilian ? ([d.x + (d.x < 0 ? -35 : 35), d.dist + 12] as [number, number]) : undefined);
+    if (esc) {
+      const ex = esc[0];
+      const ez = -esc[1];
       // 도주 거리 배율: 시작점→탈출점 벡터를 늘이거나 줄인다
       const sx = d.x;
       const sz = -d.dist;
@@ -216,6 +239,7 @@ export class Target {
     const h = d.h ?? 0.6;
     const geo = d.shape === 'rect' ? new THREE.BoxGeometry(w, h, 0.03) : new THREE.CylinderGeometry(w / 2, w / 2, 0.03, 18);
     if (d.shape !== 'rect') geo.rotateX(Math.PI / 2);
+    this.ownGeos.push(geo);
     // 경첩이 위에 있도록 피벗을 위쪽 가장자리로
     geo.translate(0, -h / 2, 0);
     const hinge = new THREE.Group();
@@ -231,7 +255,9 @@ export class Target {
       post.position.set((sx * w) / 2 + sx * 0.05, (0.75 + h) / 2, -0.03);
       this.group.add(post);
     }
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(w + 0.2, 0.05, 0.05), this.mats.stand);
+    const barGeo = new THREE.BoxGeometry(w + 0.2, 0.05, 0.05);
+    this.ownGeos.push(barGeo);
+    const bar = new THREE.Mesh(barGeo, this.mats.stand);
     bar.position.set(0, 0.72 + h, -0.03);
     this.group.add(bar);
     for (let i = 0; i < 12; i++) {
@@ -242,38 +268,16 @@ export class Target {
     }
   }
 
-  private buildBot(): void {
-    const g = this.mats.geos;
-    const add = (name: string, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z = 0, parent: THREE.Object3D = this.group) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      parent.add(m);
-      this.parts[name] = m;
-      return m;
-    };
-    add('head', g.head, this.mats.bodyLight, 0, 1.66);
-    add('visor', g.visor, this.mats.visor, 0, 1.67, 0.1);
-    add('chest', g.chest, this.mats.body, 0, 1.34);
-    add('abdomen', g.abdomen, this.mats.bodyLight, 0, 1.02);
-    // 팔·다리: 어깨/엉덩이 피벗
-    for (const [name, x, y, geo, len, mat] of [
-      ['armL', -0.3, 1.5, g.arm, 0.56, this.mats.body],
-      ['armR', 0.3, 1.5, g.arm, 0.56, this.mats.body],
-      ['legL', -0.1, 0.86, g.leg, 0.84, this.mats.dark],
-      ['legR', 0.1, 0.86, g.leg, 0.84, this.mats.dark],
-    ] as const) {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, y, 0);
-      this.group.add(pivot);
-      const m = new THREE.Mesh(geo, mat);
-      m.position.y = -len / 2;
-      pivot.add(m);
-      this.parts[name] = pivot;
-    }
-    const shadow = new THREE.Mesh(g.shadow, this.mats.shadow);
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = 0.03;
-    this.group.add(shadow);
+  private buildPerson(): void {
+    const outfit = this.def.outfit ?? (this.role === 'civilian' ? 'civilian' : this.role === 'hvt' ? 'hvtSuit' : 'guard');
+    const rig = buildHuman(outfit, this.mats.human);
+    this.rig = rig;
+    this.group.add(rig.root);
+    this.parts.head = rig.head;
+    this.parts.armL = rig.armL;
+    this.parts.armR = rig.armR;
+    this.parts.legL = rig.legL;
+    this.parts.legR = rig.legR;
   }
 
   private syncGroup(): void {
@@ -282,9 +286,14 @@ export class Target {
     if (this.parts.hinge) this.parts.hinge.rotation.x = this.plateSwing;
   }
 
+  /** 경계 반응 대기 중인지 */
+  get alertPending(): boolean {
+    return this.alertTimer >= 0;
+  }
+
   /** 경계 시작(이미 경계 중이면 더 빠른 쪽 유지) */
   alert(delay: number): void {
-    if (!this.isBot || this.state === 'down' || this.state === 'escaped' || !this.escapePoint) return;
+    if (!this.isPerson || this.state === 'down' || this.state === 'escaped' || !this.escapePoint) return;
     if (this.alerted) return;
     if (this.alertTimer < 0 || delay < this.alertTimer) this.alertTimer = delay;
   }
@@ -293,21 +302,36 @@ export class Target {
   update(dt: number): { becameAlert: boolean; escaped: boolean } {
     let becameAlert = false;
     let escaped = false;
-    if (!this.isBot) {
+    if (!this.isPerson) {
       // 강철판 진자 운동
       this.plateSwingV += (-this.plateSwing * 40 - this.plateSwingV * 2.2) * dt;
       this.plateSwing += this.plateSwingV * dt;
       this.syncGroup();
       return { becameAlert, escaped };
     }
-    if (this.state === 'down' || this.state === 'escaped') return { becameAlert, escaped };
+    if (this.state === 'down') {
+      // 쓰러짐: 무릎이 꺾이며 탄이 날아간 방향으로 넘어진다
+      if (this.fallT < 1 && this.rig) {
+        this.fallT = Math.min(1, this.fallT + dt / 0.7);
+        const f = this.fallT;
+        const e = f < 0.35 ? (f / 0.35) * 0.25 : 0.25 + (1 - Math.pow(1 - (f - 0.35) / 0.65, 2)) * 0.75;
+        this.rig.body.rotation.x = this.fallSign * e * (Math.PI / 2 - 0.08);
+        this.rig.body.position.y = -Math.sin(Math.min(1, f * 2) * Math.PI * 0.5) * 0.12;
+        this.rig.legL.rotation.x = -e * 0.5;
+        this.rig.legR.rotation.x = -e * 0.3;
+        this.rig.armL.rotation.x = this.fallSign * e * 1.2;
+        this.rig.armR.rotation.x = this.fallSign * e * 0.9;
+      }
+      return { becameAlert, escaped };
+    }
+    if (this.state === 'escaped') return { becameAlert, escaped };
     if (this.alertTimer >= 0) {
       this.alertTimer -= dt;
       if (this.alertTimer < 0 && !this.alerted) {
         this.alerted = true;
         becameAlert = true;
         this.state = 'fleeing';
-        if (this.parts.visor) (this.parts.visor as THREE.Mesh).material = this.mats.visorAlert;
+        if (this.rig) this.rig.alertLight.material = this.mats.human.ledOn;
       }
     }
     const T = BALANCE.targets;
@@ -381,7 +405,7 @@ export class Target {
   /** 선분(월드 좌표)과 판정 */
   intersect(a: THREE.Vector3, b: THREE.Vector3): HitResult | null {
     if (!this.group.visible) return null;
-    if (this.isBot && this.state === 'down') return null;
+    if (this.isPerson && this.state === 'down') return null;
     // 대략적 경계 구 검사로 빠르게 거른다
     const center = tmpA.copy(this.position);
     center.y += 1;
@@ -397,7 +421,7 @@ export class Target {
     };
     const la = toLocal(a, new THREE.Vector3());
     const lb = toLocal(b, new THREE.Vector3());
-    if (!this.isBot) {
+    if (!this.isPerson) {
       const w = this.def.w ?? 0.6;
       const h = this.def.h ?? 0.6;
       // 판 앞면(z=0) 통과 지점 – 흔들림 각도 반영
@@ -419,9 +443,27 @@ export class Target {
       return { target: this, zone: 'plate', t, point: new THREE.Vector3().lerpVectors(a, b, t), local: new THREE.Vector3(u, v, 0.02) };
     }
     let best: HitResult | null = null;
+    let vital: HitResult | null = null;
     for (const z of BOT_ZONES) {
       const t = z.type === 'sphere' ? segSphere(la, lb, z.c, z.r!) : segBoxLocal(la, lb, z.c, z.half!);
-      if (t !== null && (!best || t < best.t)) best = { target: this, zone: z.zone, t, point: new THREE.Vector3().lerpVectors(a, b, t) };
+      if (t === null) continue;
+      const h = { target: this, zone: z.zone, t, point: new THREE.Vector3().lerpVectors(a, b, t) };
+      if (!best || t < best.t) best = h;
+      if ((z.zone === 'head' || z.zone === 'chest' || z.zone === 'abdomen') && (!vital || t < vital.t)) vital = h;
+    }
+    // 소총탄은 팔을 관통한다: 옆으로 선 사람의 팔 뒤(0.6m 이내)에 몸통이 있으면 몸통 명중으로 본다.
+    // 시뮬레이션 한 스텝(약 0.5m)이 팔에서 끝날 수 있으므로 진행 방향으로 늘려서 확인한다.
+    if (best && best.zone === 'arm') {
+      if (!vital) {
+        const len = Math.max(1e-6, la.distanceTo(lb));
+        const ext = new THREE.Vector3().subVectors(lb, la).multiplyScalar(1 + 0.6 / len).add(la);
+        for (const z of BOT_ZONES) {
+          if (z.zone !== 'head' && z.zone !== 'chest' && z.zone !== 'abdomen') continue;
+          const t = z.type === 'sphere' ? segSphere(la, ext, z.c, z.r!) : segBoxLocal(la, ext, z.c, z.half!);
+          if (t !== null && (!vital || t < vital.t)) vital = { target: this, zone: z.zone, t, point: best.point };
+        }
+      }
+      if (vital) return { ...vital, t: best.t, point: best.point };
     }
     return best;
   }
@@ -429,7 +471,7 @@ export class Target {
   /** 맞았을 때 처리. @returns 무력화(파괴) 여부 */
   applyHit(hit: HitResult, impulse: THREE.Vector3): boolean {
     this.hitCount++;
-    if (!this.isBot) {
+    if (!this.isPerson) {
       this.plateHit = true;
       if (this.plateMesh) this.plateMesh.material = this.mats.plateHit;
       this.plateSwingV += Math.min(6, impulse.length() * 0.004);
@@ -444,26 +486,34 @@ export class Target {
       // 팔·다리: 무력화 실패, 부상 + 즉시 경계
       if (hit.zone === 'leg') this.wounded = true;
       if (this.wounded && this.hitCount >= 2) {
-        this.down();
+        this.down(impulse);
         return true;
       }
       this.alert(0.15);
       return false;
     }
-    this.down();
+    this.down(impulse);
     return true;
   }
 
-  private down(): void {
+  /** @param dir 탄의 진행 방향(쓰러지는 방향) */
+  private down(dir?: THREE.Vector3): void {
     this.state = 'down';
     this.velocity.set(0, 0, 0);
-    this.group.visible = false;
+    this.fallT = 0;
+    if (dir) {
+      // 몸이 탄 진행 방향으로 넘어지도록: 진행 방향을 바라보면 앞으로(+), 등지면 뒤로(-)
+      const fx = Math.sin(this.yaw);
+      const fz = Math.cos(this.yaw);
+      this.fallSign = fx * dir.x + fz * dir.z >= 0 ? 1 : -1;
+    }
+    if (this.rig) this.rig.alertLight.material = this.mats.human.ledOff;
   }
 
   dispose(): void {
-    this.group.traverse((o) => {
-      if (o instanceof THREE.Mesh && !Object.values(this.mats.geos).includes(o.geometry)) o.geometry.dispose();
-    });
+    // 강철판만 고유 지오메트리를 가진다. 사람 모델의 지오메트리·재질은 공유 캐시(HumanMaterials)가 관리한다.
+    for (const g of this.ownGeos) g.dispose();
+    this.ownGeos.length = 0;
     this.group.removeFromParent();
   }
 }

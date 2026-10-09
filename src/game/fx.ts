@@ -1,5 +1,5 @@
 /**
- * 시각 효과: 착탄 흙먼지 · 불꽃 · 로봇 파편 · 탄 궤적.
+ * 시각 효과: 착탄 흙먼지 · 불꽃 · 탄 궤적.
  * 전부 고정 크기 풀(InstancedMesh)로 재사용 → 오래 플레이해도 오브젝트·메모리가 늘지 않는다.
  */
 import * as THREE from 'three';
@@ -267,20 +267,20 @@ export class Effects {
     }
   }
 
-  /** 로봇 파괴: 주황·흰 파편이 튀고 바닥에 구른다 */
-  botDestroyed(center: THREE.Vector3, dir: THREE.Vector3, distance: number, headshot: boolean): void {
-    const scale = 0.6 + distance * 0.0006;
+  /** 사람 무력화: 피격 지점의 작은 먼지 + 쓰러진 자리의 흙먼지(유혈 표현 없음) */
+  personDown(hit: THREE.Vector3, feet: THREE.Vector3, dir: THREE.Vector3, distance: number): void {
+    const scale = 0.5 + distance * 0.0008;
     const v = new THREE.Vector3();
-    const p = new THREE.Vector3();
-    const colors = [0xff7a1a, 0xf2efe8, 0x2a2f36, 0xff7a1a];
-    for (let i = 0; i < (headshot ? 22 : 16); i++) {
-      p.set(center.x + (Math.random() - 0.5) * 0.4, center.y + (Math.random() - 0.3) * 0.9, center.z + (Math.random() - 0.5) * 0.4);
-      v.set((Math.random() - 0.5) * 4, 1.5 + Math.random() * 4, (Math.random() - 0.5) * 4).addScaledVector(dir, 3);
-      this.frags.spawn(p, v, 2.5 + Math.random() * 1.5, (0.07 + Math.random() * 0.1) * scale, 0, 9.8, colors[i % colors.length], true);
+    for (let i = 0; i < 6; i++) {
+      v.set((Math.random() - 0.5) * 0.8, Math.random() * 0.6, (Math.random() - 0.5) * 0.8).addScaledVector(dir, 1.5);
+      this.dust.spawn(hit, v, 0.5 + Math.random() * 0.3, 0.06 * scale, 0.35 * scale, 0, 0x8c8676);
     }
-    for (let i = 0; i < 18; i++) {
-      v.set((Math.random() - 0.5) * 6, Math.random() * 6, (Math.random() - 0.5) * 6);
-      this.sparks.spawn(center, v, 0.3 + Math.random() * 0.4, 1.4 * scale, -1, 4, i % 2 ? 0x8ff0ff : 0xffd36a);
+    const ground = feet.clone().addScaledVector(dir, 0.9);
+    ground.y += 0.1;
+    for (let i = 0; i < 8; i++) {
+      v.set((Math.random() - 0.5) * 2, 0.5 + Math.random() * 1.2, (Math.random() - 0.5) * 2);
+      const c = this.dustColor.clone().offsetHSL(0, 0, (Math.random() - 0.5) * 0.08);
+      this.dust.spawn(ground, v, 1.0 + Math.random() * 0.6, 0.12 * scale, 0.5 * scale, 1, c);
     }
   }
 

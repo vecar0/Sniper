@@ -35,7 +35,7 @@ test.describe('기본 흐름', () => {
     await waitReady(page);
     await aimAndFire(page, 1);
     await page.waitForSelector('.screen-result', { timeout: 120_000 });
-    await expect(page.locator('.result h2')).toHaveText('임무 완료');
+    await expect(page.locator('.result h2')).toHaveText('임무 완수');
     await expect(page.locator('.result-stars .star.on')).toHaveCount(3);
     // 새로고침 후에도 진행 유지
     await page.reload();
@@ -224,7 +224,7 @@ test.describe('장시간 · 콘텐츠', () => {
     expect(w.errors).toEqual([]);
   });
 
-  test('로봇 미션: 총성 후 다른 로봇이 경계 → 탈출하면 실패 사유 표시', async ({ page }) => {
+  test('경비병 작전: 총성 후 다른 경비가 경계 → 탈출하면 실패 사유 표시', async ({ page }) => {
     await boot(page, { save: unlockedSave() });
     await page.click('[data-go="missions"]');
     await page.click('[data-mission="3"]');
@@ -234,6 +234,29 @@ test.describe('장시간 · 콘텐츠', () => {
     await page.waitForSelector('.screen-result', { timeout: 200_000 });
     await expect(page.locator('.fail-reason')).toContainText('탈출');
     await expect(page.locator('.tip')).toBeVisible();
+  });
+
+  test('관측 태깅 → 민간인 사살 시 즉시 작전 실패', async ({ page }) => {
+    const w = watch(page);
+    await boot(page, { save: unlockedSave() });
+    await page.click('[data-go="missions"]');
+    await page.click('[data-mission="4"]');
+    await page.click('[data-start]');
+    await page.evaluate(() => {
+      const g = (window as any).__longshot.game;
+      g.scoped = true;
+      g.testAimAt(2); // 농부(민간인)
+    });
+    await page.waitForFunction(() => (window as any).__longshot.game.targets[2].tagged, null, { timeout: 90_000 });
+    await expect(page.locator('.toast')).toContainText('민간인');
+    await page.evaluate(() => {
+      const g = (window as any).__longshot.game;
+      g.testAimAt(2);
+      (window as any).__longshot.input.tapVirtual('fire');
+    });
+    await page.waitForSelector('.screen-result', { timeout: 120_000 });
+    await expect(page.locator('.fail-reason')).toContainText('민간인');
+    expect(w.errors).toEqual([]);
   });
 
   test('메뉴 버튼 연타에도 화면이 꼬이지 않는다', async ({ page }) => {
@@ -260,6 +283,19 @@ test.describe('저장 · 설정', () => {
     await expect(page.locator('.toast.show')).toContainText('손상');
     expect(await state(page)).toBe('menu');
     expect(w.errors).toEqual([]);
+  });
+
+  test('브리핑: 소음기 장착이 저장되고 탄도가 바뀐다', async ({ page }) => {
+    await boot(page);
+    await page.click('[data-go="next"]');
+    const before = await page.evaluate(() => (window as any).__longshot.game.rifle.params().muzzleVelocity);
+    await page.click('[data-suppressor]');
+    await expect(page.locator('[data-suppressor]')).toHaveAttribute('aria-pressed', 'true');
+    const after = await page.evaluate(() => (window as any).__longshot.game.rifle.params().muzzleVelocity);
+    expect(after).toBeLessThan(before);
+    await page.reload();
+    await page.waitForSelector('.screen-menu');
+    expect(await page.evaluate(() => (window as any).__longshot.save.data.settings.suppressor)).toBe(true);
   });
 
   test('설정 변경(볼륨·키)이 새로고침 후 유지', async ({ page }) => {
