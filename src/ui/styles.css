@@ -24,6 +24,8 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+/* iPhone Safari가 가로 화면에서 글자를 멋대로 키우지 않게 */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
 #app { position: fixed; inset: 0; overflow: hidden; }
 #game { position: absolute; inset: 0; }
@@ -402,31 +404,71 @@ select { font: inherit; font-size: 14px; background: #141c1e; color: var(--text)
 /* ───────── 터치 조작 ───────── */
 .touch { position: absolute; inset: 0; z-index: 15; display: none; }
 .touch-aim { position: absolute; inset: 0; touch-action: none; }
-.tbtn { position: absolute; font: 600 15px var(--font-body); color: #fff; background: rgba(8, 12, 14, 0.45); border: 1.5px solid rgba(232, 236, 228, 0.35); border-radius: 50%; width: 52px; height: 52px; touch-action: none; display: flex; align-items: center; justify-content: center; padding: 0; }
+.tbtn { position: absolute; font: 600 14px var(--font-body); color: #fff; background: rgba(8, 12, 14, 0.38); border: 1px solid rgba(232, 236, 228, 0.28); border-radius: 50%; width: 44px; height: 44px; touch-action: none; display: flex; align-items: center; justify-content: center; padding: 0; backdrop-filter: blur(2px); }
 .tbtn.pressed { background: rgba(232, 163, 61, 0.55); border-color: var(--accent); }
-.t-fire { right: calc(24px + var(--safe-r)); bottom: calc(24px + var(--safe-b)); width: 92px; height: 92px; font-size: 18px; background: rgba(150, 40, 24, 0.45); border-color: rgba(255, 130, 100, 0.7); }
-.t-scope { right: calc(132px + var(--safe-r)); bottom: calc(34px + var(--safe-b)); width: 70px; height: 70px; font-size: 14px; }
-.t-zoomin { right: calc(40px + var(--safe-r)); bottom: calc(134px + var(--safe-b)); }
-.t-zoomout { right: calc(40px + var(--safe-r)); bottom: calc(194px + var(--safe-b)); }
-.t-breath { left: calc(24px + var(--safe-l)); bottom: calc(24px + var(--safe-b)); width: 84px; height: 84px; font-size: 17px; }
-.t-up { left: calc(178px + var(--safe-l)); bottom: calc(96px + var(--safe-b)); border-radius: 8px; }
-.t-down { left: calc(178px + var(--safe-l)); bottom: calc(20px + var(--safe-b)); border-radius: 8px; }
-.t-left { left: calc(120px + var(--safe-l)); bottom: calc(58px + var(--safe-b)); border-radius: 8px; }
-.t-right { left: calc(236px + var(--safe-l)); bottom: calc(58px + var(--safe-b)); border-radius: 8px; }
-.t-reset { left: calc(184px + var(--safe-l)); bottom: calc(64px + var(--safe-b)); width: 40px; height: 40px; font-size: 13px; }
-.t-dope, .t-range, .t-ammo { top: calc(66px + var(--safe-t)); width: 48px; height: 48px; font-size: 13px; border-radius: 8px; }
-.t-dope { right: calc(14px + var(--safe-r)); }
-.t-range { right: calc(70px + var(--safe-r)); }
-.t-ammo { right: calc(126px + var(--safe-r)); }
-.t-pause { top: calc(12px + var(--safe-t)); right: calc(14px + var(--safe-r)); width: 48px; height: 48px; border-radius: 8px; font-size: 15px; }
+/* 오른손: 발사 · 스코프 · 배율 */
+.t-fire { right: calc(18px + var(--safe-r)); bottom: calc(16px + var(--safe-b)); width: 82px; height: 82px; font-size: 16px; background: rgba(150, 40, 24, 0.42); border: 1.5px solid rgba(255, 130, 100, 0.65); }
+.t-scope { right: calc(110px + var(--safe-r)); bottom: calc(20px + var(--safe-b)); width: 58px; height: 58px; font-size: 13px; }
+.t-zoomin { right: calc(37px + var(--safe-r)); bottom: calc(110px + var(--safe-b)); font-size: 20px; }
+.t-zoomout { right: calc(37px + var(--safe-r)); bottom: calc(160px + var(--safe-b)); font-size: 20px; }
+/* 왼손: 숨 · 터렛 십자 */
+.t-breath { left: calc(18px + var(--safe-l)); bottom: calc(16px + var(--safe-b)); width: 76px; height: 76px; font-size: 16px; }
+.t-up, .t-down, .t-left, .t-right { width: 40px; height: 40px; border-radius: 6px; font-size: 13px; }
+.t-up { left: calc(146px + var(--safe-l)); bottom: calc(94px + var(--safe-b)); }
+.t-down { left: calc(146px + var(--safe-l)); bottom: calc(14px + var(--safe-b)); }
+.t-left { left: calc(104px + var(--safe-l)); bottom: calc(54px + var(--safe-b)); }
+.t-right { left: calc(188px + var(--safe-l)); bottom: calc(54px + var(--safe-b)); }
+.t-reset { left: calc(146px + var(--safe-l)); bottom: calc(54px + var(--safe-b)); width: 40px; height: 40px; font-size: 12px; }
+/* 오른쪽 위 도구 줄: 탄 · 거리 · 표 · 일시정지 */
+.t-dope, .t-range, .t-ammo, .t-pause { top: calc(8px + var(--safe-t)); width: 40px; height: 36px; border-radius: 6px; font-size: 12px; }
+.t-pause { right: calc(12px + var(--safe-r)); }
+.t-dope { right: calc(58px + var(--safe-r)); }
+.t-range { right: calc(104px + var(--safe-r)); }
+.t-ammo { right: calc(150px + var(--safe-r)); }
+
+/* ───────── 휴대폰 HUD: 겹치지 않는 간결한 배치 ───────── */
+body.is-touch .hud { font-size: 12px; }
 body.is-touch .hud-tr { display: none; }
-body.is-touch .hud-br { bottom: auto; top: calc(124px + var(--safe-t)); }
-body.is-touch .hud-bl { bottom: auto; top: calc(110px + var(--safe-t)); }
-body.is-touch .hud-breath { bottom: calc(120px + var(--safe-b)); }
-body.is-touch .hud-analysis { bottom: calc(150px + var(--safe-b)); }
-body.is-touch .hud-dope { top: calc(124px + var(--safe-t)); right: calc(80px + var(--safe-r)); max-height: calc(100% - 260px); }
-body.is-touch .hud-compass { max-width: 40vw; }
-body.is-touch .hud-winddial { width: 56px; height: 56px; }
+body.is-touch .hud-vignette { background: radial-gradient(ellipse at center, transparent 65%, rgba(0, 0, 0, 0.3) 100%); }
+/* 왼쪽 위: 작전 요약 한 덩어리 */
+body.is-touch .hud-tl { top: calc(8px + var(--safe-t)); left: calc(12px + var(--safe-l)); min-width: 0; padding: 5px 9px; gap: 0; }
+body.is-touch .hud-code { display: none; }
+body.is-touch .hud-mission { font-size: 15px; }
+body.is-touch .hud-targets, body.is-touch .hud-time { font-size: 11px; }
+/* 가운데 위: 나침반 */
+body.is-touch .hud-compass { top: calc(4px + var(--safe-t)); width: 300px; height: 28px; max-width: 34vw; }
+/* 힌트·경계는 나침반 아래, 폭을 좁게 */
+body.is-touch .hud-hint { top: calc(38px + var(--safe-t)); max-width: 52vw; padding: 6px 10px; font-size: 12px; line-height: 1.4; }
+body.is-touch .hud-alert { top: calc(86px + var(--safe-t)); padding: 5px 12px; font-size: 12px; }
+/* 오른쪽 위(도구 줄 아래): 보정값·탄약만 */
+body.is-touch .hud-br { top: calc(52px + var(--safe-t)); bottom: auto; right: calc(12px + var(--safe-r)); min-width: 0; padding: 5px 9px; gap: 1px; }
+body.is-touch .hud-weapon, body.is-touch .ha-name, body.is-touch .ha-status { display: none; }
+body.is-touch .hud-turret { font-size: 12px; gap: 8px; }
+body.is-touch .ha-count { font-size: 14px; }
+body.is-touch .ha-pips i { width: 3px; height: 10px; }
+/* 왼쪽(작전 요약 아래): 풍향 다이얼만 */
+body.is-touch .hud-bl { top: calc(70px + var(--safe-t)); bottom: auto; left: calc(12px + var(--safe-l)); flex-direction: column; align-items: flex-start; gap: 2px; }
+body.is-touch .hud-winddial { width: 46px; height: 46px; }
+body.is-touch .hud-wind { font-size: 10px; padding: 3px 6px; max-width: 150px; }
+/* 아래 가운데: 호흡 막대 */
+body.is-touch .hud-breath { bottom: calc(10px + var(--safe-b)); width: 150px; }
+body.is-touch .hb-label { font-size: 10px; }
+/* 빗나감 분석: 아래 가운데 작은 카드(요약 + 팁만) */
+body.is-touch .hud-analysis { bottom: calc(36px + var(--safe-b)); width: min(380px, 46vw); padding: 7px 10px; font-size: 11px; }
+body.is-touch .hud-analysis b { font-size: 11px; }
+body.is-touch .hud-analysis p { margin: 1px 0; }
+body.is-touch .ha-tip { margin-top: 3px; font-size: 11px; }
+body.is-touch .hud-hit { top: 64%; }
+body.is-touch .hud-hit b { font-size: 22px; }
+body.is-touch .hud-hit.k-headshot b { font-size: 26px; }
+body.is-touch .hud-hit span { font-size: 11px; }
+body.is-touch .hud-range { font-size: 15px; top: calc(50% - 48px); }
+body.is-touch .hud-lock { display: none; }
+body.is-touch .toast { bottom: auto; top: calc(38px + var(--safe-t)); font-size: 12px; padding: 6px 12px; max-width: 60vw; }
+/* 탄도표: 가운데 큰 카드, 내부 스크롤 */
+body.is-touch .hud-dope { top: calc(50px + var(--safe-t)); right: 50%; transform: translateX(50%); max-height: calc(100% - 70px); font-size: 11px; padding: 8px 10px; }
+body.is-touch .hud-dope table { font-size: 11px; }
+body.is-touch .marker span { font-size: 10px; }
 
 /* ───────── 반응형 ───────── */
 @media (max-width: 1100px) {

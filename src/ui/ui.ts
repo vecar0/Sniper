@@ -81,6 +81,7 @@ export class UI {
     this.hudEl.innerHTML = this.hudTemplate();
     this.scope = new ScopeOverlay(root);
     this.scope.setColor(save.data.settings.reticleColor);
+    this.scope.showReadout = !input.isTouch;
     this.flashEl = this.div('flash');
     this.touch = input.isTouch ? new TouchControls(root, input) : null;
     if (this.touch) this.touch.onPause = () => this.pauseGame();
@@ -182,6 +183,8 @@ export class UI {
   private show(name: ScreenName, html = ''): void {
     this.disposePreviews();
     this.screen = name;
+    // 휴대폰에는 키보드가 없으므로 "(Esc)" 같은 키 안내를 뺀다
+    if (this.input.isTouch) html = html.replace(/ \((Esc|Enter|R)\)/g, '');
     this.screens.innerHTML = html;
     this.screens.className = `screens screen-${name}`;
     this.screens.style.display = name === 'none' ? 'none' : 'flex';
@@ -1285,7 +1288,9 @@ export class UI {
       el.classList.remove('show');
       return;
     }
-    (el.querySelector('.ha-lines') as HTMLElement).innerHTML = `<b>빗나감</b>${a.lines.map((l) => `<p>${esc(l)}</p>`).join('')}`;
+    // 휴대폰은 화면이 좁으므로 탄착 요약 한 줄 + 팁만(세부 수치는 결과 화면에서)
+    const lines = this.input.isTouch ? a.lines.slice(0, 1) : a.lines;
+    (el.querySelector('.ha-lines') as HTMLElement).innerHTML = `<b>빗나감</b>${lines.map((l) => `<p>${esc(l)}</p>`).join('')}`;
     (el.querySelector('.ha-tip') as HTMLElement).textContent = `→ ${a.tip}`;
     el.classList.add('show');
     this.analysisTimer = 9;

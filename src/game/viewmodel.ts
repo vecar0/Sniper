@@ -20,6 +20,8 @@ export class ViewModel {
   private readonly flash: THREE.PointLight;
   private flashT = 0;
   private envTex: THREE.Texture | null = null;
+  /** 휴대폰: 총을 작게, 화면 오른쪽 아래로(터치 버튼과 겹치지 않게) */
+  compact = false;
 
   constructor(renderer: THREE.WebGLRenderer) {
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x445544, 0.9);
@@ -44,7 +46,7 @@ export class ViewModel {
       this.rig.dispose();
     }
     this.rig = buildRifle(weapon, suppressor);
-    this.rig.group.scale.setScalar(0.72);
+    this.rig.group.scale.setScalar(this.compact ? 0.5 : 0.72);
     this.root.add(this.rig.group);
   }
 
@@ -83,7 +85,7 @@ export class ViewModel {
     this.flash.position.copy(rig.muzzle).applyMatrix4(rig.group.matrixWorld);
     const e = aim * aim * (3 - 2 * aim);
     // 허리 자세 → 스코프 자세
-    const hipX = 0.16, hipY = -0.15, hipZ = -0.36;
+    const hipX = this.compact ? 0.17 : 0.16, hipY = this.compact ? -0.19 : -0.15, hipZ = -0.36;
     const adsX = 0, adsY = -0.062, adsZ = -0.14;
     const breath = Math.sin(this.t * 1.4) * 0.0025 * (1 - e);
     this.root.position.set(

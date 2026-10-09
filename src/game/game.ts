@@ -231,6 +231,7 @@ export class Game {
     this.vmCamera = new THREE.PerspectiveCamera(BALANCE.camera.baseFov, 1, 0.01, 10);
     this.rifle = new RifleState(getWeapon(s.weapon), s.suppressor);
     this.viewModel = new ViewModel(this.renderer);
+    this.viewModel.compact = input.isTouch;
     this.viewModel.build(this.rifle.weapon, s.suppressor);
     this.fsm.onChange((to, from) => this.hooks?.onStateChange(to, from));
     const onResize = () => this.resize();

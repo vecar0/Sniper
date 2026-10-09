@@ -18,6 +18,8 @@ export class ScopeOverlay {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly status: HTMLDivElement;
   private color: ReticleColor = 'black';
+  /** 스코프 안 배율·고각 표시(휴대폰은 HUD와 겹쳐서 끈다) */
+  showReadout = true;
   private lastKey = '';
 
   constructor(parent: HTMLElement) {
@@ -160,6 +162,7 @@ export class ScopeOverlay {
       ctx.fillText(`예상 탄착 ${Math.round(h.predicted.dist)}m`, px + 9, py);
     }
     ctx.restore();
+    if (!this.showReadout) return;
     // 접안부 링 판독값
     ctx.font = '13px "Share Tech Mono", ui-monospace, monospace';
     ctx.textAlign = 'left';
