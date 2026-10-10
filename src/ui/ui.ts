@@ -355,7 +355,7 @@ export class UI {
       acc: Math.max(0.1, 1 - (w.ammo[0].dispersionMoa - 0.3) / 0.8),
       power: Math.min(1, e800 / 4000),
       bolt: Math.max(0.1, 1 - (w.boltTime - 0.5) / 1.0),
-      recoil: Math.min(1, w.recoilKick / 28),
+      recoil: Math.min(1, w.recoilKick / 14),
       e800,
     };
   }
@@ -566,9 +566,32 @@ export class UI {
     // 포인터 락은 사용자 클릭 안에서 바로 요청해야 한다
     const ok = this.game.begin();
     if (!ok) return;
+    this.enterFullscreen();
     this.show('none');
     this.setHudVisible(true);
     this.prepareHud();
+  }
+
+  /**
+   * 휴대폰: 주소창·툴바가 화면 높이를 크게 잡아먹으므로 전체화면 + 가로 고정을 시도한다.
+   * (안드로이드 크롬은 동작, 아이폰 사파리는 미지원 → '홈 화면에 추가'로 실행하면 전체화면)
+   * 반드시 사용자 탭 안에서 호출해야 한다.
+   */
+  private iosTipShown = false;
+  private enterFullscreen(): void {
+    if (!this.input.isTouch || document.fullscreenElement || new URLSearchParams(location.search).has('test')) return;
+    const el = document.documentElement;
+    if (!el.requestFullscreen) {
+      // 아이폰 사파리: 전체화면 API가 없다 → 홈 화면 앱으로 여는 방법을 한 번만 알려 준다
+      const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true || matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+      if (standalone || this.iosTipShown) return;
+      this.iosTipShown = true;
+      setTimeout(() => this.toast('화면이 좁으면: 사파리 공유 버튼 → [홈 화면에 추가] 후 그 아이콘으로 실행하면 전체화면'), 2500);
+      return;
+    }
+    el.requestFullscreen({ navigationUI: 'hide' })
+      .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
+      .catch(() => undefined);
   }
 
   private prepareHud(): void {
@@ -861,26 +884,27 @@ export class UI {
               <tr><td>배율</td><td>마우스 휠 / ${k('zoomIn')} ${k('zoomOut')}</td></tr>
               <tr><td>숨 참기</td><td>${k('breath')} 또는 <kbd>Space</kbd></td></tr>
               <tr><td>발사</td><td>${k('fire')}</td></tr>
-              <tr><td>고각 터렛</td><td>${k('elevUp')} ${k('elevDown')} (1클릭 0.1mil, 누르고 있으면 연속)</td></tr>
-              <tr><td>좌우 터렛</td><td>${k('windLeft')} ${k('windRight')}</td></tr>
-              <tr><td>터렛 초기화</td><td>${k('turretReset')}</td></tr>
+              <tr><td>위아래 보정 ▲▼</td><td>${k('elevUp')} ${k('elevDown')} (누르고 있으면 연속)</td></tr>
+              <tr><td>좌우 보정 ◀▶</td><td>${k('windLeft')} ${k('windRight')}</td></tr>
+              <tr><td>보정 0으로</td><td>${k('turretReset')}</td></tr>
               <tr><td>거리측정기</td><td>${k('rangefinder')}</td></tr>
-              <tr><td>탄도표</td><td>${k('dope')}</td></tr>
+              <tr><td>보정표</td><td>${k('dope')}</td></tr>
               <tr><td>탄종 변경</td><td>${k('ammo')}</td></tr>
               <tr><td>재시작</td><td>${k('restart')} 길게</td></tr>
               <tr><td>일시정지</td><td><kbd>Esc</kbd> / ${k('pause')}</td></tr>
             </table>
             <h3>터치</h3>
-            <p class="small-text">빈 곳을 드래그해 조준 · 두 손가락으로 벌려 배율 조절 · 오른쪽 아래 [발사] · 왼쪽 아래 [숨] · 왼쪽 십자 버튼으로 터렛 조절</p>
+            <p class="small-text">빈 곳을 드래그해 조준 · 두 손가락으로 벌려 배율 조절 · 오른쪽 아래 [발사] · 왼쪽 아래 [숨] · 왼쪽 십자 버튼(▲▼◀▶)으로 보정</p>
           </section>
           <section><h3>사격 요령</h3>
             <ol class="howto">
-              <li><b>거리</b>를 잰다 – 거리측정기, 또는 레티클: <code>거리(m) = 크기(m) × 1000 ÷ mil</code></li>
-              <li><b>탄도표</b>에서 그 거리의 고각(mil)을 찾아 터렛을 돌린다. <code>1mil = 1000m에서 1m</code></li>
-              <li><b>바람</b>을 읽는다 – 깃발이 수평에 가까울수록 강하다(8m/s↑). 좌우 보정 = 탄도표의 "1m/s당 값" × 풍속</li>
-              <li>움직이는 표적은 <b>리드</b>: <code>리드(mil) ≈ 속도 × 비행시간 ÷ 거리 × 1000</code></li>
-              <li><b>숨을 참고</b>(흔들림 80%↓) 레티클이 멈춘 순간 쏜다. 너무 오래 참으면 오히려 흔들린다.</li>
-              <li>빗나가면 <b>탄착 분석</b>을 보고 보정한다. 흙먼지가 보인 위치도 단서다.</li>
+              <li><b>찾기</b> – 스코프로 사람을 1초 보면 누구인지(표적·경비·민간인) 표시됩니다.</li>
+              <li><b>거리 재기</b> – [거리] 버튼. 훈련병 난이도는 이때 보정이 <b>자동</b>으로 맞춰집니다.</li>
+              <li><b>위아래 보정</b> – 멀수록 탄이 떨어집니다. [표]의 그 거리 "▲ 누를 횟수"만큼 ▲를 누르세요. (1번 = 100m에서 1cm)</li>
+              <li><b>바람</b> – 깃발이 많이 펄럭일수록 센 바람. 바람이 오는 쪽으로 조금 옮겨 겨누세요.</li>
+              <li><b>움직이는 표적</b> – 탄이 가는 동안 표적도 걷습니다. 걷는 방향 앞을 겨누세요.</li>
+              <li><b>쏘기</b> – [숨]을 누르고 있으면 흔들림이 80% 줄어듭니다. 멈춘 순간 발사. 너무 오래 참으면 오히려 흔들립니다.</li>
+              <li><b>빗나가면</b> – 아래 카드가 "몇 cm 빗나갔고 ▲를 몇 번 누르라"고 알려줍니다. 빛나는 탄 궤적과 탄착 표시도 보세요.</li>
             </ol>
             <h3>판정</h3>
             <p class="small-text">사람: 머리·흉부·복부 명중 시 무력화, 팔·다리는 부상(경계 후 도주). 총성은 음속(343m/s)으로 퍼져 다른 사람이 듣고 반응한다.</p>
@@ -1022,7 +1046,8 @@ export class UI {
       <div class="hud-dope"></div>
       <div class="hud-cam"><span>불릿캠 · 클릭하면 건너뜀</span></div>
       <div class="hud-lock">화면을 클릭하면 마우스가 고정됩니다</div>
-      <div class="hud-markers" aria-hidden="true"></div>`;
+      <div class="hud-markers" aria-hidden="true"></div>
+      <div class="hud-impact" aria-hidden="true"><i></i><span>탄착</span></div>`;
   }
   private q(sel: string): HTMLElement {
     return this.hudEl.querySelector<HTMLElement>(sel)!;
@@ -1052,7 +1077,10 @@ export class UI {
     const dt = 1 / 60;
     if (st === 'playing') {
       if (this.hitTimer > 0 && (this.hitTimer -= dt) <= 0) this.q('.hud-hit').classList.remove('show');
-      if (this.analysisTimer > 0 && (this.analysisTimer -= dt) <= 0) this.q('.hud-analysis').classList.remove('show');
+      if (this.analysisTimer > 0 && (this.analysisTimer -= dt) <= 0) {
+        this.q('.hud-analysis').classList.remove('show');
+        this.hudEl.classList.remove('has-analysis');
+      }
       if (this.rangeTimer > 0 && (this.rangeTimer -= dt) <= 0) this.q('.hud-range').classList.remove('show');
       if (this.alertTimer > 0 && (this.alertTimer -= dt) <= 0) this.q('.hud-alert').classList.remove('show');
     }
@@ -1069,8 +1097,11 @@ export class UI {
     const timeText = h.timeLimit > 0 ? `T−${formatTime(h.timeLimit - h.time)}` : `T+${formatTime(h.time)}`;
     this.setText('.hud-time', timeText);
     this.q('.hud-time').classList.toggle('danger', h.timeLimit > 0 && h.timeLimit - h.time < 20);
-    this.setText('.ht-e', `ELEV ${h.elev.toFixed(1)}`);
-    this.setText('.ht-w', `WIND ${h.wind === 0 ? '0.0' : `${Math.abs(h.wind).toFixed(1)}${h.wind > 0 ? 'R' : 'L'}`}`);
+    // 보정은 버튼 누른 횟수(칸)로 보여준다: ▲▼ 위아래, ◀▶ 좌우
+    const ec = Math.round(h.elev * 10);
+    const wc = Math.round(h.wind * 10);
+    this.setText('.ht-e', `▲▼ ${ec}칸`);
+    this.setText('.ht-w', wc === 0 ? '◀▶ 0칸' : `${wc > 0 ? '▶' : '◀'} ${Math.abs(wc)}칸`);
     this.setText('.hud-zoom', `${h.zoom.toFixed(1)}×`);
     this.setText('.hw-name', h.weaponName);
     this.q('.hw-sup').style.display = h.suppressor ? '' : 'none';
@@ -1106,6 +1137,13 @@ export class UI {
     rs.classList.toggle('show', h.restartProgress > 0.05);
     (rs.querySelector('circle') as SVGCircleElement).style.strokeDashoffset = String(94.2 * (1 - Math.min(1, h.restartProgress)));
     this.updateMarkers();
+    const imp = this.q('.hud-impact');
+    if (h.impact) {
+      imp.style.display = '';
+      imp.style.transform = `translate(${h.impact.x.toFixed(1)}px, ${h.impact.y.toFixed(1)}px)`;
+      imp.style.opacity = String(Math.max(0, Math.min(1, h.impact.fade)));
+      imp.classList.toggle('hit', h.impact.hit);
+    } else imp.style.display = 'none';
     this.q('.hud-lock').classList.toggle('show', this.lockWanted && !this.input.pointerLocked && this.game.fsm.is('playing'));
     // 탄도표
     const dope = this.q('.hud-dope');
@@ -1116,10 +1154,10 @@ export class UI {
         this.dopeKey = key;
         const rows = this.game.dopeRows();
         const mm = this.game.mission!;
-        dope.innerHTML = `<div class="dope-head"><span class="h-tag">DOPE CARD</span><b>${esc(h.weaponName)}</b> · ${esc(h.ammoName)}${h.suppressor ? ' · 소음기' : ''}<br><small>영점 100m · 고도 ${mm.atmosphere.altitude}m · ${mm.atmosphere.temperature}°C · 1클릭 = 0.1mil</small></div>
-          <table class="mono"><thead><tr><th>거리</th><th>고각</th><th>클릭</th><th>바람/1m·s</th><th>비행</th><th>에너지</th></tr></thead><tbody>
-          ${rows.map((r) => `<tr><td>${r.range}m</td><td>${r.elevationMil.toFixed(1)}</td><td>${Math.round(r.elevationMil * 10)}</td><td>${r.windPerMpsMil.toFixed(2)}</td><td>${r.time.toFixed(2)}s</td><td>${Math.round(r.energy)}J</td></tr>`).join('')}
-          </tbody></table><div class="dope-foot">${this.input.isTouch ? '[표] 버튼으로 닫기' : `[${this.input.keyLabel('dope')}] 닫기`} · 스핀 드리프트: 1000m에서 약 0.2mil 오른쪽</div>`;
+        dope.innerHTML = `<div class="dope-head"><span class="h-tag">보정표</span><b>${esc(h.weaponName)}</b> · ${esc(h.ammoName)}${h.suppressor ? ' · 소음기' : ''}<br><small>표적 거리를 찾아 ▲를 그 횟수만큼 누르세요. 바람이 불면 바람 1m/s당 횟수 × 풍속만큼 바람 오는 쪽(◀ 또는 ▶)으로.</small></div>
+          <table class="mono"><thead><tr><th>거리</th><th>▲ 누를 횟수</th><th>바람 1m/s당 ◀▶</th><th>탄 도착</th></tr></thead><tbody>
+          ${rows.map((r) => `<tr><td>${r.range}m</td><td>${Math.round(r.elevationMil * 10)}</td><td>${(r.windPerMpsMil * 10).toFixed(1)}</td><td>${r.time.toFixed(2)}초</td></tr>`).join('')}
+          </tbody></table><div class="dope-foot">${this.input.isTouch ? '[표] 버튼으로 닫기' : `[${this.input.keyLabel('dope')}] 닫기`} · 1칸 = 0.1mil = 100m에서 1cm · 영점 100m · 고도 ${mm.atmosphere.altitude}m · ${mm.atmosphere.temperature}°C</div>`;
       }
     }
   }
@@ -1274,6 +1312,7 @@ export class UI {
     this.hitTimer = BALANCE.feedback.hitMarkerTime;
     if (i.kind !== 'wound') {
       this.q('.hud-analysis').classList.remove('show');
+      this.hudEl.classList.remove('has-analysis');
       this.analysisTimer = 0;
     }
   }
@@ -1286,6 +1325,7 @@ export class UI {
     const el = this.q('.hud-analysis');
     if (!a) {
       el.classList.remove('show');
+      this.hudEl.classList.remove('has-analysis');
       return;
     }
     // 휴대폰은 화면이 좁으므로 탄착 요약 한 줄 + 팁만(세부 수치는 결과 화면에서)
@@ -1293,7 +1333,8 @@ export class UI {
     (el.querySelector('.ha-lines') as HTMLElement).innerHTML = `<b>빗나감</b>${lines.map((l) => `<p>${esc(l)}</p>`).join('')}`;
     (el.querySelector('.ha-tip') as HTMLElement).textContent = `→ ${a.tip}`;
     el.classList.add('show');
-    this.analysisTimer = 9;
+    this.hudEl.classList.add('has-analysis');
+    this.analysisTimer = this.input.isTouch ? 7 : 9;
   }
 
   private showRange(d: number | null, ok: boolean): void {

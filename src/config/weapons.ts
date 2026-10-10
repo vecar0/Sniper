@@ -31,7 +31,7 @@ export interface WeaponSpec {
   boltTime: number;
   /** 탄창 교환 시간(초) */
   reloadTime: number;
-  /** 반동으로 조준점이 튀는 양(mil)과 복귀 시간(초) */
+  /** 반동으로 조준점이 튀는 양(mil)과 복귀 시간(초). 18배 스코프 시야가 약 ±13mil이므로 대부분 시야 안에 남아 탄착을 볼 수 있다 */
   recoilKick: number;
   recoilRecover: number;
   /** 스코프 배율 범위 */
@@ -68,8 +68,8 @@ export const WEAPONS: WeaponSpec[] = [
     magazine: 5,
     boltTime: 1.0,
     reloadTime: 2.4,
-    recoilKick: 14,
-    recoilRecover: 0.55,
+    recoilKick: 7,
+    recoilRecover: 0.42,
     zoomMin: 3,
     zoomMax: 18,
     sightHeight: 0.045,
@@ -91,8 +91,8 @@ export const WEAPONS: WeaponSpec[] = [
     magazine: 7,
     boltTime: 0.75,
     reloadTime: 2.0,
-    recoilKick: 6,
-    recoilRecover: 0.3,
+    recoilKick: 3.5,
+    recoilRecover: 0.28,
     zoomMin: 4,
     zoomMax: 20,
     sightHeight: 0.045,
@@ -115,8 +115,8 @@ export const WEAPONS: WeaponSpec[] = [
     magazine: 5,
     boltTime: 1.35,
     reloadTime: 2.8,
-    recoilKick: 26,
-    recoilRecover: 0.85,
+    recoilKick: 13,
+    recoilRecover: 0.7,
     zoomMin: 5,
     zoomMax: 25,
     sightHeight: 0.05,

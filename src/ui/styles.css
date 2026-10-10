@@ -352,6 +352,14 @@ select { font: inherit; font-size: 14px; background: #141c1e; color: var(--text)
 .dope-head { margin-bottom: 6px; }
 .dope-head small, .dope-foot { color: var(--muted); }
 .dope-foot { margin-top: 6px; font-size: 12px; }
+.hud-impact { left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; display: none; will-change: transform, opacity; }
+.hud-impact i { position: absolute; inset: 0; border: 2px solid #ffd257; border-radius: 50%; box-shadow: 0 0 6px rgba(0, 0, 0, 0.9), inset 0 0 4px rgba(0, 0, 0, 0.6); animation: impact-pulse 0.8s ease-out infinite; }
+.hud-impact i::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #ffd257; }
+.hud-impact span { position: absolute; top: 36px; left: 50%; transform: translateX(-50%); font: 700 11px var(--font-mono); color: #ffd257; white-space: nowrap; }
+.hud-impact.hit i { border-color: var(--good); }
+.hud-impact.hit i::after { background: var(--good); }
+.hud-impact.hit span { color: var(--good); }
+@keyframes impact-pulse { 0% { scale: 1.6; opacity: 0.4; } 40% { scale: 1; opacity: 1; } 100% { scale: 1; opacity: 1; } }
 .hud-cam { inset: 0; display: none; }
 .hud.cam .hud-cam { display: block; }
 .hud-cam::before, .hud-cam::after { content: ''; position: absolute; left: 0; right: 0; height: 9vh; background: #000; }
@@ -453,8 +461,9 @@ body.is-touch .hud-wind { font-size: 10px; padding: 3px 6px; max-width: 150px; }
 /* 아래 가운데: 호흡 막대 */
 body.is-touch .hud-breath { bottom: calc(10px + var(--safe-b)); width: 150px; }
 body.is-touch .hb-label { font-size: 10px; }
-/* 빗나감 분석: 아래 가운데 작은 카드(요약 + 팁만) */
-body.is-touch .hud-analysis { bottom: calc(36px + var(--safe-b)); width: min(380px, 46vw); padding: 7px 10px; font-size: 11px; }
+/* 빗나감 분석: 나침반 아래 작은 카드(요약 + 팁만). 이때 힌트는 숨겨 겹치지 않게 */
+body.is-touch .hud-analysis { bottom: auto; top: calc(36px + var(--safe-t)); width: min(400px, 48vw); padding: 6px 10px; font-size: 11px; }
+body.is-touch .hud.has-analysis .hud-hint { opacity: 0; }
 body.is-touch .hud-analysis b { font-size: 11px; }
 body.is-touch .hud-analysis p { margin: 1px 0; }
 body.is-touch .ha-tip { margin-top: 3px; font-size: 11px; }
@@ -464,7 +473,7 @@ body.is-touch .hud-hit.k-headshot b { font-size: 26px; }
 body.is-touch .hud-hit span { font-size: 11px; }
 body.is-touch .hud-range { font-size: 15px; top: calc(50% - 48px); }
 body.is-touch .hud-lock { display: none; }
-body.is-touch .toast { bottom: auto; top: calc(38px + var(--safe-t)); font-size: 12px; padding: 6px 12px; max-width: 60vw; }
+body.is-touch .toast { bottom: calc(40px + var(--safe-b)); font-size: 12px; padding: 6px 12px; max-width: 46vw; }
 /* 탄도표: 가운데 큰 카드, 내부 스크롤 */
 body.is-touch .hud-dope { top: calc(50px + var(--safe-t)); right: 50%; transform: translateX(50%); max-height: calc(100% - 70px); font-size: 11px; padding: 8px 10px; }
 body.is-touch .hud-dope table { font-size: 11px; }
@@ -502,6 +511,48 @@ body.is-touch .marker span { font-size: 10px; }
   .weapon-stage { height: 110px; }
   .dossier-3d { height: 130px; }
   .hud-compass { max-width: 38vw; }
+}
+
+/* 가로 높이가 낮은 휴대폰(아이폰 사파리 주소창 포함 ≈ 260px): 버튼을 줄이고 정보는 한 줄로 */
+@media (max-height: 340px) {
+  body.is-touch .tbtn { width: 38px; height: 38px; font-size: 12px; }
+  body.is-touch .t-fire { width: 68px; height: 68px; right: calc(14px + var(--safe-r)); bottom: calc(12px + var(--safe-b)); font-size: 15px; }
+  body.is-touch .t-scope { width: 50px; height: 50px; right: calc(92px + var(--safe-r)); bottom: calc(14px + var(--safe-b)); }
+  body.is-touch .t-zoomin { right: calc(29px + var(--safe-r)); bottom: calc(88px + var(--safe-b)); }
+  body.is-touch .t-zoomout { right: calc(29px + var(--safe-r)); bottom: calc(132px + var(--safe-b)); }
+  body.is-touch .t-breath { width: 62px; height: 62px; left: calc(14px + var(--safe-l)); bottom: calc(12px + var(--safe-b)); font-size: 15px; }
+  body.is-touch .t-up, body.is-touch .t-down, body.is-touch .t-left, body.is-touch .t-right, body.is-touch .t-reset { width: 34px; height: 34px; }
+  body.is-touch .t-up { left: calc(122px + var(--safe-l)); bottom: calc(82px + var(--safe-b)); }
+  body.is-touch .t-down { left: calc(122px + var(--safe-l)); bottom: calc(10px + var(--safe-b)); }
+  body.is-touch .t-left { left: calc(86px + var(--safe-l)); bottom: calc(46px + var(--safe-b)); }
+  body.is-touch .t-right { left: calc(158px + var(--safe-l)); bottom: calc(46px + var(--safe-b)); }
+  body.is-touch .t-reset { left: calc(122px + var(--safe-l)); bottom: calc(46px + var(--safe-b)); }
+  body.is-touch .t-dope, body.is-touch .t-range, body.is-touch .t-ammo, body.is-touch .t-pause { top: calc(6px + var(--safe-t)); width: 38px; height: 30px; border-radius: 6px; }
+  body.is-touch .t-pause { right: calc(10px + var(--safe-r)); }
+  body.is-touch .t-dope { right: calc(52px + var(--safe-r)); }
+  body.is-touch .t-range { right: calc(94px + var(--safe-r)); }
+  body.is-touch .t-ammo { right: calc(136px + var(--safe-r)); }
+  body.is-touch .hud-tl { top: calc(6px + var(--safe-t)); left: calc(10px + var(--safe-l)); padding: 3px 7px; }
+  body.is-touch .hud-mission { font-size: 13px; }
+  body.is-touch .hud-time { display: none; }
+  body.is-touch .hud-compass { top: calc(2px + var(--safe-t)); height: 24px; max-width: 30vw; }
+  body.is-touch .hud-hint, body.is-touch .hud-analysis { top: calc(30px + var(--safe-t)); max-width: 44vw; width: auto; font-size: 11px; padding: 4px 8px; line-height: 1.35; }
+  body.is-touch .hud-analysis { width: min(300px, 38vw); max-width: 38vw; }
+  body.is-touch .hud-analysis b { display: none; }
+  body.is-touch .hud-alert { top: calc(76px + var(--safe-t)); }
+  body.is-touch .hud-br { top: calc(42px + var(--safe-t)); right: calc(10px + var(--safe-r)); padding: 3px 7px; }
+  body.is-touch .hud-zoom { display: none; }
+  body.is-touch .ha-pips { display: none; }
+  body.is-touch .hud-bl { top: calc(50px + var(--safe-t)); left: calc(10px + var(--safe-l)); }
+  body.is-touch .hud-winddial { width: 40px; height: 40px; }
+  body.is-touch .hud-wind { display: none; }
+  body.is-touch .hud-breath { bottom: calc(6px + var(--safe-b)); width: 120px; }
+  body.is-touch .toast { bottom: calc(30px + var(--safe-b)); max-width: 40vw; font-size: 11px; padding: 5px 10px; }
+  /* 보정표는 십자 버튼(왼쪽)과 스코프 버튼(오른쪽) 사이에 → ▲를 누르면서 표를 볼 수 있게 */
+  body.is-touch .hud-dope { top: calc(40px + var(--safe-t)); left: calc(198px + var(--safe-l)); right: calc(148px + var(--safe-r)); transform: none; max-height: calc(100% - 46px); padding: 6px 8px; }
+  body.is-touch .hud-dope table, body.is-touch .hud-dope { font-size: 10px; }
+  body.is-touch .hud-dope th, body.is-touch .hud-dope td { padding: 2px 4px; }
+  body.is-touch .dope-head small { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .panel, .star.pop, .rotate-icon, .marker i, .menu-left, .operator, .aar-stamp, .radio span::after { animation: none; }

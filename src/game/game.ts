@@ -124,6 +124,8 @@ export interface HudSnapshot {
   /** 사수 위치 바람(나침반 다이얼용): 속도와 불어오는 방향(도, 사격 방향 기준) */
   windNow: { speed: number; fromDeg: number } | null;
   pitchDeg: number;
+  /** 최근 탄착 지점(화면 좌표) */
+  impact: { x: number; y: number; hit: boolean; fade: number } | null;
 }
 
 interface ActiveBullet {
@@ -195,6 +197,10 @@ export class Game {
   private predicted: { x: number; y: number; dist: number } | null = null;
   private predictTimer = 0;
   private windText: string | null = null;
+  /** 경로 평균 횡풍(m/s, +오른쪽) – 훈련병 자동 보정용 */
+  private effWind = 0;
+  /** 최근 탄착 지점(화면 표시용) */
+  private lastImpact: { pos: THREE.Vector3; t: number; hit: boolean } | null = null;
   private windTimer = 0;
   private lastRange = 500;
   private camBullet: ActiveBullet | null = null;
@@ -248,6 +254,7 @@ export class Game {
   setQuality(q: QualityLevel): void {
     this.quality = q;
     this.renderer.setPixelRatio(this.pixelRatio());
+    this.fx?.tracers.setScale(this.renderer.getPixelRatio());
     this.resize();
   }
 
@@ -361,6 +368,7 @@ export class Game {
       this.world = new World(mission, this.quality, seed);
       this.fx = new Effects((x, z) => this.world!.terrain.height(x, z), this.world.theme.groundLow);
       this.world.scene.add(this.fx.group);
+      this.fx.tracers.setScale(this.renderer.getPixelRatio());
       this.worldKey = key;
       const th = this.world.theme;
       this.renderer.toneMappingExposure = th.exposure;
@@ -449,6 +457,7 @@ export class Game {
     this.dopeOpen = false;
     this.breathToggle = false;
     this.lastAnalysis = null;
+    this.lastImpact = null;
     this.predicted = null;
     this.accumulator = 0;
     this.zoom = Math.max(this.rifle.weapon.zoomMin, Math.min(8, this.rifle.weapon.zoomMax));
@@ -630,7 +639,7 @@ export class Game {
       this.rifle.resetTurrets();
       this.audio.play('turret');
       this.audio.play('turret', { delay: 0.05 });
-      this.hooks?.onToast('터렛을 0으로 되돌렸습니다');
+      this.hooks?.onToast('보정을 0으로 되돌렸습니다');
     }
 
     // 장비
@@ -777,7 +786,7 @@ export class Game {
       return;
     }
     if (this.rifle.totalRounds <= 0 && this.bullets.length === 0 && !this.rifle.busy) {
-      this.fail('탄약을 모두 썼습니다.', this.lastAnalysis?.tip ?? '탄도표로 보정량을 계산한 뒤 쏘세요.');
+      this.fail('탄약을 모두 썼습니다.', this.lastAnalysis?.tip ?? '보정표(표)를 보고 ▲를 거리에 맞게 누른 뒤 쏘세요.');
     }
   }
 
@@ -853,7 +862,7 @@ export class Game {
     this.recoilV += kick * 9;
     const flash = !sup && !ammo.subsonic;
     this.viewModel.kick(kick * 0.35, flash && !this.save.data.settings.reduceFlashes);
-    if (this.save.data.settings.screenShake) this.shake = Math.min(1, kick / 14);
+    if (this.save.data.settings.screenShake) this.shake = Math.min(1, kick / 10);
     this.audio.play(sup ? 'shotSup' : ammo.subsonic ? 'shotSub' : 'shot', { weight: w.loudness, volume: sup && ammo.subsonic ? 0.6 : 1 });
     if (flash) this.hooks?.onMuzzleFlash();
     this.trigger('fire');
@@ -1065,6 +1074,7 @@ export class Game {
   }
 
   private finishBullet(b: ActiveBullet, at: THREE.Vector3): void {
+    this.lastImpact = { pos: at.clone(), t: performance.now(), hit: false };
     b.done = true;
     b.proj.pos.x = at.x;
     b.proj.pos.y = at.y;
@@ -1077,6 +1087,7 @@ export class Game {
   private bulletHitTarget(b: ActiveBullet, hit: HitResult): void {
     const t = hit.target;
     this.finishBullet(b, hit.point);
+    if (this.lastImpact) this.lastImpact.hit = true;
     b.hitTarget = true;
     const dist = Math.hypot(hit.point.x - this.eye.x, hit.point.z - this.eye.z);
     const speed = speedOf(b.proj);
@@ -1220,9 +1231,45 @@ export class Game {
     this.hooks?.onRangefinder(d, true);
     if (d !== null) {
       this.lastRange = d;
+      if (this.difficulty.id === 'recruit') this.autoDial(d);
       const end = this.eye.clone().addScaledVector(dir, d + 0.5);
       for (const t of this.targets) if (t.isPerson && !t.tagged && t.intersect(this.eye, end)) this.tag(t);
     }
+  }
+
+  /**
+   * 훈련병 전용: 잰 거리에 맞춰 위아래·좌우 보정을 자동으로 맞춘다.
+   * 처음 하는 사람이 계산 없이 "찾기 → 거리 재기 → 숨 참고 쏘기"만으로 맞힐 수 있게 한다.
+   */
+  private autoDial(dist: number): void {
+    const rows = this.dopeRows();
+    if (!rows.length) return;
+    let lo = rows[0];
+    let hi = rows[rows.length - 1];
+    for (let i = 0; i < rows.length - 1; i++) {
+      if (rows[i].range <= dist && rows[i + 1].range >= dist) {
+        lo = rows[i];
+        hi = rows[i + 1];
+        break;
+      }
+    }
+    const f = hi.range === lo.range ? 0 : Math.max(0, Math.min(1, (dist - lo.range) / (hi.range - lo.range)));
+    const lerp = (a: number, b: number) => a + (b - a) * f;
+    // 바람 정보 갱신 후 보정(바람이 오른쪽으로 밀면 왼쪽으로 겨눠야 한다)
+    this.lastRange = dist;
+    this.updateWindText();
+    const elev = Math.max(0, lerp(lo.elevationMil, hi.elevationMil));
+    const wind = -(this.effWind * lerp(lo.windPerMpsMil, hi.windPerMpsMil) + lerp(lo.spinMil, hi.spinMil));
+    this.rifle.elevMil = 0;
+    this.rifle.windMil = 0;
+    this.rifle.dialElev(Math.round(elev * 10));
+    this.rifle.dialWind(Math.round(wind * 10));
+    this.audio.play('turret');
+    this.audio.play('turret', { delay: 0.06 });
+    const w = Math.round(this.rifle.windMil * 10);
+    this.hooks?.onToast(`자동 보정: ${Math.round(dist)}m → ▲${Math.round(this.rifle.elevMil * 10)}칸${w ? ` · ${w < 0 ? '◀' : '▶'}${Math.abs(w)}칸` : ''}`);
+    this.trigger('dope');
+    this.trigger('turretElev');
   }
 
   /** 시선 레이: 표적 → 장애물 → 지형 순으로 가장 가까운 거리 */
@@ -1288,7 +1335,7 @@ export class Game {
     }
     if (mode === 'local') {
       const s = this.wind.sample(0, this.missionTime);
-      this.windText = `사수 위치 ${s.speed.toFixed(1)}m/s · ${windClock(s.dir)}시 방향`;
+      this.windText = `바람 ${s.speed.toFixed(1)}m/s · ${windClock(s.dir)}시 쪽에서`;
       return;
     }
     // 경로 유효 횡풍: 실제 바람으로 계산한 편류 ÷ 1m/s 편류
@@ -1299,8 +1346,8 @@ export class Game {
     const unit = flatTrajectory(params, { ...env, windAt: (_x, _y, _z, _t, o) => ((o.x = 1), (o.y = 0), (o.z = 0), o) }, this.rifle.weapon.sightHeight, this.rifle.zeroAngle, 0, [range], 0.002)[0];
     if (!real || !unit || Math.abs(unit.lateral) < 1e-6) return;
     const eff = real.lateral / unit.lateral;
-    const arrow = Math.abs(eff) < 0.15 ? '' : eff > 0 ? ' →' : ' ←';
-    this.windText = `${Math.round(range)}m 유효 횡풍 ${Math.abs(eff).toFixed(1)}m/s${arrow}`;
+    this.effWind = eff;
+    this.windText = Math.abs(eff) < 0.15 ? '바람 거의 없음' : `바람 ${Math.abs(eff).toFixed(1)}m/s · 탄이 ${eff > 0 ? '오른쪽 →' : '← 왼쪽'}으로 밀림`;
   }
 
   // ───────────────────────── 카메라 ─────────────────────────
@@ -1476,8 +1523,8 @@ export class Game {
     const r = this.rifle;
     const req = this.targets.filter((t) => t.def.required);
     let status = '';
-    if (r.reloadTimer > 0) status = '재장전 중';
-    else if (r.boltTimer > 0) status = '볼트 조작 중';
+    if (r.reloadTimer > 0) status = '탄창 교체 중';
+    else if (r.boltTimer > 0) status = '장전 중';
     else if (r.totalRounds <= 0 && !r.chambered) status = '탄약 없음';
     else if (r.chambered) status = '장전됨';
     const h = this.renderer.domElement.clientHeight || 720;
@@ -1529,6 +1576,7 @@ export class Game {
         return { speed: w.speed, fromDeg: (w.dir + 180) % 360 };
       })() : null,
       pitchDeg: (this.pitch * 180) / Math.PI,
+      impact: this.impactOnScreen(),
     };
   }
 
@@ -1565,6 +1613,18 @@ export class Game {
       });
     }
     return out;
+  }
+
+  /** 최근 탄착 지점의 화면 좌표(2.5초 동안) */
+  private impactOnScreen(): { x: number; y: number; hit: boolean; fade: number } | null {
+    const li = this.lastImpact;
+    if (!li || this.camBullet) return null;
+    const age = (performance.now() - li.t) / 1000;
+    if (age > 2.5) return null;
+    const v = li.pos.clone().project(this.camera);
+    if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return null;
+    const el = this.renderer.domElement;
+    return { x: ((v.x + 1) / 2) * el.clientWidth, y: ((1 - v.y) / 2) * el.clientHeight, hit: li.hit, fade: 1 - Math.max(0, age - 1.8) / 0.7 };
   }
 
   closeDope(): void {

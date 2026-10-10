@@ -167,11 +167,11 @@ export class ScopeOverlay {
     ctx.font = '13px "Share Tech Mono", ui-monospace, monospace';
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(232, 163, 61, 0.9)';
-    const wl = h.wind === 0 ? '0.0' : `${Math.abs(h.wind).toFixed(1)}${h.wind > 0 ? 'R' : 'L'}`;
+    const wc = Math.round(h.wind * 10);
     const lx = cx - radius * 0.66;
     const ly = cy + radius * 0.6;
     ctx.fillText(`${h.zoom.toFixed(1)}×`, lx, ly);
-    ctx.fillText(`E ${h.elev.toFixed(1)}`, lx, ly + 16);
-    ctx.fillText(`W ${wl}`, lx, ly + 32);
+    ctx.fillText(`▲▼ ${Math.round(h.elev * 10)}`, lx, ly + 16);
+    ctx.fillText(`◀▶ ${wc === 0 ? 0 : `${wc > 0 ? '▶' : '◀'}${Math.abs(wc)}`}`, lx, ly + 32);
   }
 }

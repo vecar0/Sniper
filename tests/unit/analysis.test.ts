@@ -41,9 +41,8 @@ describe('탄착 분석', () => {
   it('고각 부족 → 낮음 + 올리라는 팁', () => {
     const a = analyzeShot({ ...base, elevDial: 5.2 });
     expect(a.errV).toBeCloseTo(-0.8);
-    expect(a.lines[0]).toContain('낮음');
-    expect(a.tip).toContain('올리세요');
-    expect(a.tip).toContain('8클릭');
+    expect(a.lines[0]).toContain('아래');
+    expect(a.tip).toContain('▲를 8번');
   });
   it('흔들림이 원인이면 숨 참기 팁', () => {
     const a = analyzeShot({ ...base, losOffsetV: 0.6, swayV: 0.6 });
@@ -53,6 +52,6 @@ describe('탄착 분석', () => {
     const moving = { ...needed, windMil: 1.2 };
     const st = { ...needed, windMil: -0.6 };
     const a = analyzeShot({ ...base, needed: moving, neededStatic: st, windDial: -0.6, moving: true });
-    expect(a.tip).toContain('리드');
+    expect(a.tip).toContain('앞을 겨누세요');
   });
 });

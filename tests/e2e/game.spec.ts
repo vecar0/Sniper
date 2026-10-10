@@ -55,8 +55,8 @@ test.describe('기본 흐름', () => {
     });
     await page.evaluate(() => (window as any).__longshot.input.tapVirtual('fire'));
     await expect(page.locator('.hud-analysis.show')).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator('.hud-analysis')).toContainText('낮음');
-    await expect(page.locator('.ha-tip')).toContainText('고각');
+    await expect(page.locator('.hud-analysis')).toContainText('아래');
+    await expect(page.locator('.ha-tip')).toContainText('▲를');
   });
 });
 

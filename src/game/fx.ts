@@ -130,26 +130,63 @@ class ParticlePool {
   }
 }
 
-/** 탄 궤적 표시: 탄두(밝은 점) + 짧은 꼬리 */
+/**
+ * 탄 궤적(트레이서): 화면에서 항상 같은 픽셀 크기로 빛나는 점 + 꼬리.
+ * 실제 7mm 탄은 수백 m 밖에서 보이지 않지만, 관측수가 보는 "탄적(공기 흔들림)"을 게임적으로 과장해
+ * 스코프 배율·거리와 상관없이 탄이 어디로 가는지 눈으로 따라갈 수 있게 한다.
+ */
 export class TracerPool {
-  private readonly items: { line: THREE.Line; head: THREE.Mesh; points: THREE.Vector3[]; life: number; active: boolean }[] = [];
+  private static readonly TRAIL = 30;
+  private readonly items: { trail: THREE.Points; head: THREE.Points; mat: THREE.PointsMaterial; headMat: THREE.PointsMaterial; points: THREE.Vector3[]; life: number; active: boolean }[] = [];
   readonly group = new THREE.Group();
-  private readonly lineMat = new THREE.LineBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.55, fog: false });
-  private readonly headMat = new THREE.MeshBasicMaterial({ color: 0xfff6d8, fog: false });
-  private readonly headGeo = new THREE.SphereGeometry(0.06, 6, 4);
-  private static readonly TRAIL = 24;
+  private readonly dot: THREE.Texture;
 
   constructor(count: number) {
+    // 부드러운 원형 점 텍스처
+    const c = document.createElement('canvas');
+    c.width = c.height = 32;
+    const ctx = c.getContext('2d')!;
+    const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, 'rgba(255,240,200,0.9)');
+    g.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 32, 32);
+    this.dot = new THREE.CanvasTexture(c);
     for (let i = 0; i < count; i++) {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(TracerPool.TRAIL * 3), 3));
-      const line = new THREE.Line(geo, this.lineMat);
-      line.frustumCulled = false;
-      const head = new THREE.Mesh(this.headGeo, this.headMat);
-      line.visible = false;
+      // 꼬리 끝으로 갈수록 어두워짐(가산 혼합이라 어두울수록 투명하게 보인다)
+      const col = new Float32Array(TracerPool.TRAIL * 3);
+      for (let k = 0; k < TracerPool.TRAIL; k++) {
+        const f = Math.pow(k / (TracerPool.TRAIL - 1), 1.6);
+        col[k * 3] = 1 * f;
+        col[k * 3 + 1] = 0.85 * f;
+        col[k * 3 + 2] = 0.55 * f;
+      }
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      const mat = new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, map: this.dot, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, fog: false });
+      const trail = new THREE.Points(geo, mat);
+      trail.frustumCulled = false;
+      trail.renderOrder = 10;
+      const hg = new THREE.BufferGeometry();
+      hg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(3), 3));
+      const headMat = new THREE.PointsMaterial({ size: 11, sizeAttenuation: false, map: this.dot, color: 0xfff4d0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, fog: false });
+      const head = new THREE.Points(hg, headMat);
+      head.frustumCulled = false;
+      head.renderOrder = 11;
+      trail.visible = false;
       head.visible = false;
-      this.group.add(line, head);
-      this.items.push({ line, head, points: [], life: 0, active: false });
+      this.group.add(trail, head);
+      this.items.push({ trail, head, mat, headMat, points: [], life: 0, active: false });
+    }
+  }
+
+  /** 렌더러 픽셀 비율(고해상도 화면에서도 같은 크기로 보이게) */
+  setScale(pixelRatio: number): void {
+    for (const it of this.items) {
+      it.mat.size = 5 * pixelRatio;
+      it.headMat.size = 11 * pixelRatio;
     }
   }
 
@@ -160,43 +197,52 @@ export class TracerPool {
     it.active = true;
     it.points = [];
     it.life = 0;
-    it.line.visible = true;
+    it.mat.opacity = 1;
+    it.headMat.opacity = 1;
+    it.trail.visible = true;
     it.head.visible = true;
     return idx;
   }
 
-  push(idx: number, p: THREE.Vector3, camPos: THREE.Vector3): void {
+  push(idx: number, p: THREE.Vector3, _camPos: THREE.Vector3): void {
     const it = this.items[idx];
     if (!it?.active) return;
     it.points.push(p.clone());
     if (it.points.length > TracerPool.TRAIL) it.points.shift();
-    it.head.position.copy(p);
-    // 멀리 있어도 보이도록 거리 비례 크기(스코프로 탄적을 관측하는 느낌)
-    const d = p.distanceTo(camPos);
-    it.head.scale.setScalar(Math.max(1, d * 0.004));
-    const arr = it.line.geometry.attributes.position.array as Float32Array;
+    const hp = it.head.geometry.attributes.position.array as Float32Array;
+    hp[0] = p.x;
+    hp[1] = p.y;
+    hp[2] = p.z;
+    it.head.geometry.attributes.position.needsUpdate = true;
+    const arr = it.trail.geometry.attributes.position.array as Float32Array;
+    const n = it.points.length;
     for (let i = 0; i < TracerPool.TRAIL; i++) {
-      const src = it.points[Math.max(0, it.points.length - TracerPool.TRAIL + i)] ?? p;
+      const src = it.points[Math.max(0, n - TracerPool.TRAIL + i)] ?? p;
       arr[i * 3] = src.x;
       arr[i * 3 + 1] = src.y;
       arr[i * 3 + 2] = src.z;
     }
-    it.line.geometry.attributes.position.needsUpdate = true;
+    it.trail.geometry.attributes.position.needsUpdate = true;
   }
 
   end(idx: number): void {
     const it = this.items[idx];
     if (!it) return;
     it.active = false;
-    it.life = 0.25;
-    it.head.visible = false;
+    it.life = 0.6;
   }
 
   update(dt: number): void {
     for (const it of this.items) {
       if (!it.active && it.life > 0) {
         it.life -= dt;
-        if (it.life <= 0) it.line.visible = false;
+        const f = Math.max(0, it.life / 0.6);
+        it.mat.opacity = f;
+        it.headMat.opacity = f * 0.6;
+        if (it.life <= 0) {
+          it.trail.visible = false;
+          it.head.visible = false;
+        }
       }
     }
   }
@@ -205,16 +251,19 @@ export class TracerPool {
     for (const it of this.items) {
       it.active = false;
       it.life = 0;
-      it.line.visible = false;
+      it.trail.visible = false;
       it.head.visible = false;
     }
   }
 
   dispose(): void {
-    for (const it of this.items) it.line.geometry.dispose();
-    this.lineMat.dispose();
-    this.headMat.dispose();
-    this.headGeo.dispose();
+    for (const it of this.items) {
+      it.trail.geometry.dispose();
+      it.head.geometry.dispose();
+      it.mat.dispose();
+      it.headMat.dispose();
+    }
+    this.dot.dispose();
   }
 }
 

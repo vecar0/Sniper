@@ -138,10 +138,15 @@ export interface Analysis {
   tip: string;
 }
 
-const fmt = (v: number) => (Math.round(v * 10) / 10).toFixed(1);
-const lr = (v: number) => (Math.abs(v) < 0.05 ? '0.0' : `${fmt(Math.abs(v))}${v > 0 ? 'R' : 'L'}`);
+/** 보정 단위: 버튼 1번 = 1칸 = 0.1mil (100m에서 1cm) */
+const clicks = (mil: number) => Math.round(Math.abs(mil) * 10);
+const vClicks = (mil: number) => (clicks(mil) === 0 ? '0칸' : `${mil > 0 ? '▲' : '▼'}${clicks(mil)}칸`);
+const hClicks = (mil: number) => (clicks(mil) === 0 ? '0칸' : `${mil > 0 ? '▶' : '◀'}${clicks(mil)}칸`);
 
-/** 빗나간 원인 분석: 고각 / 바람 / 리드 / 흔들림 중 가장 큰 원인을 찾아 팁을 준다 */
+/**
+ * 빗나간 원인 분석: 위아래 보정 / 바람 / 앞질러 겨누기(리드) / 흔들림 중 가장 큰 원인을 찾아 팁을 준다.
+ * 화면에는 mil 대신 "cm"와 "버튼 누를 횟수(칸)"로 보여준다.
+ */
 export function analyzeShot(rec: ShotRecord): Analysis {
   const actualV = rec.elevDial + rec.losOffsetV;
   const actualH = rec.windDial + rec.losOffsetH;
@@ -150,36 +155,39 @@ export function analyzeShot(rec: ShotRecord): Analysis {
   const range = rec.needed.range;
   const cm = (mil: number) => Math.round((Math.abs(mil) * range) / 10);
   const lines: string[] = [];
-  const vWord = errV > 0 ? '높음' : '낮음';
-  const hWord = errH > 0 ? '오른쪽' : '왼쪽';
-  lines.push(`탄착: ${Math.abs(errV) >= 0.05 ? `${fmt(Math.abs(errV))}mil ${vWord}(${cm(errV)}cm)` : '높이 정확'} · ${Math.abs(errH) >= 0.05 ? `${fmt(Math.abs(errH))}mil ${hWord}(${cm(errH)}cm)` : '좌우 정확'}`);
-  lines.push(`고각: 필요 ${fmt(rec.needed.elevMil)} / 실제 ${fmt(actualV)} (터렛 ${fmt(rec.elevDial)} + 조준 ${fmt(rec.losOffsetV)})`);
+  const parts: string[] = [];
+  if (cm(errV) >= 3) parts.push(`${cm(errV)}cm ${errV > 0 ? '위' : '아래'}`);
+  if (cm(errH) >= 3) parts.push(`${cm(errH)}cm ${errH > 0 ? '오른쪽' : '왼쪽'}`);
+  lines.push(parts.length ? `${parts.join(' · ')}로 빗나감` : '아주 근소하게 빗나감');
+  lines.push(`위아래: 필요 ${vClicks(rec.needed.elevMil)} / 쏠 때 ${vClicks(actualV)} (다이얼 ${vClicks(rec.elevDial)} + 조준 ${vClicks(rec.losOffsetV)})`);
   const lead = rec.needed.windMil - rec.neededStatic.windMil;
   if (rec.moving && Math.abs(lead) > 0.1) {
-    lines.push(`좌우: 필요 ${lr(rec.needed.windMil)} = 바람 ${lr(rec.neededStatic.windMil)} + 리드 ${lr(lead)} / 실제 ${lr(actualH)}`);
+    lines.push(`좌우: 필요 ${hClicks(rec.needed.windMil)} (바람 ${hClicks(rec.neededStatic.windMil)} + 앞질러 겨누기 ${hClicks(lead)}) / 쏠 때 ${hClicks(actualH)}`);
   } else {
-    lines.push(`좌우: 필요 ${lr(rec.needed.windMil)} / 실제 ${lr(actualH)} (터렛 ${lr(rec.windDial)} + 조준 ${lr(rec.losOffsetH)})`);
+    lines.push(`좌우: 필요 ${hClicks(rec.needed.windMil)} / 쏠 때 ${hClicks(actualH)}`);
   }
-  lines.push(`거리 ${Math.round(range)}m · 비행시간 ${rec.needed.tof.toFixed(2)}초`);
+  lines.push(`거리 ${Math.round(range)}m · 탄 도착까지 ${rec.needed.tof.toFixed(2)}초`);
 
-  // 원인 판정: 흔들림이 만든 부분과 보정(터렛·홀드)이 틀린 부분을 분리한다
+  // 원인 판정: 흔들림이 만든 부분과 보정(다이얼·조준점)이 틀린 부분을 분리한다
   const swayMag = Math.hypot(rec.swayV, rec.swayH);
   const dialV = errV - rec.swayV;
   const dialH = errH - rec.swayH;
   const candidates: { score: number; tip: string }[] = [];
-  if (swayMag > 0.15) candidates.push({ score: swayMag, tip: `흔들림이 ${fmt(swayMag)}mil이었습니다. 숨을 참고(흔들림 80%↓) 레티클이 멈춘 순간 쏘세요.` });
+  if (swayMag > 0.15) candidates.push({ score: swayMag, tip: `조준이 흔들렸습니다(약 ${cm(swayMag)}cm). [숨]을 누르고 있으면 흔들림이 80% 줄어듭니다. 멈춘 순간 쏘세요.` });
   if (Math.abs(dialV) > 0.15) {
-    const dialHint = dialV < 0 ? `고각을 ${fmt(-dialV)}mil(${Math.round(-dialV * 10)}클릭) 더 올리세요` : `고각을 ${fmt(dialV)}mil(${Math.round(dialV * 10)}클릭) 내리세요`;
-    candidates.push({ score: Math.abs(dialV), tip: `${dialHint}. 거리를 다시 확인하고 탄도표 값을 쓰세요.` });
+    const n = clicks(dialV);
+    const tip = dialV < 0 ? `위아래 보정이 ${n}칸 모자랍니다. ▲를 ${n}번 더 누르세요.` : `위아래 보정이 ${n}칸 너무 많습니다. ▼를 ${n}번 누르세요.`;
+    candidates.push({ score: Math.abs(dialV), tip: `${tip} 거리를 다시 재 보세요.` });
   }
   if (Math.abs(dialH) > 0.15) {
     const actualNoSway = actualH - rec.swayH;
+    const n = clicks(dialH);
     if (rec.moving && Math.abs(lead) > 0.3 && Math.sign(dialH) !== Math.sign(lead) && Math.abs(actualNoSway - rec.neededStatic.windMil) < Math.abs(lead))
-      candidates.push({ score: Math.abs(dialH), tip: `리드가 부족합니다. 표적 진행 방향으로 ${fmt(Math.abs(lead))}mil 앞을 겨누세요.` });
+      candidates.push({ score: Math.abs(dialH), tip: `움직이는 표적입니다. 탄이 가는 동안 표적도 걷습니다. 걷는 방향으로 눈금 ${(Math.abs(lead)).toFixed(1)}개만큼 앞을 겨누세요.` });
     else
       candidates.push({
         score: Math.abs(dialH),
-        tip: `바람 보정이 ${dialH > 0 ? '너무 오른쪽' : '너무 왼쪽'}입니다. ${fmt(Math.abs(dialH))}mil(${Math.round(Math.abs(dialH) * 10)}클릭) ${dialH > 0 ? '왼쪽' : '오른쪽'}으로 옮기세요.`,
+        tip: `바람 때문에 ${cm(dialH)}cm ${dialH > 0 ? '오른쪽' : '왼쪽'}으로 밀렸습니다. ${dialH > 0 ? '◀' : '▶'}를 ${n}번 누르세요(또는 그만큼 ${dialH > 0 ? '왼쪽' : '오른쪽'}을 겨누기).`,
       });
   }
   candidates.sort((a, b) => b.score - a.score);
