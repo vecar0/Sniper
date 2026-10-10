@@ -5,6 +5,7 @@
  * - 알 수 없는/잘못된 타입의 필드 → 해당 필드만 기본값
  */
 import type { DifficultyId } from '../config/difficulty';
+import { DEFAULT_LOADOUT, getCqb, validParts, type CqbId, type PartChoice } from '../config/sidearms';
 
 export type Action =
   | 'fire'
@@ -21,7 +22,10 @@ export type Action =
   | 'dope'
   | 'ammo'
   | 'pause'
-  | 'restart';
+  | 'restart'
+  | 'slot1'
+  | 'slot2'
+  | 'slot3';
 
 export const ACTION_LABELS: Record<Action, string> = {
   fire: '발사',
@@ -39,6 +43,9 @@ export const ACTION_LABELS: Record<Action, string> = {
   ammo: '탄종 변경',
   pause: '일시정지',
   restart: '재시작(길게)',
+  slot1: '저격총(창가에서)',
+  slot2: '주무기',
+  slot3: '권총',
 };
 
 export const DEFAULT_KEYS: Record<Action, string> = {
@@ -57,6 +64,9 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   ammo: 'KeyX',
   pause: 'KeyP',
   restart: 'KeyR',
+  slot1: 'Digit1',
+  slot2: 'Digit2',
+  slot3: 'Digit3',
 };
 
 export type ReticleColor = 'black' | 'red' | 'lime' | 'white';
@@ -84,6 +94,8 @@ export interface Settings {
   /** 소음기 장착 */
   suppressor: boolean;
   keys: Record<Action, string>;
+  /** 실내 장비: 주무기 선택과 총마다 파츠 */
+  loadout: { primary: CqbId; parts: Record<CqbId, PartChoice> };
 }
 
 export interface MissionProgress {
@@ -138,6 +150,7 @@ export function defaultSettings(): Settings {
     weapon: 'r308',
     suppressor: false,
     keys: { ...DEFAULT_KEYS },
+    loadout: { primary: DEFAULT_LOADOUT.primary, parts: { p9: { ...DEFAULT_LOADOUT.parts.p9 }, v45: { ...DEFAULT_LOADOUT.parts.v45 }, c4: { ...DEFAULT_LOADOUT.parts.c4 } } },
   };
 }
 
@@ -191,6 +204,8 @@ export function validateSave(raw: unknown): SaveData {
   if (!['always', 'final', 'off'].includes(settings.bulletCam)) settings.bulletCam = 'final';
   if (!['hold', 'toggle'].includes(settings.breathMode)) settings.breathMode = 'hold';
   if (!['hold', 'toggle'].includes(settings.scopeMode)) settings.scopeMode = 'toggle';
+  if (!['v45', 'c4'].includes(settings.loadout.primary)) settings.loadout.primary = 'v45';
+  for (const id of ['p9', 'v45', 'c4'] as const) settings.loadout.parts[id] = validParts(getCqb(id), settings.loadout.parts[id]);
 
   const progress: Progress = sanitize<Progress>({ ...def.progress, missions: {}, daily: {} }, r.progress);
   const rawMissions = (r.progress as Progress | undefined)?.missions;

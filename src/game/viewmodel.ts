@@ -7,6 +7,8 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { WeaponSpec } from '../config/weapons';
 import { buildRifle, type RifleRig } from './models/rifle';
+import { buildCqbGun, type GunRig } from './models/guns';
+import type { CqbSpec, PartChoice } from '../config/sidearms';
 
 export class ViewModel {
   readonly scene = new THREE.Scene();
@@ -22,13 +24,19 @@ export class ViewModel {
   private envTex: THREE.Texture | null = null;
   /** 휴대폰: 총을 작게, 화면 오른쪽 아래로(터치 버튼과 겹치지 않게) */
   compact = false;
+  /** 실내 화기(권총·주무기) */
+  private readonly gunRoot = new THREE.Group();
+  private guns = new Map<string, GunRig>();
+  private activeGun: GunRig | null = null;
+  private gunKey = '';
 
   constructor(renderer: THREE.WebGLRenderer) {
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x445544, 0.9);
     this.key = new THREE.DirectionalLight(0xffffff, 2.2);
     this.key.position.set(-1, 2, 1.2);
     this.flash = new THREE.PointLight(0xffb060, 0, 1.5, 2);
-    this.scene.add(this.hemi, this.key, this.flash, this.root);
+    this.scene.add(this.hemi, this.key, this.flash, this.root, this.gunRoot);
+    this.gunRoot.visible = false;
     try {
       const pmrem = new THREE.PMREMGenerator(renderer);
       this.envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -48,6 +56,77 @@ export class ViewModel {
     this.rig = buildRifle(weapon, suppressor);
     this.rig.group.scale.setScalar(this.compact ? 0.5 : 0.72);
     this.root.add(this.rig.group);
+  }
+
+  /** 실내 화기 모델을 (다시) 만든다. 같은 구성이면 그대로 둔다 */
+  buildGuns(list: { spec: CqbSpec; parts: PartChoice }[]): void {
+    const key = list.map((g) => `${g.spec.id}:${Object.values(g.parts).join(',')}`).join('|');
+    if (key === this.gunKey) return;
+    this.gunKey = key;
+    for (const g of this.guns.values()) g.dispose();
+    this.guns.clear();
+    for (const { spec, parts } of list) {
+      const rig = buildCqbGun(spec, parts);
+      rig.group.visible = false;
+      this.gunRoot.add(rig.group);
+      this.guns.set(spec.id, rig);
+      rig.group.scale.setScalar(this.compact ? 0.62 : 0.75);
+    }
+    this.activeGun = null;
+  }
+
+  /** 'rifle' 또는 실내 화기 id */
+  setActive(id: string): void {
+    const rifle = id === 'rifle';
+    this.root.visible = rifle;
+    this.gunRoot.visible = !rifle;
+    this.activeGun = null;
+    for (const [gid, g] of this.guns) {
+      g.group.visible = gid === id;
+      if (gid === id) this.activeGun = g;
+    }
+  }
+
+  /**
+   * 실내 화기 자세.
+   * @param ads 0 = 허리, 1 = 조준(조준선이 화면 중앙)
+   * @param raise 0 = 내린 상태(무기 교체 중), 1 = 든 상태
+   * @param reloadProgress 0~1, -1 = 없음
+   */
+  updateGun(dt: number, ads: number, raise: number, reloadProgress: number, sway: { x: number; y: number }): void {
+    const g = this.activeGun;
+    if (!g) return;
+    this.t += dt;
+    let left = Math.min(dt, 0.25);
+    while (left > 0) {
+      const h = Math.min(left, 1 / 240);
+      this.recoilV += (-this.recoil * 420 - this.recoilV * 32) * h;
+      this.recoil += this.recoilV * h;
+      left -= h;
+    }
+    this.flashT = Math.max(0, this.flashT - dt);
+    this.flash.intensity = this.flashT > 0 ? 5 : 0;
+    this.flash.position.copy(g.muzzle).applyMatrix4(g.group.matrixWorld);
+    const e = ads * ads * (3 - 2 * ads);
+    const pistol = g.slide.children.length > 0;
+    const hipX = this.compact ? 0.15 : 0.13, hipY = this.compact ? -0.16 : -0.13, hipZ = pistol ? -0.34 : -0.3;
+    const adsZ = pistol ? -0.28 : -0.12;
+    const down = 1 - raise;
+    const breath = Math.sin(this.t * 1.6) * 0.002 * (1 - e);
+    this.gunRoot.position.set(
+      hipX * (1 - e) + sway.x * 0.002 * (1 - e * 0.7),
+      hipY * (1 - e) - g.sightY * g.group.scale.y * e + sway.y * 0.002 * (1 - e * 0.7) + breath - down * 0.25,
+      hipZ + (adsZ - hipZ) * e + this.recoil * 0.05,
+    );
+    this.gunRoot.rotation.set(this.recoil * 0.35 - down * 0.6, (1 - e) * 0.06, (1 - e) * -0.04);
+    // 권총 슬라이드가 뒤로 밀렸다 돌아온다
+    g.slide.position.z = Math.min(0.03, Math.max(0, this.recoil * 0.4));
+    if (reloadProgress >= 0) {
+      const r = reloadProgress;
+      this.gunRoot.rotation.z += 0.45 * Math.sin(Math.PI * Math.min(1, r * 1.1));
+      this.gunRoot.rotation.x += 0.15 * Math.sin(Math.PI * r);
+      g.mag.position.y = r < 0.5 ? -r * 0.5 : -(1 - r) * 0.5;
+    } else g.mag.position.y = 0;
   }
 
   /** 작전 시간대 조명 */
@@ -118,6 +197,7 @@ export class ViewModel {
   }
 
   dispose(): void {
+    for (const g of this.guns.values()) g.dispose();
     this.rig?.dispose();
     this.envTex?.dispose();
   }

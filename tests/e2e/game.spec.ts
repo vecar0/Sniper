@@ -272,6 +272,53 @@ test.describe('장시간 · 콘텐츠', () => {
     expect(w.errors).toEqual([]);
   });
 
+  test('실내 화기: 무기 교체 · 경비 사격 · 기울이기 · 저격총은 창가에서만', async ({ page }) => {
+    const w = watch(page);
+    await boot(page, { save: unlockedSave() });
+    await page.click('[data-go="missions"]');
+    await page.click('[data-mission="3"]');
+    // 브리핑에서 주무기 카빈 + 소음기 장착
+    await page.click('[data-cqb="c4"]');
+    await page.click('[data-part="muzzle:sup"]');
+    await page.click('[data-start]');
+    expect(await page.evaluate(() => (window as any).__longshot.game.slot)).toBe('pistol');
+    await page.keyboard.press('Digit2');
+    await page.waitForFunction(() => (window as any).__longshot.game.slot === 'primary', null, { timeout: 30_000 });
+    await expect(page.locator('.hc-name b')).toContainText('C4');
+    await expect(page.locator('.hc-parts')).toContainText('소음기');
+    // 저격총은 창가가 아니면 꺼낼 수 없다
+    await page.keyboard.press('Digit1');
+    await expect(page.locator('.toast')).toContainText('창가');
+    // 경비를 정면에서 겨눠 사격
+    await page.evaluate(() => {
+      const { game: g, input } = (window as any).__longshot;
+      const it = g.interior;
+      const gd = it.guards[1];
+      const p = it.toWorld({ c: 3, r: 6 });
+      g.ppos.set(p.x, it.floorY, p.y);
+      (window as any).__aim = setInterval(() => {
+        if (gd.down) return input.setVirtual('fire', false);
+        const cam = g.camera.position;
+        const dx = gd.pos.x - cam.x, dz = gd.pos.z - cam.z, dy = gd.pos.y + 1.25 - cam.y;
+        g.yaw = Math.atan2(-dx, -dz);
+        g.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+        input.setVirtual('fire', true);
+      }, 30);
+    });
+    await page.waitForFunction(() => (window as any).__longshot.game.interior.guards[1].down, null, { timeout: 120_000 });
+    await page.evaluate(() => {
+      clearInterval((window as any).__aim);
+      (window as any).__longshot.input.setVirtual('fire', false);
+    });
+    const st = await page.evaluate(() => (window as any).__longshot.game.hud().cqb);
+    expect(st.inMag).toBeLessThan(30);
+    // 기울이기(Q)
+    await page.keyboard.down('KeyQ');
+    await page.waitForFunction(() => (window as any).__longshot.game.hud().cqb.lean < -0.3, null, { timeout: 30_000 });
+    await page.keyboard.up('KeyQ');
+    expect(w.errors).toEqual([]);
+  });
+
   test('관측 태깅 → 민간인 사살 시 즉시 작전 실패', async ({ page }) => {
     const w = watch(page);
     await boot(page, { save: unlockedSave() });

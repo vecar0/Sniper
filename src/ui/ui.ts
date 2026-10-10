@@ -16,6 +16,8 @@ import type { Analysis } from '../game/analysis';
 import type { Game, HitInfo, HudSnapshot, MissionResult, TagInfo } from '../game/game';
 import { buildHuman, HumanMaterials } from '../game/models/human';
 import { buildRifle } from '../game/models/rifle';
+import { buildCqbGun } from '../game/models/guns';
+import { CQB_WEAPONS, PART_SLOTS, cqbStats, getCqb, getPart, type CqbId, type PartSlot } from '../config/sidearms';
 import { RifleState } from '../game/rifle';
 import { atmosphereFor, THEMES } from '../game/themes';
 import { PreviewStage } from './preview';
@@ -443,6 +445,10 @@ export class UI {
             <div class="wtabs" role="group" aria-label="총기 선택">${weaponTabs}</div>
             <div class="wstats"></div>
             <button class="toggle ${s.suppressor ? 'on' : ''}" data-suppressor aria-pressed="${s.suppressor}"><span>소음기</span><small></small><i aria-hidden="true"></i></button>
+            ${m.interior ? `<h3 class="sec">실내 장비 <small class="muted">건물 안에서 사용 · 저격총은 창가에서만</small></h3>
+            <div class="wtabs cqb-tabs" role="group" aria-label="실내 화기">${CQB_WEAPONS.map((w) => `<button class="wtab" data-cqb="${w.id}" title="${esc(w.desc)}">${esc(w.name)}<small>${w.kind === 'pistol' ? '권총(항상)' : '주무기'}</small></button>`).join('')}</div>
+            <div class="cqb-parts"></div>
+            <div class="cqb-stats"></div>` : ''}
             <h3 class="sec">난이도</h3>
             <div class="diff-row">${diffs}</div>
             <p class="muted diff-desc">${esc(DIFFICULTIES[s.difficulty].description)}</p>
@@ -458,6 +464,15 @@ export class UI {
       this.save.save();
       this.game.loadMission(m);
       this.refreshLoadout();
+    });
+    this.bind('[data-cqb]', (el) => {
+      const id = el.dataset.cqb as CqbId;
+      this.cqbEdit = id;
+      if (id !== 'p9') {
+        s.loadout.primary = id;
+        this.save.save();
+      }
+      this.refreshCqb(true);
     });
     this.bind('[data-suppressor]', () => {
       s.suppressor = !s.suppressor;
@@ -522,6 +537,64 @@ export class UI {
   }
 
   /** 장비 패널만 다시 그린다(3D 미리보기 컨텍스트를 재사용) */
+  /** 브리핑에서 파츠를 고치는 중인 실내 화기 */
+  private cqbEdit: CqbId = 'p9';
+
+  private refreshCqb(preview: boolean): void {
+    const box = this.screens.querySelector<HTMLElement>('.cqb-parts');
+    if (!box) return;
+    const lo = this.save.data.settings.loadout;
+    const w = getCqb(this.cqbEdit);
+    this.screens.querySelectorAll<HTMLElement>('[data-cqb]').forEach((b) => {
+      const id = b.dataset.cqb as CqbId;
+      b.classList.toggle('selected', id === this.cqbEdit);
+      b.classList.toggle('equipped', id === 'p9' || id === lo.primary);
+      b.setAttribute('aria-pressed', String(id === this.cqbEdit));
+    });
+    const parts = lo.parts[w.id];
+    box.innerHTML = PART_SLOTS.map(
+      ({ slot, name }) => `<div class="part-row"><span>${name}</span><div class="part-opts">${w.parts[slot]
+        .map((pid) => {
+          const p = getPart(slot, pid);
+          return `<button class="part-btn ${parts[slot] === pid ? 'selected' : ''}" data-part="${slot}:${pid}" title="${esc(p.desc)}" aria-pressed="${parts[slot] === pid}">${esc(p.name)}</button>`;
+        })
+        .join('')}</div></div>`,
+    ).join('');
+    box.querySelectorAll<HTMLElement>('[data-part]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [slot, pid] = b.dataset.part!.split(':') as [PartSlot, string];
+        lo.parts[w.id][slot] = pid;
+        this.save.save();
+        this.audio.play('uiClick');
+        this.refreshCqb(true);
+      }),
+    );
+    const st = cqbStats(w, parts);
+    const base = cqbStats(w, { muzzle: w.parts.muzzle[0], optic: w.parts.optic[0], mag: w.parts.mag[0], under: w.parts.under[0] });
+    const bar = (label: string, v: number, val: string, cmp: number) => `<div class="stat"><span>${label}</span><i style="--v:${Math.round(Math.max(0.04, Math.min(1, v)) * 100)}%"></i><em class="mono ${cmp > 0.001 ? 'up' : cmp < -0.001 ? 'down' : ''}">${val}</em></div>`;
+    const chosen = PART_SLOTS.map(({ slot }) => getPart(slot, parts[slot])).filter((p) => Object.keys(p.mods).length);
+    const stats = this.screens.querySelector<HTMLElement>('.cqb-stats');
+    if (stats)
+      stats.innerHTML =
+        `<p class="w-desc">${esc(w.kindName)} · ${esc(w.desc)}${this.cqbEdit !== 'p9' && lo.primary === this.cqbEdit ? ' <b class="equip-tag">주무기로 장착됨</b>' : ''}</p>` +
+        bar('위력', st.damage / 40, `${Math.round(st.damage)}`, st.damage - base.damage) +
+        bar('연사', 1 / st.interval / 14, `${Math.round(60 / st.interval)}rpm`, 0) +
+        bar('정확도(조준)', 1 - st.adsSpread / 1.2, `${st.adsSpread.toFixed(2)}°`, base.adsSpread - st.adsSpread) +
+        bar('반동', 1 - st.recoil / 2.2, `${st.recoil.toFixed(1)}`, base.recoil - st.recoil) +
+        bar('소음', 1 - st.noise / 45, `${Math.round(st.noise)}m`, base.noise - st.noise) +
+        `<p class="w-ammo">탄창 ${st.magazine}발 · 예비 ${st.reserve}발 · 재장전 ${st.reloadTime.toFixed(1)}초${chosen.length ? ` · ${chosen.map((p) => esc(p.desc)).join(' / ')}` : ''}</p>`;
+    if (preview && this.weaponStage) {
+      const rig = buildCqbGun(w, parts);
+      rig.group.scale.setScalar(w.kind === 'pistol' ? 3.2 : 2.2);
+      rig.group.rotation.y = Math.PI / 2;
+      const holder = new THREE.Group();
+      holder.add(rig.group);
+      this.weaponStage.show(holder, () => rig.dispose());
+      const name = this.screens.querySelector<HTMLElement>('.ws-name');
+      if (name) name.innerHTML = `<b>${esc(w.name)}</b><small class="mono">${esc(w.kindName)}</small>`;
+    }
+  }
+
   private refreshLoadout(): void {
     const m = this.briefingMission!;
     const s = this.save.data.settings;
@@ -553,6 +626,7 @@ export class UI {
       holder.add(rig.group);
       this.weaponStage.show(holder, () => rig.dispose());
     }
+    this.refreshCqb(false);
   }
   private backFromBriefing(): void {
     this.game.toMenu();
@@ -897,19 +971,26 @@ export class UI {
             <table class="keys-table">
               <tr><td>걷기</td><td>${k('elevUp')} ${k('windLeft')} ${k('elevDown')} ${k('windRight')} + 마우스로 방향</td></tr>
               <tr><td>숙이기 켜기/끄기</td><td>${k('breath')}</td></tr>
-              <tr><td>경비 제압(뒤에서)</td><td>${k('fire')}</td></tr>
-              <tr><td>창가에 자리 잡기</td><td>${k('scope')} (◆ 저격 위치에서)</td></tr>
+              <tr><td>사격 · 조준</td><td>${k('fire')} · ${k('scope')}</td></tr>
+              <tr><td>경비 제압(뒤에서)</td><td>${k('fire')} (가까이 뒤에 있을 때)</td></tr>
+              <tr><td>기울이기 왼쪽 · 오른쪽</td><td>${k('zoomOut')} · ${k('zoomIn')} (누르고 있기)</td></tr>
+              <tr><td>무기: 주무기 · 권총</td><td>${k('slot2')} · ${k('slot3')} / ${k('dope')} / 휠</td></tr>
+              <tr><td>재장전</td><td>${k('ammo')} (빈 탄창은 자동)</td></tr>
+              <tr><td>창가에 자리 잡기(저격총)</td><td>${k('scope')} 또는 ${k('slot1')} (◆ 저격 위치에서)</td></tr>
+              <tr><td>창가에서 일어나기</td><td>${k('slot2')} 또는 ${k('slot3')}</td></tr>
             </table>
             <h3>터치</h3>
             <p class="small-text">빈 곳을 드래그해 조준 · 두 손가락으로 벌려 배율 조절 · 오른쪽 아래 [발사] · 왼쪽 아래 [숨] · 왼쪽 십자 버튼(▲▼◀▶)으로 보정</p>
-            <p class="small-text">건물 안에서는 같은 버튼이 바뀝니다: ▲▼◀▶ = 걷기 · [숙이기] · [제압] · [저격] = 창가에 자리 잡기</p>
+            <p class="small-text">건물 안에서는 같은 버튼이 바뀝니다: ▲▼◀▶ = 걷기 · [숙이기] · [발사]/[제압] · [조준] · [◀기울][기울▶] · [장전] · [무기] · 창가에서 [저격]</p>
           </section>
           <section><h3>작전 순서 (건물이 있는 작전)</h3>
             <ol class="howto">
               <li><b>잠입</b> – 건물 입구에서 시작합니다. 경비에게 들키지 않고 노란 ◆ <b>저격 위치</b>(창가)까지 가세요.</li>
               <li><b>숨기</b> – 숙이면 경비가 알아보는 거리가 12m → 7m로 줄고 발소리도 안 납니다. 낮은 상자 뒤에 숨을 수 있습니다.</li>
-              <li><b>경비 눈치</b> – 경비 머리 위 <b>?</b>가 보이면 나를 보고 있는 것. 위쪽 눈 모양 게이지가 가득 차면 발각(실패)입니다.</li>
-              <li><b>제압</b> – 경비 <b>뒤</b>로 다가가면 [제압]으로 조용히 쓰러뜨립니다. 쓰러진 모습을 다른 경비가 보면 수색합니다.</li>
+              <li><b>경비 눈치</b> – 경비 머리 위 <b>?</b>가 보이면 나를 보고 있는 것. 위쪽 눈 모양 게이지가 가득 차면 <b>교전</b>이 시작되고, 그 경비가 무전기를 듭니다. 무전 전에 쓰러뜨리면 경보를 막습니다.</li>
+              <li><b>제압 · 사격</b> – 경비 <b>뒤</b>로 다가가면 조용히 제압. 총은 소음기가 없으면 멀리까지 들려 경비가 몰려옵니다. 머리를 맞히면 한 발.</li>
+              <li><b>교전</b> – 경보가 울리면 모든 경비가 옵니다. 벽 뒤에서 <b>기울이기</b>로 몸을 조금만 내밀면 덜 맞습니다. 체력은 4초간 안 맞으면 회복.</li>
+              <li><b>장비</b> – 브리핑에서 주무기(기관단총/카빈)와 파츠(소음기·조준기·탄창·하부)를 고르세요. 저격총은 창가에서만 씁니다.</li>
               <li><b>저격</b> – 창가에서 아래 요령대로 쏩니다. <b>소음기 없이 쏘면</b> 건물 안 경비가 8초 뒤 저격 위치로 옵니다.</li>
               <li><b>탈출</b> – 목표를 모두 제거하면 초록 ◆ <b>EXIT</b>까지 빠져나가면 성공입니다.</li>
             </ol>
@@ -1066,7 +1147,14 @@ export class UI {
       <div class="hud-markers" aria-hidden="true"></div>
       <div class="hud-impact" aria-hidden="true"><i></i><span>탄착</span></div>
       <div class="hud-stealth" aria-live="polite"><div class="hs-eye" aria-hidden="true"><i></i></div><div class="hs-text"><b class="hs-state"></b><span class="hs-pose"></span></div></div>
-      <div class="hud-prompt" role="status"></div>`;
+      <div class="hud-prompt" role="status"></div>
+      <div class="hud-hurt" aria-hidden="true"></div>
+      <div class="hud-hurtdir" aria-hidden="true"><i></i></div>
+      <div class="hud-ccross" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
+      <div class="hud-hitx" aria-hidden="true"><i></i><i></i></div>
+      <div class="hud-alarm" role="alert"></div>
+      <div class="hud-cqb frame-lite"><div class="hc-name"><b></b><span></span></div><div class="hc-parts"></div><div class="hc-ammo mono"></div></div>
+      <div class="hud-hp"><span>체력</span><i><b></b></i><em class="mono"></em></div>`;
   }
   private q(sel: string): HTMLElement {
     return this.hudEl.querySelector<HTMLElement>(sel)!;
@@ -1116,16 +1204,17 @@ export class UI {
     const inside = h.phase !== 'snipe';
     this.setText('.hud-targets', h.isRange ? `${h.weaponName} · 자유 연습` : inside && st ? st.objective : `◆ 표적 ${h.targetsTotal - h.targetsLeft} / ${h.targetsTotal}`);
     this.hudEl.classList.toggle('infil', inside);
-    this.touch?.setMode(inside ? 'infil' : 'snipe', !!st?.crouched);
+    this.touch?.setMode(inside ? 'infil' : 'snipe', { crouched: !!st?.crouched, takedown: !!st?.canTakedown, atNest: !!st?.atNest, interior: !!st });
     const stEl = this.q('.hud-stealth');
     stEl.style.display = inside && st ? '' : 'none';
     if (inside && st) {
-      const lvl = st.meter > 0.7 ? 'danger' : st.meter > 0.25 ? 'warn' : st.meter > 0.02 ? 'seen' : 'hidden';
+      const lvl = st.combat ? 'danger' : st.meter > 0.7 ? 'danger' : st.meter > 0.25 ? 'warn' : st.meter > 0.02 ? 'seen' : 'hidden';
       stEl.className = `hud-stealth s-${lvl}`;
       (stEl.querySelector('.hs-eye i') as HTMLElement).style.transform = `scaleY(${Math.max(0.08, st.meter).toFixed(3)})`;
-      this.setText('.hs-state', lvl === 'danger' ? '발각 직전!' : lvl === 'warn' ? '의심받는 중' : lvl === 'seen' ? '눈에 띄는 중' : '숨어 있음');
+      this.setText('.hs-state', st.combat ? '교전 중!' : lvl === 'danger' ? '발각 직전!' : lvl === 'warn' ? '의심받는 중' : lvl === 'seen' ? '눈에 띄는 중' : '숨어 있음');
       this.setText('.hs-pose', `${st.crouched ? '숙임 · 조용' : '서 있음'} · 제압 ${st.guardsDown}/${st.guardsTotal}`);
     }
+    this.updateCqbHud(h);
     const pr = this.q('.hud-prompt');
     const prompt = st?.prompt ?? null;
     if (pr.textContent !== (prompt ?? '')) pr.textContent = prompt ?? '';
@@ -1196,6 +1285,60 @@ export class UI {
           </tbody></table><div class="dope-foot">${this.input.isTouch ? '[표] 버튼으로 닫기' : `[${this.input.keyLabel('dope')}] 닫기`} · 1칸 = 0.1mil = 100m에서 1cm · 영점 100m · 고도 ${mm.atmosphere.altitude}m · ${mm.atmosphere.temperature}°C</div>`;
       }
     }
+  }
+
+  private updateCqbHud(h: HudSnapshot): void {
+    const c = h.cqb;
+    const inside = h.phase !== 'snipe' && !!c;
+    const show = (sel: string, v: boolean) => {
+      const el = this.q(sel);
+      const d = v ? '' : 'none';
+      if (el.style.display !== d) el.style.display = d;
+      return el;
+    };
+    show('.hud-cqb', inside);
+    show('.hud-hp', !!c && (inside || c.hp < 100));
+    show('.hud-ccross', inside && c!.slot !== 'rifle');
+    const alarm = show('.hud-alarm', !!c && c.alarm !== 'none');
+    if (!c) {
+      show('.hud-hurt', false);
+      show('.hud-hurtdir', false);
+      show('.hud-hitx', false);
+      return;
+    }
+    if (c.alarm !== 'none') {
+      const t = c.alarm === 'on' ? '경보 발령 – 교전 중' : '무전 중! 지금 쓰러뜨리면 경보를 막는다';
+      if (alarm.textContent !== t) alarm.textContent = t;
+      alarm.classList.toggle('on', c.alarm === 'on');
+    }
+    // 체력
+    const hpEl = this.q('.hud-hp');
+    (hpEl.querySelector('b') as HTMLElement).style.transform = `scaleX(${(c.hp / 100).toFixed(3)})`;
+    hpEl.classList.toggle('low', c.hp < 35);
+    this.setText('.hud-hp em', String(Math.ceil(c.hp)));
+    const hurt = show('.hud-hurt', c.hurt > 0.01);
+    hurt.style.opacity = (c.hurt * 0.8 + (c.hp < 35 ? 0.25 : 0)).toFixed(3);
+    const hd = show('.hud-hurtdir', c.hurtDir !== null && c.hurt > 0.05);
+    if (c.hurtDir !== null) {
+      hd.style.transform = `translate(-50%, -50%) rotate(${c.hurtDir.toFixed(1)}deg)`;
+      hd.style.opacity = c.hurt.toFixed(3);
+    }
+    const hx = show('.hud-hitx', c.hitMarker > 0.02);
+    hx.style.opacity = c.hitMarker.toFixed(3);
+    hx.classList.toggle('kill', c.hitKill);
+    if (!inside) return;
+    // 무기
+    this.setText('.hc-name b', c.weaponName);
+    this.setText('.hc-name span', c.kindName);
+    this.setText('.hc-parts', c.parts || '파츠 없음');
+    this.setText('.hc-ammo', c.reloading ? '재장전 중…' : `${c.inMag} | ${c.reserve}`);
+    this.q('.hc-ammo').classList.toggle('warn', !c.reloading && c.inMag <= 3);
+    // 십자선: 탄 퍼짐만큼 벌어지고, 조준하면 사라진다(조준기 점만 남김)
+    const cc = this.q('.hud-ccross');
+    const gap = Math.max(4, Math.min(80, c.spreadPx));
+    cc.style.setProperty('--gap', `${gap.toFixed(1)}px`);
+    cc.classList.toggle('ads', c.ads > 0.6);
+    cc.classList.toggle('dot', c.ads > 0.6 && /도트|2배/.test(c.parts));
   }
 
   /** 상단 나침반: 시선 방위 눈금 + 식별된 사람 방위 표시 */

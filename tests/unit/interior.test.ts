@@ -22,6 +22,8 @@ import * as THREE from 'three';
 import { HumanMaterials } from '../../src/game/models/human';
 import { INTERIOR, Interior } from '../../src/game/interior';
 
+const TUNE = { reaction: 0.5, interval: 0.5, hitBase: 0.4, damage: 10 };
+
 describe('실내 규칙', () => {
   // 작은 시험용 건물: N(저격 위치) 아래로 복도, 오른쪽 방에 경비
   const spec = {
@@ -81,8 +83,8 @@ describe('실내 규칙', () => {
     const g = it.guards[0];
     let detected = false;
     for (let i = 0; i < 600 && !detected; i++) {
-      const r = it.update(1 / 60, { x: g.pos.x, z: g.pos.z - 2.5, crouched: false, moving: false, hidden: false }, 1);
-      detected = !!r.detectedBy;
+      const r = it.update(1 / 60, { x: g.pos.x, z: g.pos.z - 2.5, hx: g.pos.x, hz: g.pos.z - 2.5, crouched: false, moving: false, hidden: false, detectMul: 1 }, 1, TUNE);
+      detected = !!r.detectedBy || r.combat;
     }
     expect(detected).toBe(true);
   });
@@ -91,7 +93,7 @@ describe('실내 규칙', () => {
     const it = make();
     const g = it.guards[0];
     let max = 0;
-    for (let i = 0; i < 300; i++) max = Math.max(max, it.update(1 / 60, { x: g.pos.x, z: g.pos.z + 1.6, crouched: true, moving: true, hidden: false }, 1).maxMeter);
+    for (let i = 0; i < 300; i++) max = Math.max(max, it.update(1 / 60, { x: g.pos.x, z: g.pos.z + 1.6, hx: g.pos.x, hz: g.pos.z + 1.6, crouched: true, moving: true, hidden: false, detectMul: 1 }, 1, TUNE).maxMeter);
     expect(max).toBe(0);
   });
 

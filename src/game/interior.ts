@@ -60,7 +60,27 @@ export const INTERIOR = {
   loudShotDelay: 8,
   muffledListenTime: 5,
   searchLookTime: 6,
+  /** 교전: 경비 체력, 이동 속도, 놓친 뒤 수색 시간 */
+  guardHp: 100,
+  guardCombatSpeed: 1.9,
+  combatLoseTime: 9,
+  /** 무전: 한 명이 교전을 시작하면 이 시간 뒤 건물 전체 경보 */
+  radioDelay: 1.5,
+  /** 몸을 기울여 일부만 보일 때 발각 속도·피격 확률 배율 */
+  partialExposure: 0.5,
 } as const;
+
+/** 난이도별 경비 사격 */
+export interface CombatTuning {
+  /** 나를 본 뒤 첫 발까지(초) */
+  reaction: number;
+  /** 발사 간격(초) */
+  interval: number;
+  /** 기본 명중 확률(가까울수록·멈춰 있을수록 높음) */
+  hitBase: number;
+  /** 한 발 피해(플레이어 체력 100) */
+  damage: number;
+}
 
 type Cell = 'wall' | 'window' | 'floor' | 'tall' | 'low' | 'table' | 'void';
 
@@ -69,7 +89,7 @@ export interface GridPos {
   r: number;
 }
 
-export type GuardState = 'patrol' | 'pause' | 'suspicious' | 'listen' | 'search' | 'look' | 'return' | 'down';
+export type GuardState = 'patrol' | 'pause' | 'suspicious' | 'listen' | 'search' | 'look' | 'return' | 'combat' | 'down';
 
 export class InteriorGuard {
   readonly rig: HumanRig;
@@ -89,6 +109,20 @@ export class InteriorGuard {
   bodySeen = new Set<InteriorGuard>();
   /** 총성을 듣고 멈춘 뒤 수색하러 갈지 */
   searchAfterListen = false;
+  hp: number = INTERIOR.guardHp;
+  /** 교전: 마지막으로 본 플레이어 위치 */
+  lastKnown: THREE.Vector2 | null = null;
+  /** 이번 스텝에 플레이어를 보고 있는가(머리만 보이면 partial) */
+  seesPlayer = false;
+  partial = false;
+  aimT = 0;
+  fireT = 0;
+  lostT = 0;
+  /** 경보가 울린 뒤에는 계속 경계(시야가 넓다) */
+  alarmed = false;
+  /** 총구 섬광 표시 시간 */
+  flashT = 0;
+  readonly flash: THREE.Mesh;
   private animT = 0;
   private swing = 0;
   private fall = 0;
@@ -96,6 +130,10 @@ export class InteriorGuard {
 
   constructor(route: THREE.Vector2[], pause: number, yawDeg: number | undefined, outfit: OutfitId, mats: HumanMaterials, label: string) {
     this.rig = buildHuman(outfit, mats);
+    this.flash = new THREE.Mesh(FLASH_GEO, FLASH_MAT);
+    this.flash.position.set(0.18, 1.38, 0.55);
+    this.flash.visible = false;
+    this.rig.root.add(this.flash);
     this.route = route;
     this.pause = pause;
     this.baseYaw = yawDeg !== undefined ? (yawDeg * Math.PI) / 180 : 0;
@@ -125,6 +163,16 @@ export class InteriorGuard {
     this.lookAt = null;
     this.bodySeen.clear();
     this.fall = 0;
+    this.hp = INTERIOR.guardHp;
+    this.lastKnown = null;
+    this.seesPlayer = false;
+    this.partial = false;
+    this.aimT = 0;
+    this.fireT = 0;
+    this.lostT = 0;
+    this.alarmed = false;
+    this.flashT = 0;
+    this.flash.visible = false;
     this.rig.body.rotation.set(0, 0, 0);
     this.rig.body.position.set(0, 0, 0);
     this.rig.root.visible = true;
@@ -183,6 +231,8 @@ export class InteriorGuard {
 
   sync(dt = 0): void {
     const r = this.rig;
+    this.flashT = Math.max(0, this.flashT - dt);
+    this.flash.visible = this.flashT > 0 && this.state !== 'down';
     r.root.position.copy(this.pos);
     r.root.rotation.y = this.yaw;
     if (this.state === 'down') {
@@ -210,19 +260,45 @@ export class InteriorGuard {
 export interface PlayerSense {
   x: number;
   z: number;
+  /** 머리 위치(몸을 기울이면 몸통과 다르다) */
+  hx: number;
+  hz: number;
   crouched: boolean;
   moving: boolean;
   /** 저격 중(창가에 붙어 있음) – 숙인 것과 같은 규칙 */
   hidden: boolean;
+  /** 레이저 등으로 눈에 더 잘 띔 */
+  detectMul: number;
+}
+
+export interface GuardShot {
+  guard: InteriorGuard;
+  hit: boolean;
+  damage: number;
 }
 
 export interface GuardUpdate {
-  /** 누군가의 게이지가 가득 참 → 발각 */
+  /** 게이지가 가득 차 교전을 시작한 경비(처음 한 명) */
   detectedBy: InteriorGuard | null;
   /** 동료 시신을 처음 발견한 경비 */
   foundBody: InteriorGuard | null;
   maxMeter: number;
+  /** 이번 스텝에 경비가 쏜 탄 */
+  shots: GuardShot[];
+  /** 교전 중인 경비가 있는가 */
+  combat: boolean;
 }
+
+export interface RayHit {
+  kind: 'guard' | 'wall';
+  point: THREE.Vector3;
+  guard?: InteriorGuard;
+  zone?: 'head' | 'body' | 'leg';
+  dist: number;
+}
+
+const FLASH_GEO = new THREE.SphereGeometry(0.07, 6, 4);
+const FLASH_MAT = new THREE.MeshBasicMaterial({ color: 0xffd27a });
 
 export class Interior {
   readonly spec: InteriorSpec;
@@ -507,64 +583,76 @@ export class Interior {
     return best;
   }
 
-  update(dt: number, player: PlayerSense, detectMul: number): GuardUpdate {
+  update(dt: number, player: PlayerSense, detectMul: number, tuning: CombatTuning): GuardUpdate {
     this.t += dt;
     const I = INTERIOR;
-    const out: GuardUpdate = { detectedBy: null, foundBody: null, maxMeter: 0 };
+    const out: GuardUpdate = { detectedBy: null, foundBody: null, maxMeter: 0, shots: [], combat: false };
     const pv = new THREE.Vector2(player.x, player.z);
     for (const g of this.guards) {
       if (g.down) {
         g.sync(dt);
         continue;
       }
-      // ── 감지 ──
-      const dx = player.x - g.pos.x, dz = player.z - g.pos.z;
+      // ── 감지(머리 위치 기준, 몸통이 가려져 있으면 일부만 보임) ──
+      const dx = player.hx - g.pos.x, dz = player.hz - g.pos.z;
       const d = Math.hypot(dx, dz);
       const low = player.crouched || player.hidden;
-      const searching = g.state === 'search' || g.state === 'look';
+      const searching = g.state === 'search' || g.state === 'look' || g.state === 'combat' || g.alarmed;
       const range = (low ? I.viewRangeCrouch : I.viewRange) * (searching ? I.searchViewMul : 1);
       const half = I.viewHalfAngle * (searching ? 1.2 : 1);
       const gf = g.forward;
       const ang = d > 1e-3 ? Math.acos(Math.max(-1, Math.min(1, (dx * gf.x + dz * gf.y) / d))) : 0;
-      const inCone = (d < range && ang < half) || (d < I.closeSense && ang < Math.PI * 0.6);
-      const sees = inCone && this.los(g.pos.x, g.pos.z, player.x, player.z, low);
-      if (sees) {
+      const inCone = g.state === 'combat' ? d < range * 1.5 : (d < range && ang < half) || (d < I.closeSense && ang < Math.PI * 0.6);
+      const headVis = inCone && this.los(g.pos.x, g.pos.z, player.hx, player.hz, low);
+      const bodyVis = headVis && (Math.hypot(player.hx - player.x, player.hz - player.z) < 0.1 || this.los(g.pos.x, g.pos.z, player.x, player.z, low));
+      g.seesPlayer = headVis;
+      g.partial = headVis && !bodyVis;
+      if (headVis) {
         const near = Math.max(0, 1 - d / range);
-        g.meter += (I.detectBase + I.detectNear * near) * detectMul * (player.moving ? 1 : 0.75) * dt;
+        g.meter = Math.min(1, g.meter + (I.detectBase + I.detectNear * near) * detectMul * player.detectMul * (player.moving ? 1 : 0.75) * (g.partial ? I.partialExposure : 1) * dt);
         g.lookAt = pv.clone();
-      } else {
+        g.lastKnown = pv.clone();
+      } else if (g.state !== 'combat') {
         g.meter = Math.max(0, g.meter - I.detectDecay * dt);
       }
       // 발소리(서서 걸을 때)
-      if (!sees && player.moving && !player.crouched && !player.hidden && d < I.footstepRadius && (g.state === 'patrol' || g.state === 'pause')) {
+      if (!headVis && player.moving && !player.crouched && !player.hidden && d < I.footstepRadius && (g.state === 'patrol' || g.state === 'pause')) {
         g.state = 'suspicious';
         g.timer = 2.5;
         g.lookAt = pv.clone();
         g.meter = Math.max(g.meter, 0.1);
       }
-      if (g.meter >= 1) {
+      if (g.meter >= 1 && g.state !== 'combat') {
         g.meter = 1;
+        this.engage(g, pv);
         out.detectedBy = out.detectedBy ?? g;
       }
       out.maxMeter = Math.max(out.maxMeter, g.meter);
-      if (g.meter > I.suspicious && g.state !== 'search') {
+      if (g.meter > I.suspicious && g.state !== 'search' && g.state !== 'combat') {
         if (g.state !== 'suspicious') g.timer = 2.5;
         g.state = 'suspicious';
       }
       // 쓰러진 동료 발견
-      for (const o of this.guards) {
-        if (!o.down || g.bodySeen.has(o)) continue;
-        const bx = o.pos.x - g.pos.x, bz = o.pos.z - g.pos.z;
-        const bd = Math.hypot(bx, bz);
-        if (bd > I.bodySightRange) continue;
-        const ba = Math.acos(Math.max(-1, Math.min(1, (bx * gf.x + bz * gf.y) / Math.max(bd, 1e-3))));
-        if (ba > half || !this.los(g.pos.x, g.pos.z, o.pos.x, o.pos.z, false)) continue;
-        g.bodySeen.add(o);
-        g.state = 'search';
-        g.path = this.path(new THREE.Vector2(g.pos.x, g.pos.z), new THREE.Vector2(o.pos.x + 0.6, o.pos.z));
-        out.foundBody = out.foundBody ?? g;
+      if (g.state !== 'combat') {
+        for (const o of this.guards) {
+          if (!o.down || g.bodySeen.has(o)) continue;
+          const bx = o.pos.x - g.pos.x, bz = o.pos.z - g.pos.z;
+          const bd = Math.hypot(bx, bz);
+          if (bd > I.bodySightRange) continue;
+          const ba = Math.acos(Math.max(-1, Math.min(1, (bx * gf.x + bz * gf.y) / Math.max(bd, 1e-3))));
+          if (ba > half || !this.los(g.pos.x, g.pos.z, o.pos.x, o.pos.z, false)) continue;
+          g.bodySeen.add(o);
+          g.state = 'search';
+          g.alarmed = true;
+          g.path = this.path(new THREE.Vector2(g.pos.x, g.pos.z), new THREE.Vector2(o.pos.x + 0.6, o.pos.z));
+          out.foundBody = out.foundBody ?? g;
+        }
       }
-      this.think(g, dt);
+      if (g.state === 'combat') {
+        out.combat = true;
+        const shot = this.combat(g, dt, player, d, tuning);
+        if (shot) out.shots.push(shot);
+      } else this.think(g, dt);
       g.sync(dt);
     }
     // 도착 표시 링 깜빡임
@@ -572,6 +660,150 @@ export class Interior {
     (this.nestRing.material as THREE.MeshBasicMaterial).opacity = pulse;
     (this.exitRing.material as THREE.MeshBasicMaterial).opacity = pulse;
     return out;
+  }
+
+  /** 교전 시작 */
+  engage(g: InteriorGuard, at: THREE.Vector2): void {
+    if (g.down) return;
+    if (g.state !== 'combat') {
+      g.aimT = 0;
+      g.fireT = 0.2;
+    }
+    g.state = 'combat';
+    g.meter = 1;
+    g.alarmed = true;
+    g.lastKnown = at.clone();
+    g.lostT = 0;
+    g.path = [];
+  }
+
+  /** 건물 전체 경보: 모든 경비가 마지막 위치로 온다 */
+  alarm(at: THREE.Vector2): void {
+    for (const g of this.guards) if (!g.down) this.engage(g, at);
+  }
+
+  get anyCombat(): boolean {
+    return this.guards.some((g) => !g.down && g.state === 'combat');
+  }
+
+  private combat(g: InteriorGuard, dt: number, player: PlayerSense, d: number, t: CombatTuning): GuardShot | null {
+    g.fireT -= dt;
+    if (g.seesPlayer) {
+      g.lostT = 0;
+      g.path = [];
+      g.idle(dt);
+      g.turnToward(player.hx, player.hz, 6, dt);
+      g.aimT += dt;
+      if (g.aimT >= t.reaction && g.fireT <= 0) {
+        g.fireT = t.interval * (0.85 + Math.random() * 0.3);
+        g.flashT = 0.06;
+        // 명중 확률: 거리 · 자세 · 노출
+        let p = t.hitBase * Math.max(0.3, Math.min(1.1, 1.25 - d / 18));
+        if (player.crouched) p *= 0.8;
+        if (player.moving) p *= 0.7;
+        if (g.partial) p *= INTERIOR.partialExposure;
+        const hit = Math.random() < p;
+        return { guard: g, hit, damage: hit ? t.damage * (0.85 + Math.random() * 0.3) : 0 };
+      }
+      return null;
+    }
+    g.aimT = Math.max(0, g.aimT - dt * 2);
+    // 안 보이면 마지막 위치로 이동
+    const goal = g.lastKnown;
+    if (!goal) return null;
+    if (!g.path.length) {
+      if (Math.hypot(goal.x - g.pos.x, goal.y - g.pos.z) > 0.6) g.path = this.path(new THREE.Vector2(g.pos.x, g.pos.z), goal);
+    }
+    const next = g.path[0];
+    if (next) {
+      if (g.walkTo(next.x, next.y, INTERIOR.guardCombatSpeed, dt)) g.path.shift();
+    } else {
+      g.idle(dt);
+      g.yaw += Math.sin(this.t * 1.7) * dt * 2;
+      g.lostT += dt;
+      if (g.lostT > INTERIOR.combatLoseTime) {
+        // 놓쳤다: 경계한 채로 둘러보다 복귀
+        g.state = 'look';
+        g.timer = INTERIOR.searchLookTime;
+        g.meter = 0.3;
+      }
+    }
+    return null;
+  }
+
+  /** 플레이어가 쏜 소리: 반경 안 경비가 반응(보이면 교전, 아니면 소리 난 곳 수색) */
+  noise(at: THREE.Vector2, radius: number, playerVisibleTo: (g: InteriorGuard) => boolean): InteriorGuard[] {
+    const reacted: InteriorGuard[] = [];
+    for (const g of this.guards) {
+      if (g.down || g.state === 'combat') continue;
+      if (Math.hypot(g.pos.x - at.x, g.pos.z - at.y) > radius) continue;
+      reacted.push(g);
+      g.alarmed = true;
+      if (playerVisibleTo(g)) this.engage(g, at);
+      else {
+        g.state = 'search';
+        g.meter = Math.max(g.meter, 0.35);
+        g.lookAt = at.clone();
+        g.path = this.path(new THREE.Vector2(g.pos.x, g.pos.z), at);
+      }
+    }
+    return reacted;
+  }
+
+  /** 경비가 지금 플레이어 머리를 볼 수 있는가(방향 무관) */
+  canSee(g: InteriorGuard, hx: number, hz: number, low: boolean): boolean {
+    return this.los(g.pos.x, g.pos.z, hx, hz, low);
+  }
+
+  /** 피해를 준다. 쓰러지면 true */
+  damage(g: InteriorGuard, amount: number, from: THREE.Vector2): boolean {
+    if (g.down) return false;
+    g.hp -= amount;
+    if (g.hp <= 0) {
+      g.knockDown();
+      return true;
+    }
+    this.engage(g, from);
+    return false;
+  }
+
+  /**
+   * 총탄 판정(즉시): 벽·바닥·천장·상자 또는 경비 몸.
+   * 창문 구멍으로 나가면 null(건물 밖은 실내 화기로 맞히지 않는다).
+   */
+  ray(origin: THREE.Vector3, dir: THREE.Vector3, range: number): RayHit | null {
+    const I = INTERIOR;
+    // 경비 몸(머리 구 · 몸통/다리 원기둥)
+    let best: RayHit | null = null;
+    for (const g of this.guards) {
+      if (g.down) continue;
+      const head = new THREE.Vector3(g.pos.x, g.pos.y + 1.66, g.pos.z);
+      const th = raySphere(origin, dir, head, 0.14);
+      if (th !== null && th < range && (!best || th < best.dist)) best = { kind: 'guard', guard: g, zone: 'head', dist: th, point: origin.clone().addScaledVector(dir, th) };
+      for (const [r, y0, y1, zone] of [[0.24, 0.85, 1.52, 'body'], [0.2, 0, 0.85, 'leg']] as const) {
+        const tc = rayCylinder(origin, dir, g.pos.x, g.pos.z, r, g.pos.y + y0, g.pos.y + y1);
+        if (tc !== null && tc < range && (!best || tc < best.dist)) best = { kind: 'guard', guard: g, zone, dist: tc, point: origin.clone().addScaledVector(dir, tc) };
+      }
+    }
+    // 벽: 경비보다 먼저 막히는지 0.04m 간격으로 확인
+    const maxT = best ? best.dist : range;
+    const p = new THREE.Vector3();
+    for (let t = 0.05; t < maxT; t += 0.04) {
+      p.copy(origin).addScaledVector(dir, t);
+      const y = p.y - this.floorY;
+      const g = this.toGrid(p.x, p.z);
+      const k = this.cell(g.c, g.r);
+      if (k === 'void') return null;
+      let block = y < 0 || y > I.wallHeight;
+      if (!block) {
+        if (k === 'wall' || k === 'tall') block = k === 'wall' || y < 1.9;
+        else if (k === 'window') block = y < I.sill || y > I.lintel;
+        else if (k === 'low') block = y < 0.86;
+        else if (k === 'table') block = y < 0.78 && y > 0.7;
+      }
+      if (block) return { kind: 'wall', point: p.clone(), dist: t };
+    }
+    return best;
   }
 
   private think(g: InteriorGuard, dt: number): void {
@@ -645,6 +877,7 @@ export class Interior {
           if (!g.path.length) {
             g.state = g.stationary ? 'pause' : 'patrol';
             g.timer = g.pause;
+            g.alarmed = false;
           }
         }
         break;
@@ -894,4 +1127,29 @@ export function validateLayout(spec: InteriorSpec): string[] {
     }
   });
   return errors;
+}
+
+function raySphere(o: THREE.Vector3, d: THREE.Vector3, c: THREE.Vector3, r: number): number | null {
+  const ox = o.x - c.x, oy = o.y - c.y, oz = o.z - c.z;
+  const b = ox * d.x + oy * d.y + oz * d.z;
+  const cc = ox * ox + oy * oy + oz * oz - r * r;
+  const disc = b * b - cc;
+  if (disc < 0) return null;
+  const t = -b - Math.sqrt(disc);
+  return t > 0 ? t : null;
+}
+
+/** 세로 원기둥(XZ 중심, 반지름, 높이 범위)과 광선 */
+function rayCylinder(o: THREE.Vector3, d: THREE.Vector3, cx: number, cz: number, r: number, y0: number, y1: number): number | null {
+  const ox = o.x - cx, oz = o.z - cz;
+  const a = d.x * d.x + d.z * d.z;
+  if (a < 1e-9) return null;
+  const b = ox * d.x + oz * d.z;
+  const c = ox * ox + oz * oz - r * r;
+  const disc = b * b - a * c;
+  if (disc < 0) return null;
+  const t = (-b - Math.sqrt(disc)) / a;
+  if (t <= 0) return null;
+  const y = o.y + d.y * t;
+  return y >= y0 && y <= y1 ? t : null;
 }

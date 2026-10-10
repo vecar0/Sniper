@@ -22,7 +22,9 @@ import { ROLE_LABEL, Target, TargetMaterials, ZONE_LABEL, type HitResult } from 
 import type { Role } from '../config/missions';
 import { SHOOTER_GROUND } from './terrain';
 import { ViewModel } from './viewmodel';
-import { INTERIOR, type Interior, type InteriorGuard } from './interior';
+import { INTERIOR, type CombatTuning, type Interior, type InteriorGuard, type PlayerSense } from './interior';
+import { CqbGun } from './cqb';
+import { getCqb } from '../config/sidearms';
 import { segmentBox, World, type QualityLevel } from './world';
 
 export interface HitInfo {
@@ -98,7 +100,40 @@ export interface StealthHud {
   /** 경비 수(남은/전체) */
   guardsDown: number;
   guardsTotal: number;
+  /** 창가 저격 위치에 서 있음 */
+  atNest: boolean;
+  canTakedown: boolean;
+  /** 교전 중인 경비가 있다 */
+  combat: boolean;
 }
+
+/** 실내 화기 · 체력 HUD */
+export interface CqbHud {
+  slot: Slot;
+  weaponName: string;
+  kindName: string;
+  parts: string;
+  inMag: number;
+  reserve: number;
+  reloading: boolean;
+  /** 체력 0~100 */
+  hp: number;
+  /** 피격 직후 붉은 화면(0~1) */
+  hurt: number;
+  /** 피격 방향(화면 기준 도, 0 = 정면) */
+  hurtDir: number | null;
+  /** 경보: 'none' | 'radio'(무전 중 – 쏜 경비를 빨리 처리하면 막음) | 'on' */
+  alarm: 'none' | 'radio' | 'on';
+  /** 명중 표시(0~1), kill이면 쓰러뜨림 */
+  hitMarker: number;
+  hitKill: boolean;
+  /** 십자선 벌어짐(화면 px) */
+  spreadPx: number;
+  ads: number;
+  lean: number;
+}
+
+export type Slot = 'rifle' | 'primary' | 'pistol';
 
 export interface HudSnapshot {
   missionName: string;
@@ -146,6 +181,7 @@ export interface HudSnapshot {
   /** 진행 단계: 잠입 → 저격 → 탈출 (건물이 없는 미션은 항상 snipe) */
   phase: Phase;
   stealth: StealthHud | null;
+  cqb: CqbHud | null;
 }
 
 interface ActiveBullet {
@@ -163,6 +199,8 @@ interface ActiveBullet {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+/** 기울이기로 머리가 옆으로 나가는 거리(m) */
+const INTERIOR_LEAN = 0.42;
 
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
@@ -250,6 +288,23 @@ export class Game {
   private takedownCand: InteriorGuard | null = null;
   private lastSuspicionBeep = 0;
   private phaseHintTimer = 0;
+  // 실내 화기 · 체력
+  private guns: { primary: CqbGun; pistol: CqbGun } | null = null;
+  slot: Slot = 'rifle';
+  /** 무기 교체: 0(내림) → 1(듦) */
+  private raise = 1;
+  private adsToggle = false;
+  private lean = 0;
+  hp = 100;
+  private hurtT = 99;
+  private hurtFlash = 0;
+  private hurtFrom: THREE.Vector2 | null = null;
+  private alarmT = -1;
+  private alarmGuard: InteriorGuard | null = null;
+  private alarmOn = false;
+  private hitMarkerT = 0;
+  private hitKill = false;
+  private cqbStats = { shots: 0, hits: 0, kills: 0 };
   /** 테스트용: 다음 발사에서 흔들림·분산을 끈다 */
   testSteady = false;
 
@@ -494,14 +549,155 @@ export class Game {
     const k = this.keyHint();
     if (this.phase === 'infil') {
       return touch
-        ? '잠입: ◀▲▼▶로 걷고 화면을 끌어 둘러보세요. [숙이기]를 켜면 조용하고 잘 안 보입니다. 경비 뒤에서 [제압]. 목표: ◆ 저격 위치'
-        : `잠입: [${k.move}] 이동 · [${k.crouch}] 숙이기(조용·잘 안 보임) · 경비 뒤에서 [${k.act}] 제압. 목표: ◆ 저격 위치`;
+        ? '잠입: ◀▲▼▶ 걷기 · [숙이기] 조용히 · [◀기울][기울▶] 모퉁이 살피기 · 경비 뒤에서 [제압] · [무기] 교체. 목표: ◆ 저격 위치'
+        : `잠입: [${k.move}] 이동 · [${k.crouch}] 숙이기 · [Q][E] 기울이기 · [${k.act}] 사격(경비 뒤에서는 제압) · [2][3] 무기 · 목표: ◆ 저격 위치`;
     }
     if (this.phase === 'exfil') {
       const heard = this.stealth.heardLoud ? ' 총성을 들은 경비가 저격 위치로 오고 있습니다 – 마주치지 않게!' : '';
       return `탈출: 초록색 ◆ EXIT까지 이동하세요.${heard}`;
     }
     return null;
+  }
+
+  /** 저장된 장비 구성으로 실내 화기를 만든다 */
+  private setupGuns(): void {
+    const lo = this.save.data.settings.loadout;
+    const pid = lo.primary;
+    if (!this.guns || this.guns.primary.spec.id !== pid || JSON.stringify(this.guns.primary.parts) !== JSON.stringify(lo.parts[pid]) || JSON.stringify(this.guns.pistol.parts) !== JSON.stringify(lo.parts.p9)) {
+      this.guns = { primary: new CqbGun(pid, { ...lo.parts[pid] }), pistol: new CqbGun('p9', { ...lo.parts.p9 }) };
+    }
+    this.guns.primary.reset();
+    this.guns.pistol.reset();
+    this.viewModel.buildGuns([
+      { spec: getCqb(pid), parts: this.guns.primary.parts },
+      { spec: getCqb('p9'), parts: this.guns.pistol.parts },
+    ]);
+  }
+
+  private get gun(): CqbGun | null {
+    if (!this.guns || this.slot === 'rifle') return null;
+    return this.slot === 'primary' ? this.guns.primary : this.guns.pistol;
+  }
+
+  /** 무기를 든다. instant가 아니면 내렸다 올리는 동작(0.35초) */
+  private equip(slot: Slot, instant = false): void {
+    if (slot === this.slot && !instant) return;
+    this.gun?.holster();
+    this.slot = slot;
+    this.adsToggle = false;
+    const id = slot === 'rifle' ? 'rifle' : slot === 'primary' ? this.guns!.primary.spec.id : this.guns!.pistol.spec.id;
+    this.viewModel.setActive(id);
+    this.raise = instant ? 1 : 0;
+    if (!instant) this.audio.play('reload', { weight: 0.25, volume: 0.6 });
+  }
+
+  /** 실내 무기 교체 입력 */
+  private handleWeaponInput(): void {
+    const inp = this.input;
+    let want: Slot | null = null;
+    const cycle = () => (this.slot === 'primary' ? 'pistol' : 'primary') as Slot;
+    if (inp.consumePressed('slot2')) want = inp.isTouch ? cycle() : 'primary';
+    if (inp.consumePressed('slot3')) want = 'pistol';
+    if (inp.consumePressed('dope')) want = cycle();
+    if (inp.zoomSteps !== 0) want = cycle();
+    inp.zoomSteps = 0;
+    if (inp.consumePressed('slot1')) {
+      const it = this.interior!;
+      const n = it.toWorld(it.nest);
+      if (this.phase === 'infil' && Math.hypot(n.x - this.ppos.x, n.y - this.ppos.z) < INTERIOR.reachRadius) this.enterNest();
+      else this.hooks?.onToast('저격총은 창가 ◆ 저격 위치에서만 씁니다(실내에서는 너무 길고 시끄럽습니다)');
+      return;
+    }
+    if (want && want !== this.slot) this.equip(want);
+  }
+
+  /** 창가에서 일어나 실내 무기로(표적이 남아 있으면 다시 창가로 와야 함) */
+  private leaveNest(slot: Slot): void {
+    const it = this.interior;
+    if (!it || this.phase !== 'snipe') return;
+    this.phase = 'infil';
+    this.scoped = false;
+    this.scopeT = 0;
+    this.dopeOpen = false;
+    this.camBullet = null;
+    this.timeScale = 1;
+    this.crouched = true;
+    this.crouchT = 1;
+    this.pitch = 0;
+    it.setObjective('nest');
+    this.equip(slot);
+    this.hooks?.onToast('창가를 떠났습니다 – 표적을 마저 쏘려면 ◆ 저격 위치로 돌아오세요');
+  }
+
+  /** 실내 사격(즉시 판정) */
+  private shootCqb(gun: CqbGun, moving: boolean): void {
+    const it = this.interior!;
+    const st = gun.stats;
+    this.cqbStats.shots++;
+    const cam = this.camera;
+    const origin = cam.position.clone();
+    // 퍼짐: 원뿔 안 무작위 방향
+    const spread = (gun.spread(moving, this.crouched) * Math.PI) / 180;
+    const a = Math.random() * Math.PI * 2;
+    const r = spread * Math.sqrt(Math.random());
+    const dir = new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, -1).normalize().applyQuaternion(cam.quaternion);
+    const hit = it.ray(origin, dir, 80);
+    const me = new THREE.Vector2(this.ppos.x, this.ppos.z);
+    if (hit?.kind === 'guard' && hit.guard) {
+      const mul = hit.zone === 'head' ? st.headMul : hit.zone === 'leg' ? 0.75 : 1;
+      const killed = it.damage(hit.guard, st.damage * mul, me);
+      this.cqbStats.hits++;
+      this.hitMarkerT = 1;
+      this.hitKill = killed;
+      this.audio.play(hit.zone === 'head' ? 'headshot' : 'botHit', { volume: 0.55 });
+      this.fx?.personDown(hit.point, hit.guard.pos, dir, 5);
+      if (killed) {
+        this.cqbStats.kills++;
+        if (this.alarmGuard === hit.guard && this.alarmT > 0) {
+          this.alarmT = -1;
+          this.alarmGuard = null;
+          this.hooks?.onToast('무전 전에 쓰러뜨렸습니다 – 경보 없음');
+        }
+      } else this.startRadio(hit.guard);
+    } else if (hit) {
+      this.fx?.impactSteel(hit.point, 2);
+    }
+    // 총성
+    const loud = !st.suppressed;
+    this.audio.play(loud ? 'shot' : 'shotSup', { weight: gun.spec.kind === 'pistol' ? 0.3 : 0.4, volume: loud ? 0.75 : 0.55, pitch: loud ? 1.35 : 1.2 });
+    const head = this.headPos();
+    const reacted = it.noise(me, st.noise, (g) => it.canSee(g, head.x, head.y, this.crouched));
+    for (const g of reacted) if (g.state === 'combat') this.startRadio(g);
+    // 반동: 시선이 위로 튀고 좌우로 조금
+    this.pitch += ((st.recoil * 0.55) * Math.PI) / 180;
+    this.yaw += (((Math.random() - 0.5) * st.recoil * 0.4) * Math.PI) / 180;
+    this.viewModel.kick(gun.spec.kind === 'pistol' ? 3 : 2, loud);
+  }
+
+  /** 교전을 시작한 경비가 무전으로 경보를 울리기까지 카운트다운 */
+  private startRadio(g: InteriorGuard): void {
+    if (this.alarmOn || this.alarmT > 0) return;
+    this.alarmT = INTERIOR.radioDelay * (this.difficulty.id === 'recruit' ? 1.6 : this.difficulty.id === 'expert' ? 0.8 : 1);
+    this.alarmGuard = g;
+    this.stealth.suspected = true;
+    this.hooks?.onHint(null);
+    this.audio.play('alert', { volume: 0.7 });
+    this.hooks?.onAlert(`${g.label}이(가) 무전기를 듭니다! 빨리 쓰러뜨리면 경보를 막을 수 있습니다`);
+  }
+
+  /** 머리 위치(기울이기 반영, XZ) */
+  private headPos(): THREE.Vector2 {
+    const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
+    return new THREE.Vector2(this.ppos.x + rx * this.lean * INTERIOR_LEAN, this.ppos.z + rz * this.lean * INTERIOR_LEAN);
+  }
+
+  private combatTuning(): CombatTuning {
+    const id = this.difficulty.id;
+    return id === 'recruit'
+      ? { reaction: 0.75, interval: 0.65, hitBase: 0.3, damage: 9 }
+      : id === 'expert'
+        ? { reaction: 0.35, interval: 0.45, hitBase: 0.55, damage: 17 }
+        : { reaction: 0.5, interval: 0.55, hitBase: 0.42, damage: 13 };
   }
 
   private enterNest(): void {
@@ -515,6 +711,8 @@ export class Game {
     this.yaw = first ? Math.atan2(-first.x, first.dist) * 0.6 : 0;
     this.pitch = -0.004;
     this.crouched = false;
+    this.lean = 0;
+    this.equip('rifle', true);
     this.input.releaseAll();
     it.setObjective(null);
     this.audio.play('bolt', { weight: 0.6 });
@@ -535,6 +733,7 @@ export class Game {
     this.endTimer = -1;
     this.input.releaseAll();
     it.setObjective('exit');
+    this.equip(this.guns && this.guns.primary.inMag + this.guns.primary.reserve > 0 ? 'pistol' : 'pistol', true);
     // 숙인 채로 일어난다(조용히 빠져나가는 것이 기본)
     this.crouched = true;
     this.crouchT = 1;
@@ -564,15 +763,15 @@ export class Game {
     }
   }
 
-  private updateInterior(dt: number, player: { x: number; z: number; crouched: boolean; moving: boolean; hidden: boolean }): void {
+  private updateInterior(dt: number, player: PlayerSense): void {
     const it = this.interior!;
-    const res = it.update(dt, player, this.difficulty.detectMul);
+    const res = it.update(dt, player, this.difficulty.detectMul, this.combatTuning());
     this.stealth.maxMeter = res.maxMeter;
     if (res.maxMeter > INTERIOR.suspicious) {
       if (!this.stealth.suspected) this.audio.play('beep');
       this.stealth.suspected = true;
     }
-    if (res.maxMeter > 0.15 && this.missionTime - this.lastSuspicionBeep > 0.6) {
+    if (res.maxMeter > 0.15 && res.maxMeter < 1 && this.missionTime - this.lastSuspicionBeep > 0.6) {
       this.lastSuspicionBeep = this.missionTime;
       this.audio.play('heartbeat', { volume: 0.4 + res.maxMeter * 0.6 });
     }
@@ -580,14 +779,43 @@ export class Game {
       this.audio.play('alert');
       this.hooks?.onAlert(`${res.foundBody.label}이(가) 쓰러진 동료를 발견! 주변을 수색합니다`);
     }
-    if (res.detectedBy && !this.ended) {
-      this.audio.play('alert');
-      const tip =
-        this.phase === 'snipe'
-          ? '소음기를 달면 총성이 어디서 났는지 모릅니다. 소음기 없이 쏘면 경비가 몇 초 뒤 저격 위치로 옵니다.'
-          : '숙이기를 켜면 경비가 알아보는 거리가 12m → 7m로 줄고 발소리도 안 납니다. 경비가 등을 돌렸을 때 지나가세요. 머리 위 ? 표시가 차오르면 바로 숨으세요.';
-      this.fail(`${res.detectedBy.label}에게 발각되었습니다.`, tip);
+    if (res.detectedBy) this.startRadio(res.detectedBy);
+    // 무전 → 건물 전체 경보
+    if (this.alarmT > 0) {
+      this.alarmT -= dt;
+      if (this.alarmGuard?.down) {
+        this.alarmT = -1;
+        this.alarmGuard = null;
+      } else if (this.alarmT <= 0) {
+        this.alarmT = -1;
+        this.alarmOn = true;
+        it.alarm(new THREE.Vector2(player.x, player.z));
+        this.audio.play('alert');
+        this.hooks?.onAlert('경보 발령! 건물 안 경비가 모두 몰려옵니다 – 엄폐하고 기울여서 쏘세요');
+      }
     }
+    // 경비 사격
+    for (const sh of res.shots) {
+      const d = sh.guard.pos.distanceTo(new THREE.Vector3(player.x, sh.guard.pos.y, player.z));
+      this.audio.play('shot', { weight: 0.4, volume: Math.max(0.15, 0.7 - d * 0.03), pitch: 1.25 });
+      if (!sh.hit) continue;
+      this.hp -= sh.damage;
+      this.hurtT = 0;
+      this.hurtFlash = 1;
+      this.hurtFrom = new THREE.Vector2(sh.guard.pos.x, sh.guard.pos.z);
+      this.audio.play('botHit', { volume: 0.6, pitch: 0.7 });
+      this.shake = Math.min(1, this.shake + 0.25);
+      if (this.hp <= 0 && !this.ended) {
+        this.hp = 0;
+        this.fail(`${sh.guard.label}의 총에 맞아 쓰러졌습니다.`, '경보가 울리면 문 옆 벽 뒤에 숨어 Q·E(기울이기)로 몸을 조금만 내밀고 쏘세요. 일부만 보이면 경비가 덜 맞힙니다. 체력은 4초 동안 안 맞으면 회복됩니다.');
+        return;
+      }
+    }
+    // 체력 회복
+    this.hurtT += dt;
+    this.hurtFlash = Math.max(0, this.hurtFlash - dt * 1.5);
+    if (this.hurtT > 4) this.hp = Math.min(100, this.hp + 15 * dt);
+    this.hitMarkerT = Math.max(0, this.hitMarkerT - dt * 4);
   }
 
   private updateInfil(dt: number): void {
@@ -601,10 +829,23 @@ export class Game {
       this.trigger('crouch');
     }
     this.crouchT += ((this.crouched ? 1 : 0) - this.crouchT) * Math.min(1, dt * 10);
-    // 이동: ▲▼◀▶(W S A D)
-    for (const a of ['elevUp', 'elevDown', 'windLeft', 'windRight', 'turretReset', 'dope', 'rangefinder', 'ammo', 'zoomIn', 'zoomOut'] as const) inp.consumePressed(a);
-    inp.zoomSteps = 0;
+    // 무기 교체(1·2·3, Tab, 휠, 터치 [무기])
+    this.handleWeaponInput();
+    if (this.ended || this.phase === 'snipe') return;
+    // 이동: ▲▼◀▶(W S A D) · 기울이기: Q E
+    for (const a of ['elevUp', 'elevDown', 'windLeft', 'windRight', 'turretReset', 'rangefinder', 'zoomIn', 'zoomOut'] as const) inp.consumePressed(a);
     inp.zoomFactor = 1;
+    const leanWant = (inp.isDown('zoomIn') ? 1 : 0) - (inp.isDown('zoomOut') ? 1 : 0);
+    this.lean += (leanWant - this.lean) * Math.min(1, dt * 10);
+    // 벽 속으로 머리를 내밀 수는 없다: 막히면 기울이는 양을 줄인다
+    const probe = new THREE.Vector3();
+    for (let i = 0; i < 4 && Math.abs(this.lean) > 0.02; i++) {
+      const hp = this.headPos();
+      probe.set(hp.x, 0, hp.y);
+      it.collide(probe, 0.12);
+      if (probe.distanceTo(new THREE.Vector3(hp.x, 0, hp.y)) < 0.01) break;
+      this.lean *= 0.6;
+    }
     const fwd = (inp.isDown('elevUp') ? 1 : 0) - (inp.isDown('elevDown') ? 1 : 0);
     const str = (inp.isDown('windRight') ? 1 : 0) - (inp.isDown('windLeft') ? 1 : 0);
     let mx = -Math.sin(this.yaw) * fwd + Math.cos(this.yaw) * str;
@@ -612,7 +853,8 @@ export class Game {
     const len = Math.hypot(mx, mz);
     const moving = len > 0.01;
     if (moving) {
-      const sp = (this.crouched ? INTERIOR.crouchSpeed : INTERIOR.walkSpeed) / len;
+      const gunAds = this.gun?.ads ?? 0;
+      const sp = ((this.crouched ? INTERIOR.crouchSpeed : INTERIOR.walkSpeed) * (1 - Math.abs(this.lean) * 0.4) * (1 - gunAds * 0.35)) / len;
       mx *= sp * dt;
       mz *= sp * dt;
       this.ppos.x += mx;
@@ -622,10 +864,15 @@ export class Game {
     }
     this.moveAmt += ((moving ? 1 : 0) - this.moveAmt) * Math.min(1, dt * 8);
     this.bobT += dt * (this.crouched ? 6 : 9) * this.moveAmt;
-    // 제압
-    this.takedownCand = it.takedownCandidate(this.ppos.x, this.ppos.z, this.yaw);
-    if (inp.consumePressed('fire')) {
+    // 제압 / 사격
+    this.takedownCand = it.anyCombat ? null : it.takedownCandidate(this.ppos.x, this.ppos.z, this.yaw);
+    this.raise = Math.min(1, this.raise + dt / 0.35);
+    const gun = this.gun;
+    const firePressed = inp.consumePressed('fire');
+    let tookDown = false;
+    if (firePressed) {
       if (this.takedownCand) {
+        tookDown = true;
         const g = this.takedownCand;
         g.knockDown();
         this.stealth.takedowns++;
@@ -635,16 +882,37 @@ export class Game {
         this.shake = 0.4;
         this.hooks?.onToast(`${g.label} 제압 – 쓰러진 모습을 다른 경비가 보면 수색합니다`);
         this.trigger('takedown');
-      } else if (!this.stealth.fireTipShown) {
-        this.stealth.fireTipShown = true;
-        this.hooks?.onToast(this.input.isTouch ? '실내에서 쏘면 들킵니다. 경비 뒤로 다가가 [제압]을 누르세요' : '실내에서 쏘면 들킵니다. 경비 뒤로 다가가면 제압할 수 있습니다');
       }
     }
+    // 조준(ADS)
+    const s = this.save.data.settings;
+    const nestCell = it.toWorld(it.nest);
+    const nearNest = this.phase === 'infil' && Math.hypot(nestCell.x - this.ppos.x, nestCell.y - this.ppos.z) < INTERIOR.reachRadius;
+    let scopePressedEarly = false;
+    if (!nearNest) {
+      if (s.scopeMode === 'toggle') {
+        if (inp.consumePressed('scope')) this.adsToggle = !this.adsToggle;
+      } else inp.consumePressed('scope');
+    } else scopePressedEarly = true;
+    const wantAds = s.scopeMode === 'toggle' ? this.adsToggle : inp.isDown('scope');
+    if (gun) {
+      if (inp.consumePressed('ammo') && gun.startReload()) this.audio.play('reload', { weight: gun.stats.reloadTime / 2.4 });
+      const ev = gun.update(dt, wantAds && !nearNest, this.raise >= 1);
+      void ev;
+      const down = !tookDown && this.raise >= 1 && (firePressed || inp.isDown('fire'));
+      const wasReloading = gun.reloading;
+      if (gun.trigger(down)) this.shootCqb(gun, moving);
+      else if (down && firePressed && gun.inMag === 0 && gun.reserve === 0) {
+        this.audio.play('dry');
+        this.hooks?.onToast(this.slot === 'primary' ? '주무기 탄약이 없습니다 – 권총으로 바꾸세요' : '권총 탄약이 없습니다');
+      }
+      if (!wasReloading && gun.reloading) this.audio.play('reload', { weight: gun.stats.reloadTime / 2.4 });
+    } else inp.consumePressed('ammo');
     // 저격 위치 · 탈출 지점
     const goal = it.toWorld(this.phase === 'infil' ? it.nest : it.exit);
     const atGoal = Math.hypot(goal.x - this.ppos.x, goal.y - this.ppos.z) < INTERIOR.reachRadius;
-    const scopePressed = inp.consumePressed('scope');
-    if (this.phase === 'infil' && atGoal && (scopePressed || this.input.isDown('scope'))) {
+    const scopePressed = scopePressedEarly && inp.consumePressed('scope');
+    if (this.phase === 'infil' && atGoal && (scopePressed || (scopePressedEarly && this.input.isDown('scope')))) {
       this.enterNest();
       return;
     }
@@ -653,7 +921,9 @@ export class Game {
       return;
     }
     this.eye.set(this.ppos.x, it.floorY + INTERIOR.standEye + (INTERIOR.crouchEye - INTERIOR.standEye) * this.crouchT, this.ppos.z);
-    this.updateInterior(dt, { x: this.ppos.x, z: this.ppos.z, crouched: this.crouched, moving, hidden: false });
+    const head = this.headPos();
+    this.updateInterior(dt, { x: this.ppos.x, z: this.ppos.z, hx: head.x, hz: head.y, crouched: this.crouched, moving, hidden: false, detectMul: this.gun?.stats.detect ?? 1 });
+    if (this.ended) return;
     // 긴 안내문은 잠시 뒤 접는다(목표 줄과 버튼 이름으로 충분)
     this.phaseHintTimer += dt;
     if (this.phaseHintTimer > 14 && this.phaseHintTimer - dt <= 14) this.hooks?.onHint(null);
@@ -709,7 +979,21 @@ export class Game {
     this.takedownCand = null;
     this.stealth = { maxMeter: 0, suspected: false, takedowns: 0, heardLoud: false, heardMuffled: false, fireTipShown: false };
     const it = this.interior;
+    this.setupGuns();
+    this.hp = 100;
+    this.hurtT = 99;
+    this.hurtFlash = 0;
+    this.hurtFrom = null;
+    this.alarmT = -1;
+    this.alarmGuard = null;
+    this.alarmOn = false;
+    this.lean = 0;
+    this.adsToggle = false;
+    this.hitMarkerT = 0;
+    this.cqbStats = { shots: 0, hits: 0, kills: 0 };
+    this.raise = 1;
     if (it) {
+      this.equip('pistol', true);
       it.reset();
       it.setObjective('nest');
       this.phase = 'infil';
@@ -725,6 +1009,7 @@ export class Game {
       this.eye.set(this.ppos.x, it.floorY + INTERIOR.crouchEye, this.ppos.z);
     } else {
       this.phase = 'snipe';
+      this.equip('rifle', true);
       if (this.world) this.eye.set(0, this.world.terrain.height(0, 0) + BALANCE.camera.eyeHeight, 0);
     }
     this.hooks?.onAnalysis(null);
@@ -975,7 +1260,13 @@ export class Game {
       }
     }
 
-    if (this.interior) this.updateInterior(dt, { x: this.ppos.x, z: this.ppos.z, crouched: true, moving: false, hidden: true });
+    if (this.interior) {
+      this.updateInterior(dt, { x: this.ppos.x, z: this.ppos.z, hx: this.ppos.x, hz: this.ppos.z, crouched: true, moving: false, hidden: true, detectMul: 1 });
+      // 창가에서 일어나 실내 무기로(경비가 오면 맞서 싸울 수 있게)
+      if (this.input.consumePressed('slot2')) this.leaveNest('primary');
+      else if (this.input.consumePressed('slot3')) this.leaveNest('pistol');
+      if (this.phase !== 'snipe') return;
+    }
 
     this.world?.updateFlags(this.wind, this.missionTime);
     this.fx?.update(dt);
@@ -1673,19 +1964,24 @@ export class Game {
       return;
     }
     if (this.phase !== 'snipe') {
-      // 실내 1인칭: 걸음에 따른 흔들림
-      const bob = Math.sin(this.bobT) * 0.035 * this.moveAmt;
-      cam.position.copy(this.eye);
-      cam.position.y += Math.abs(bob) - 0.02 * this.moveAmt;
+      // 실내 1인칭: 걸음 흔들림 · 기울이기 · 조준 배율
+      const gun = this.gun;
+      const ads = gun?.ads ?? 0;
+      const bob = Math.sin(this.bobT) * 0.035 * this.moveAmt * (1 - ads * 0.7);
+      const head = this.headPos();
+      cam.position.set(head.x, this.eye.y + Math.abs(bob) - 0.02 * this.moveAmt - Math.abs(this.lean) * 0.06, head.y);
       const sh = this.shake * 0.01;
-      cam.quaternion.setFromEuler(new THREE.Euler(this.pitch + (Math.random() - 0.5) * sh, this.yaw + (Math.random() - 0.5) * sh, Math.sin(this.bobT * 0.5) * 0.006 * this.moveAmt, 'YXZ'));
-      if (Math.abs(cam.fov - BALANCE.camera.baseFov) > 1e-4) {
-        cam.fov = BALANCE.camera.baseFov;
+      cam.quaternion.setFromEuler(new THREE.Euler(this.pitch + (gun?.kick ?? 0) * 0.5 + (Math.random() - 0.5) * sh, this.yaw + (Math.random() - 0.5) * sh, -this.lean * 0.2 + Math.sin(this.bobT * 0.5) * 0.006 * this.moveAmt, 'YXZ'));
+      const zoom = gun ? 1 + (gun.stats.adsZoom - 1) * ads : 1;
+      const fov = BALANCE.camera.baseFov / zoom;
+      if (Math.abs(cam.fov - fov) > 1e-4) {
+        cam.fov = fov;
         cam.updateProjectionMatrix();
       }
       if (this.fsm.is('playing')) {
-        const sw = { x: Math.sin(this.bobT * 0.5) * 6 * this.moveAmt, y: (Math.abs(Math.sin(this.bobT)) * 5 - 6) * this.moveAmt - 8 * this.crouchT };
-        this.viewModel.update(real, 0, -1, -1, this.rifle.elevMil, this.rifle.windMil, sw);
+        const sw = { x: Math.sin(this.bobT * 0.5) * 6 * this.moveAmt, y: (Math.abs(Math.sin(this.bobT)) * 5 - 6) * this.moveAmt - 8 * this.crouchT * (1 - ads) };
+        if (gun) this.viewModel.updateGun(real, ads, this.raise, gun.reloadProgress, sw);
+        else this.viewModel.update(real, 0, -1, -1, this.rifle.elevMil, this.rifle.windMil, sw);
       }
       return;
     }
@@ -1883,6 +2179,49 @@ export class Game {
       impact: this.impactOnScreen(),
       phase: this.phase,
       stealth: this.stealthHud(),
+      cqb: this.cqbHud(),
+    };
+  }
+
+  private cqbHud(): CqbHud | null {
+    const it = this.interior;
+    if (!it || !this.guns) return null;
+    const gun = this.gun;
+    let hurtDir: number | null = null;
+    if (this.hurtFrom && this.hurtFlash > 0) {
+      const ang = Math.atan2(-(this.hurtFrom.x - this.ppos.x), -(this.hurtFrom.y - this.ppos.z));
+      let d = ang - this.yaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      hurtDir = (-d * 180) / Math.PI;
+    }
+    const fovRad = (this.camera.fov * Math.PI) / 180;
+    const h = this.renderer.domElement.clientHeight || 720;
+    const spreadDeg = gun ? gun.spread(this.moveAmt > 0.3, this.crouched) : 0;
+    const spreadPx = (Math.tan((spreadDeg * Math.PI) / 180) / Math.tan(fovRad / 2)) * (h / 2);
+    const partsText = gun
+      ? (['muzzle', 'optic', 'mag', 'under'] as const)
+          .map((k) => gun.parts[k])
+          .filter((v) => !['none', 'iron', 'std'].includes(v))
+          .map((v) => ({ sup: '소음기', comp: '보정기', dot: '도트', x2: '2배', ext: '확장탄창', laser: '레이저', grip: '손잡이' })[v] ?? v)
+          .join(' · ')
+      : '';
+    return {
+      slot: this.slot,
+      weaponName: gun ? gun.spec.name : this.rifle.weapon.name,
+      kindName: gun ? gun.spec.kindName : '저격총',
+      parts: partsText,
+      inMag: gun ? gun.inMag : this.rifle.inMag,
+      reserve: gun ? gun.reserve : this.rifle.reserve,
+      reloading: gun ? gun.reloading : false,
+      hp: this.hp,
+      hurt: this.hurtFlash,
+      hurtDir,
+      alarm: this.alarmOn && it.anyCombat ? 'on' : this.alarmT > 0 ? 'radio' : 'none',
+      hitMarker: this.hitMarkerT,
+      hitKill: this.hitKill,
+      spreadPx,
+      ads: gun?.ads ?? 0,
+      lean: this.lean,
     };
   }
 
@@ -1893,11 +2232,13 @@ export class Game {
     const k = this.keyHint();
     let prompt: string | null = null;
     let objective: string;
+    let atNest = false;
     if (this.phase === 'infil') {
       const n = it.toWorld(it.nest);
       const d = Math.hypot(n.x - this.ppos.x, n.y - this.ppos.z);
       objective = `잠입 · ◆ 저격 위치까지 ${Math.round(d)}m`;
-      if (d < INTERIOR.reachRadius) prompt = touch ? '[저격] 눌러 창가에 자리 잡기' : `[${k.scope}] 창가에 자리 잡기`;
+      atNest = d < INTERIOR.reachRadius;
+      if (atNest) prompt = touch ? '[저격] 눌러 창가에 자리 잡기(저격총)' : `[${k.scope}] 또는 [1] 창가에 자리 잡기(저격총)`;
     } else if (this.phase === 'exfil') {
       const e = it.toWorld(it.exit);
       objective = `탈출 · ◆ EXIT까지 ${Math.round(Math.hypot(e.x - this.ppos.x, e.y - this.ppos.z))}m`;
@@ -1910,6 +2251,9 @@ export class Game {
       objective,
       guardsDown: it.guards.filter((g) => g.down).length,
       guardsTotal: it.guards.length,
+      atNest,
+      canTakedown: !!this.takedownCand && this.phase !== 'snipe',
+      combat: it.anyCombat,
     };
   }
 
@@ -1978,7 +2322,8 @@ export class Game {
       if (!clamp && (Math.abs(v.x) > 1 || Math.abs(v.y) > 1)) return null;
       const m = 0.9;
       const sx = Math.max(-m, Math.min(m, v.x));
-      const sy = Math.max(-m, Math.min(m, v.y));
+      // 아래쪽 가장자리는 무기·체력 패널과 겹치므로 덜 내려간다
+      const sy = Math.max(-0.62, Math.min(m, v.y));
       return { x: ((sx + 1) / 2) * W, y: ((1 - sy) / 2) * H };
     };
     const goalCell = this.phase === 'infil' ? it.nest : it.exit;
