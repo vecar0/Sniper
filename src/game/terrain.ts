@@ -47,6 +47,8 @@ export interface TerrainParams {
   seed: number;
   /** 가장 먼 표적 거리(m) – 이보다 뒤에 배경 산을 세운다 */
   maxDist: number;
+  /** 건물 터: 이 사각형(XZ)은 h 높이로 평평하게 깎는다(건물 바닥이 지형에 묻히지 않게) */
+  pad?: { minX: number; maxX: number; minZ: number; maxZ: number; h: number };
 }
 
 export const SHOOTER_GROUND = 6;
@@ -68,6 +70,19 @@ export class Terrain {
   }
 
   height(x: number, z: number): number {
+    const base = this.baseHeight(x, z);
+    const pad = this.p.pad;
+    if (!pad) return base;
+    // 건물 둘레 3m까지 평평, 그 바깥 10m에 걸쳐 원래 지형으로 이어진다
+    const ox = Math.max(pad.minX - x, 0, x - pad.maxX);
+    const oz = Math.max(pad.minZ - z, 0, z - pad.maxZ);
+    const d = Math.hypot(ox, oz) - 3;
+    if (d <= 0) return Math.min(base, pad.h);
+    const t = smooth(Math.min(1, d / 10));
+    return pad.h + (base - pad.h) * t;
+  }
+
+  private baseHeight(x: number, z: number): number {
     const dist = -z;
     const seed = this.p.seed;
     // 회랑 바닥: 사수 둔덕(6m)에서 60m까지 내려간 뒤 ±1m의 완만한 기복

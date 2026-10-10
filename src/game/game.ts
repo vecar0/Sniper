@@ -22,6 +22,7 @@ import { ROLE_LABEL, Target, TargetMaterials, ZONE_LABEL, type HitResult } from 
 import type { Role } from '../config/missions';
 import { SHOOTER_GROUND } from './terrain';
 import { ViewModel } from './viewmodel';
+import { INTERIOR, type Interior, type InteriorGuard } from './interior';
 import { segmentBox, World, type QualityLevel } from './world';
 
 export interface HitInfo {
@@ -79,8 +80,24 @@ export interface MarkerInfo {
   x: number;
   y: number;
   label: string;
-  role: Role | 'plate' | 'unknown';
+  role: Role | 'plate' | 'unknown' | 'objective' | 'sentry' | 'takedown';
   alert: boolean;
+}
+
+export type Phase = 'infil' | 'snipe' | 'exfil';
+
+/** 잠입 구간 HUD 정보 */
+export interface StealthHud {
+  /** 가장 높은 경비 발각 게이지(0~1) */
+  meter: number;
+  crouched: boolean;
+  /** 지금 할 수 있는 행동 안내 */
+  prompt: string | null;
+  /** 목표 안내 문구 */
+  objective: string;
+  /** 경비 수(남은/전체) */
+  guardsDown: number;
+  guardsTotal: number;
 }
 
 export interface HudSnapshot {
@@ -126,6 +143,9 @@ export interface HudSnapshot {
   pitchDeg: number;
   /** 최근 탄착 지점(화면 좌표) */
   impact: { x: number; y: number; hit: boolean; fade: number } | null;
+  /** 진행 단계: 잠입 → 저격 → 탈출 (건물이 없는 미션은 항상 snipe) */
+  phase: Phase;
+  stealth: StealthHud | null;
 }
 
 interface ActiveBullet {
@@ -209,12 +229,27 @@ export class Game {
   private readonly camLook = new THREE.Vector3();
   private menuT = 0;
   private frameTimes: number[] = [];
+  private sizeW = -1;
+  private sizeH = -1;
   private qualityChecked = false;
   private eye = new THREE.Vector3(0, SHOOTER_GROUND + BALANCE.camera.eyeHeight, 0);
   private accumulator = 0;
   private rafId = 0;
   private lastFrame = 0;
   private disposers: (() => void)[] = [];
+  // 잠입
+  phase: Phase = 'snipe';
+  /** 플레이어 발 위치(실내) */
+  private readonly ppos = new THREE.Vector3();
+  private crouched = false;
+  private crouchT = 0;
+  private bobT = 0;
+  private moveAmt = 0;
+  private snipeTime = 0;
+  private stealth = { maxMeter: 0, suspected: false, takedowns: 0, heardLoud: false, heardMuffled: false, fireTipShown: false };
+  private takedownCand: InteriorGuard | null = null;
+  private lastSuspicionBeep = 0;
+  private phaseHintTimer = 0;
   /** 테스트용: 다음 발사에서 흔들림·분산을 끈다 */
   testSteady = false;
 
@@ -266,6 +301,8 @@ export class Game {
     const el = this.renderer.domElement.parentElement;
     const w = el?.clientWidth || window.innerWidth;
     const h = el?.clientHeight || window.innerHeight;
+    this.sizeW = el?.clientWidth ?? 0;
+    this.sizeH = el?.clientHeight ?? 0;
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';
@@ -288,6 +325,10 @@ export class Game {
   }
 
   private frame(real: number): void {
+    // 휴대폰은 주소창 숨김·전체화면·홈 화면 앱 전환 때 resize 이벤트 없이(또는 레이아웃 전에) 크기가 바뀐다.
+    // 크기가 어긋난 채 그리면 화면이 위아래로 찌그러지므로 매 프레임 실제 크기를 확인한다(값 비교만이라 비용 없음).
+    const host = this.renderer.domElement.parentElement;
+    if (host && (host.clientWidth !== this.sizeW || host.clientHeight !== this.sizeH)) this.resize();
     const playing = this.fsm.is('playing');
     let logicRan = true;
     if (playing) {
@@ -403,6 +444,16 @@ export class Game {
       windAt: (x, y, z, t, out) => this.wind!.windAt(x, y, z, t, out),
     };
     this.eye.set(0, this.world!.terrain.height(0, 0) + BALANCE.camera.eyeHeight, 0);
+    const it = this.interior;
+    if (it) {
+      const guardOutfit = mission.targets.find((t) => t.kind === 'person' && t.role === 'guard')?.outfit ?? 'guard';
+      it.spawnGuards(this.mats.human, guardOutfit);
+    }
+  }
+
+  /** 이 미션의 잠입 건물 */
+  get interior(): Interior | null {
+    return this.mission ? (this.world?.interior ?? null) : null;
   }
 
   /** 브리핑 → 플레이 */
@@ -429,6 +480,191 @@ export class Game {
     this.audio.setWind(0, true);
     this.audio.resume();
     this.showHint();
+  }
+
+  // ───────────────────────── 잠입 · 탈출 ─────────────────────────
+  private keyHint(): { move: string; crouch: string; act: string; scope: string } {
+    const k = (a: Parameters<Input['keyLabel']>[0]) => this.input.keyLabel(a);
+    return { move: `${k('elevUp')}${k('windLeft')}${k('elevDown')}${k('windRight')}`, crouch: k('breath'), act: k('fire'), scope: k('scope') };
+  }
+
+  private phaseHint(): string | null {
+    this.phaseHintTimer = 0;
+    const touch = this.input.isTouch;
+    const k = this.keyHint();
+    if (this.phase === 'infil') {
+      return touch
+        ? '잠입: ◀▲▼▶로 걷고 화면을 끌어 둘러보세요. [숙이기]를 켜면 조용하고 잘 안 보입니다. 경비 뒤에서 [제압]. 목표: ◆ 저격 위치'
+        : `잠입: [${k.move}] 이동 · [${k.crouch}] 숙이기(조용·잘 안 보임) · 경비 뒤에서 [${k.act}] 제압. 목표: ◆ 저격 위치`;
+    }
+    if (this.phase === 'exfil') {
+      const heard = this.stealth.heardLoud ? ' 총성을 들은 경비가 저격 위치로 오고 있습니다 – 마주치지 않게!' : '';
+      return `탈출: 초록색 ◆ EXIT까지 이동하세요.${heard}`;
+    }
+    return null;
+  }
+
+  private enterNest(): void {
+    const it = this.interior;
+    if (!it || this.phase !== 'infil') return;
+    this.phase = 'snipe';
+    const n = it.toWorld(it.nest);
+    this.ppos.set(n.x, it.floorY, n.y);
+    this.eye.set(n.x, it.floorY + INTERIOR.nestEye, n.y);
+    const first = this.mission!.targets[0];
+    this.yaw = first ? Math.atan2(-first.x, first.dist) * 0.6 : 0;
+    this.pitch = -0.004;
+    this.crouched = false;
+    this.input.releaseAll();
+    it.setObjective(null);
+    this.audio.play('bolt', { weight: 0.6 });
+    this.hooks?.onToast('저격 위치 확보 – 창밖의 표적을 찾으세요');
+    this.trigger('nest');
+    this.hintIndex = 0;
+    this.showHint();
+  }
+
+  private startExfil(): void {
+    const it = this.interior;
+    if (!it) return;
+    this.phase = 'exfil';
+    this.scoped = false;
+    this.dopeOpen = false;
+    this.camBullet = null;
+    this.timeScale = 1;
+    this.endTimer = -1;
+    this.input.releaseAll();
+    it.setObjective('exit');
+    // 숙인 채로 일어난다(조용히 빠져나가는 것이 기본)
+    this.crouched = true;
+    this.crouchT = 1;
+    this.yaw = Math.PI; // 창문을 등지고 건물 안쪽을 본다
+    this.pitch = 0;
+    this.audio.play('success', { volume: 0.5 });
+    this.hooks?.onToast('목표 제거! 이제 건물을 빠져나가세요');
+    this.showHint();
+  }
+
+  /** 총성이 실내 경비에게 어떻게 들리는가: 소음기+아음속 = 안 들림, 소음기 = 위치 모름, 그 외 = 위치를 알고 옴 */
+  private interiorHearShot(): void {
+    const it = this.interior;
+    if (!it) return;
+    const sup = this.rifle.suppressor;
+    const sub = this.rifle.ammo.subsonic;
+    if (sup && sub) return;
+    const nest = it.toWorld(it.nest);
+    if (!sup) {
+      it.hearShot('loud', nest);
+      if (!this.stealth.heardLoud) this.hooks?.onAlert('건물 안 경비가 총성을 들었습니다! 곧 이쪽으로 옵니다');
+      this.stealth.heardLoud = true;
+    } else {
+      it.hearShot('muffled', nest);
+      if (!this.stealth.heardMuffled && !this.stealth.heardLoud) this.hooks?.onToast('경비가 소리를 들었지만 어디서 났는지 모릅니다');
+      this.stealth.heardMuffled = true;
+    }
+  }
+
+  private updateInterior(dt: number, player: { x: number; z: number; crouched: boolean; moving: boolean; hidden: boolean }): void {
+    const it = this.interior!;
+    const res = it.update(dt, player, this.difficulty.detectMul);
+    this.stealth.maxMeter = res.maxMeter;
+    if (res.maxMeter > INTERIOR.suspicious) {
+      if (!this.stealth.suspected) this.audio.play('beep');
+      this.stealth.suspected = true;
+    }
+    if (res.maxMeter > 0.15 && this.missionTime - this.lastSuspicionBeep > 0.6) {
+      this.lastSuspicionBeep = this.missionTime;
+      this.audio.play('heartbeat', { volume: 0.4 + res.maxMeter * 0.6 });
+    }
+    if (res.foundBody) {
+      this.audio.play('alert');
+      this.hooks?.onAlert(`${res.foundBody.label}이(가) 쓰러진 동료를 발견! 주변을 수색합니다`);
+    }
+    if (res.detectedBy && !this.ended) {
+      this.audio.play('alert');
+      const tip =
+        this.phase === 'snipe'
+          ? '소음기를 달면 총성이 어디서 났는지 모릅니다. 소음기 없이 쏘면 경비가 몇 초 뒤 저격 위치로 옵니다.'
+          : '숙이기를 켜면 경비가 알아보는 거리가 12m → 7m로 줄고 발소리도 안 납니다. 경비가 등을 돌렸을 때 지나가세요. 머리 위 ? 표시가 차오르면 바로 숨으세요.';
+      this.fail(`${res.detectedBy.label}에게 발각되었습니다.`, tip);
+    }
+  }
+
+  private updateInfil(dt: number): void {
+    const it = this.interior!;
+    const inp = this.input;
+    this.scoped = false;
+    this.scopeT = Math.max(0, this.scopeT - dt / BALANCE.camera.scopeTransition);
+    // 숙이기(누를 때마다 켜기/끄기)
+    if (inp.consumePressed('breath')) {
+      this.crouched = !this.crouched;
+      this.trigger('crouch');
+    }
+    this.crouchT += ((this.crouched ? 1 : 0) - this.crouchT) * Math.min(1, dt * 10);
+    // 이동: ▲▼◀▶(W S A D)
+    for (const a of ['elevUp', 'elevDown', 'windLeft', 'windRight', 'turretReset', 'dope', 'rangefinder', 'ammo', 'zoomIn', 'zoomOut'] as const) inp.consumePressed(a);
+    inp.zoomSteps = 0;
+    inp.zoomFactor = 1;
+    const fwd = (inp.isDown('elevUp') ? 1 : 0) - (inp.isDown('elevDown') ? 1 : 0);
+    const str = (inp.isDown('windRight') ? 1 : 0) - (inp.isDown('windLeft') ? 1 : 0);
+    let mx = -Math.sin(this.yaw) * fwd + Math.cos(this.yaw) * str;
+    let mz = -Math.cos(this.yaw) * fwd - Math.sin(this.yaw) * str;
+    const len = Math.hypot(mx, mz);
+    const moving = len > 0.01;
+    if (moving) {
+      const sp = (this.crouched ? INTERIOR.crouchSpeed : INTERIOR.walkSpeed) / len;
+      mx *= sp * dt;
+      mz *= sp * dt;
+      this.ppos.x += mx;
+      this.ppos.z += mz;
+      it.collide(this.ppos, INTERIOR.playerRadius);
+      this.trigger('move');
+    }
+    this.moveAmt += ((moving ? 1 : 0) - this.moveAmt) * Math.min(1, dt * 8);
+    this.bobT += dt * (this.crouched ? 6 : 9) * this.moveAmt;
+    // 제압
+    this.takedownCand = it.takedownCandidate(this.ppos.x, this.ppos.z, this.yaw);
+    if (inp.consumePressed('fire')) {
+      if (this.takedownCand) {
+        const g = this.takedownCand;
+        g.knockDown();
+        this.stealth.takedowns++;
+        this.takedownCand = null;
+        this.audio.play('botHit', { volume: 0.5 });
+        this.viewModel.kick(4, false);
+        this.shake = 0.4;
+        this.hooks?.onToast(`${g.label} 제압 – 쓰러진 모습을 다른 경비가 보면 수색합니다`);
+        this.trigger('takedown');
+      } else if (!this.stealth.fireTipShown) {
+        this.stealth.fireTipShown = true;
+        this.hooks?.onToast(this.input.isTouch ? '실내에서 쏘면 들킵니다. 경비 뒤로 다가가 [제압]을 누르세요' : '실내에서 쏘면 들킵니다. 경비 뒤로 다가가면 제압할 수 있습니다');
+      }
+    }
+    // 저격 위치 · 탈출 지점
+    const goal = it.toWorld(this.phase === 'infil' ? it.nest : it.exit);
+    const atGoal = Math.hypot(goal.x - this.ppos.x, goal.y - this.ppos.z) < INTERIOR.reachRadius;
+    const scopePressed = inp.consumePressed('scope');
+    if (this.phase === 'infil' && atGoal && (scopePressed || this.input.isDown('scope'))) {
+      this.enterNest();
+      return;
+    }
+    if (this.phase === 'exfil' && atGoal) {
+      this.finish(true);
+      return;
+    }
+    this.eye.set(this.ppos.x, it.floorY + INTERIOR.standEye + (INTERIOR.crouchEye - INTERIOR.standEye) * this.crouchT, this.ppos.z);
+    this.updateInterior(dt, { x: this.ppos.x, z: this.ppos.z, crouched: this.crouched, moving, hidden: false });
+    // 긴 안내문은 잠시 뒤 접는다(목표 줄과 버튼 이름으로 충분)
+    this.phaseHintTimer += dt;
+    if (this.phaseHintTimer > 14 && this.phaseHintTimer - dt <= 14) this.hooks?.onHint(null);
+    // 바깥 세계는 계속 움직인다
+    for (const t of this.targets) t.update(dt);
+    this.world?.updateFlags(this.wind!, this.missionTime);
+    this.fx?.update(dt);
+    this.shake = Math.max(0, this.shake - dt * 3);
+    if (this.mission!.timeLimit > 0 && this.phase === 'infil') {
+      // 제한 시간은 저격 구간만 센다(잠입 중에는 멈춤)
+    }
   }
 
   private resetRun(): void {
@@ -466,6 +702,31 @@ export class Game {
     this.yaw = first ? Math.atan2(-first.x, first.dist) * 0.6 : 0;
     this.pitch = -0.004;
     this.lastRange = first ? first.dist : 500;
+    this.snipeTime = 0;
+    this.crouched = false;
+    this.crouchT = 0;
+    this.moveAmt = 0;
+    this.takedownCand = null;
+    this.stealth = { maxMeter: 0, suspected: false, takedowns: 0, heardLoud: false, heardMuffled: false, fireTipShown: false };
+    const it = this.interior;
+    if (it) {
+      it.reset();
+      it.setObjective('nest');
+      this.phase = 'infil';
+      // 숙인 채로 시작(조용히 들어가는 것이 기본)
+      this.crouched = true;
+      this.crouchT = 1;
+      const sp = it.toWorld(it.start);
+      this.ppos.set(sp.x, it.floorY, sp.y);
+      // 입구에서 건물 안쪽(저격 위치 방향)을 바라보며 시작
+      const n = it.toWorld(it.nest);
+      this.yaw = Math.atan2(-(n.x - sp.x), -(n.y - sp.y));
+      this.pitch = 0;
+      this.eye.set(this.ppos.x, it.floorY + INTERIOR.crouchEye, this.ppos.z);
+    } else {
+      this.phase = 'snipe';
+      if (this.world) this.eye.set(0, this.world.terrain.height(0, 0) + BALANCE.camera.eyeHeight, 0);
+    }
     this.hooks?.onAnalysis(null);
     this.hooks?.onRangefinder(null, true);
   }
@@ -527,7 +788,11 @@ export class Game {
     const sens = base * (this.scopeT > 0.5 ? fovRatio * BALANCE.input.scopedSensitivityScale * s.scopedSensitivity : 1);
     const dx = inp.lookX * sens;
     const dy = inp.lookY * sens * (s.invertY ? -1 : 1);
-    if (!this.camBullet) {
+    if (this.phase !== 'snipe') {
+      // 실내: 360° 둘러보기
+      this.yaw = Math.atan2(Math.sin(this.yaw - dx), Math.cos(this.yaw - dx));
+      this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch - dy));
+    } else if (!this.camBullet) {
       this.yaw = Math.max(-BALANCE.camera.yawLimit, Math.min(BALANCE.camera.yawLimit, this.yaw - dx));
       this.pitch = Math.max(BALANCE.camera.pitchMin, Math.min(BALANCE.camera.pitchMax, this.pitch - dy));
     }
@@ -572,6 +837,11 @@ export class Game {
     const inp = this.input;
     const s = this.save.data.settings;
     this.missionTime += dt;
+    if (this.phase !== 'snipe') {
+      this.updateInfil(dt);
+      return;
+    }
+    this.snipeTime += dt;
 
     // 스코프
     if (!this.camBullet) {
@@ -705,6 +975,8 @@ export class Game {
       }
     }
 
+    if (this.interior) this.updateInterior(dt, { x: this.ppos.x, z: this.ppos.z, crouched: true, moving: false, hidden: true });
+
     this.world?.updateFlags(this.wind, this.missionTime);
     this.fx?.update(dt);
     this.audio.setWind(this.wind.sample(0, this.missionTime).speed, true);
@@ -778,10 +1050,13 @@ export class Game {
     if (allDone) {
       if (this.endTimer < 0) this.endTimer = 1.4;
       if (!this.camBullet) this.endTimer -= dt;
-      if (this.endTimer <= 0) this.finish(true);
+      if (this.endTimer <= 0) {
+        if (this.interior) this.startExfil();
+        else this.finish(true);
+      }
       return;
     }
-    if (m.timeLimit > 0 && this.missionTime > m.timeLimit) {
+    if (m.timeLimit > 0 && (this.interior ? this.snipeTime : this.missionTime) > m.timeLimit) {
       this.fail('제한 시간이 끝났습니다.', '표적이 노출되는 순간을 미리 계산해 두고, 보정은 노출 전에 끝내세요.');
       return;
     }
@@ -803,6 +1078,10 @@ export class Game {
   }
 
   private showHint(): void {
+    if (this.phase !== 'snipe') {
+      this.hooks?.onHint(this.phaseHint());
+      return;
+    }
     const hints = this.mission?.hints;
     if (!hints || !this.save.data.settings.showHints) {
       this.hooks?.onHint(null);
@@ -854,6 +1133,7 @@ export class Game {
     const record = this.buildRecord(f, extraV, extraH);
 
     this.stats.shots++;
+    this.interiorHearShot();
     this.save.data.progress.stats.shots++;
     this.rifle.fire();
     this.shooter.onShot();
@@ -1361,8 +1641,10 @@ export class Game {
     if (this.fsm.is('menu', 'briefing', 'loading') || !this.mission) {
       // 메뉴: 사격장을 천천히 둘러보는 배경 카메라
       const t = this.menuT * 0.04;
-      const eye = this.world ? this.world.terrain.height(0, 0) + 1.6 : 8;
-      cam.position.set(Math.sin(t) * 3, eye, 2);
+      const inside = !!this.world?.interior;
+      const eye = this.world ? this.world.terrain.height(0, 0) + (inside ? INTERIOR.nestEye : 1.6) : 8;
+      // 건물이 있는 미션: 창가에서 내다보는 장면
+      cam.position.set(inside ? 0 : Math.sin(t) * 3, eye, inside ? 0.1 : 2);
       cam.fov = 40;
       cam.lookAt(Math.sin(t * 0.7) * 120, eye - 6, -500);
       cam.updateProjectionMatrix();
@@ -1388,6 +1670,23 @@ export class Game {
       cam.fov = 50;
       cam.lookAt(this.camLook);
       cam.updateProjectionMatrix();
+      return;
+    }
+    if (this.phase !== 'snipe') {
+      // 실내 1인칭: 걸음에 따른 흔들림
+      const bob = Math.sin(this.bobT) * 0.035 * this.moveAmt;
+      cam.position.copy(this.eye);
+      cam.position.y += Math.abs(bob) - 0.02 * this.moveAmt;
+      const sh = this.shake * 0.01;
+      cam.quaternion.setFromEuler(new THREE.Euler(this.pitch + (Math.random() - 0.5) * sh, this.yaw + (Math.random() - 0.5) * sh, Math.sin(this.bobT * 0.5) * 0.006 * this.moveAmt, 'YXZ'));
+      if (Math.abs(cam.fov - BALANCE.camera.baseFov) > 1e-4) {
+        cam.fov = BALANCE.camera.baseFov;
+        cam.updateProjectionMatrix();
+      }
+      if (this.fsm.is('playing')) {
+        const sw = { x: Math.sin(this.bobT * 0.5) * 6 * this.moveAmt, y: (Math.abs(Math.sin(this.bobT)) * 5 - 6) * this.moveAmt - 8 * this.crouchT };
+        this.viewModel.update(real, 0, -1, -1, this.rifle.elevMil, this.rifle.windMil, sw);
+      }
       return;
     }
     cam.position.copy(this.eye);
@@ -1435,6 +1734,10 @@ export class Game {
         return !s.windDialOnHit;
       case 'maxShots':
         return s.shots <= (o.value ?? 1);
+      case 'ghost':
+        return !this.stealth.suspected;
+      case 'noTakedown':
+        return this.stealth.takedowns === 0;
     }
   }
 
@@ -1531,8 +1834,9 @@ export class Game {
     const fov = (this.camera.fov * Math.PI) / 180;
     return {
       missionName: m?.name ?? '',
-      time: this.missionTime,
-      timeLimit: m?.timeLimit ?? 0,
+      // 제한 시간이 있는 잠입 작전은 창가에 자리 잡은 뒤부터 센다
+      time: this.interior && (m?.timeLimit ?? 0) > 0 ? this.snipeTime : this.missionTime,
+      timeLimit: this.interior && this.phase !== 'snipe' ? 0 : (m?.timeLimit ?? 0),
       targetsLeft: req.filter((t) => !t.done).length,
       targetsTotal: req.length,
       shots: this.stats.shots,
@@ -1577,6 +1881,35 @@ export class Game {
       })() : null,
       pitchDeg: (this.pitch * 180) / Math.PI,
       impact: this.impactOnScreen(),
+      phase: this.phase,
+      stealth: this.stealthHud(),
+    };
+  }
+
+  private stealthHud(): StealthHud | null {
+    const it = this.interior;
+    if (!it) return null;
+    const touch = this.input.isTouch;
+    const k = this.keyHint();
+    let prompt: string | null = null;
+    let objective: string;
+    if (this.phase === 'infil') {
+      const n = it.toWorld(it.nest);
+      const d = Math.hypot(n.x - this.ppos.x, n.y - this.ppos.z);
+      objective = `잠입 · ◆ 저격 위치까지 ${Math.round(d)}m`;
+      if (d < INTERIOR.reachRadius) prompt = touch ? '[저격] 눌러 창가에 자리 잡기' : `[${k.scope}] 창가에 자리 잡기`;
+    } else if (this.phase === 'exfil') {
+      const e = it.toWorld(it.exit);
+      objective = `탈출 · ◆ EXIT까지 ${Math.round(Math.hypot(e.x - this.ppos.x, e.y - this.ppos.z))}m`;
+    } else objective = '저격';
+    if (this.takedownCand && this.phase !== 'snipe') prompt = touch ? `[제압] ${this.takedownCand.label} 쓰러뜨리기` : `[${k.act}] ${this.takedownCand.label} 제압`;
+    return {
+      meter: this.stealth.maxMeter,
+      crouched: this.crouched,
+      prompt,
+      objective,
+      guardsDown: it.guards.filter((g) => g.down).length,
+      guardsTotal: it.guards.length,
     };
   }
 
@@ -1586,6 +1919,7 @@ export class Game {
    */
   markers(): MarkerInfo[] {
     if (!this.fsm.is('playing') || this.scopeT > 0.3 || this.camBullet) return [];
+    if (this.phase !== 'snipe') return this.interiorMarkers();
     const out: MarkerInfo[] = [];
     const el = this.renderer.domElement;
     const v = new THREE.Vector3();
@@ -1611,6 +1945,57 @@ export class Game {
         role,
         alert: t.alerted,
       });
+    }
+    // 서로 붙어 있는 표적은 글자가 겹친다 → 가까운 쪽만 이름을 남긴다
+    out.sort((a, b) => a.y - b.y);
+    for (let i = 0; i < out.length; i++) {
+      for (let j = 0; j < i; j++) {
+        if (out[j].label && Math.abs(out[i].x - out[j].x) < 70 && Math.abs(out[i].y - out[j].y) < 18) {
+          out[i].label = '';
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  /** 실내: 목표 지점 + 나를 의심하는 경비(벽 너머도 표시) + 제압 가능 표시 */
+  private interiorMarkers(): MarkerInfo[] {
+    const it = this.interior;
+    if (!it) return [];
+    const el = this.renderer.domElement;
+    const W = el.clientWidth, H = el.clientHeight;
+    const out: MarkerInfo[] = [];
+    const v = new THREE.Vector3();
+    const place = (x: number, y: number, z: number, clamp: boolean): { x: number; y: number } | null => {
+      v.set(x, y, z).project(this.camera);
+      const behind = v.z > 1;
+      if (behind) {
+        if (!clamp) return null;
+        v.x = -v.x;
+        v.y = -1;
+      }
+      if (!clamp && (Math.abs(v.x) > 1 || Math.abs(v.y) > 1)) return null;
+      const m = 0.9;
+      const sx = Math.max(-m, Math.min(m, v.x));
+      const sy = Math.max(-m, Math.min(m, v.y));
+      return { x: ((sx + 1) / 2) * W, y: ((1 - sy) / 2) * H };
+    };
+    const goalCell = this.phase === 'infil' ? it.nest : it.exit;
+    const g = it.toWorld(goalCell);
+    const gp = place(g.x, it.floorY + 1.1, g.y, true);
+    if (gp) {
+      const d = Math.round(Math.hypot(g.x - this.ppos.x, g.y - this.ppos.z));
+      out.push({ ...gp, label: `${this.phase === 'infil' ? '저격 위치' : 'EXIT'} ${d}m`, role: 'objective', alert: this.phase === 'exfil' });
+    }
+    for (const gd of it.guards) {
+      if (gd.down) continue;
+      const cand = gd === this.takedownCand;
+      const aware = gd.meter > 0.03 || gd.state === 'search' || gd.state === 'listen';
+      if (!aware && !cand) continue;
+      const p = place(gd.pos.x, gd.pos.y + 2.15, gd.pos.z, aware);
+      if (!p) continue;
+      out.push({ ...p, label: cand ? '제압' : gd.meter > 0.7 ? '!' : '?', role: cand ? 'takedown' : 'sentry', alert: gd.meter > 0.7 });
     }
     return out;
   }
@@ -1639,7 +2024,13 @@ export class Game {
 
   // ───────────────────────── 테스트 지원 ─────────────────────────
   /** 표적을 정확히 겨냥(테스트·자동 검증용): 터렛에 필요한 보정을 넣고 조준 */
+  /** 테스트용: 잠입 구간을 건너뛰고 바로 저격 위치로 */
+  testSkipInfil(): void {
+    if (this.phase === 'infil') this.enterNest();
+  }
+
   testAimAt(index: number): boolean {
+    this.testSkipInfil();
     const t = this.targets[index];
     if (!t || !this.env) return false;
     const p = t.position.clone();

@@ -5,7 +5,8 @@
 import * as THREE from 'three';
 import type { MissionDef, PropDef } from '../config/missions';
 import { seededRandom } from '../config/missions';
-import { Terrain } from './terrain';
+import { SHOOTER_GROUND, Terrain } from './terrain';
+import { Interior, interiorBounds } from './interior';
 import { atmosphereFor, THEMES, type Atmosphere } from './themes';
 import type { WindField } from '../ballistics/wind';
 
@@ -28,6 +29,15 @@ interface Flag {
 
 export type QualityLevel = 'high' | 'medium' | 'low';
 
+/** 테마별 건물 내부 색(벽 · 바닥 · 몰딩) */
+const INTERIOR_PALETTE: Record<MissionDef["theme"], { wall: number; floor: number; trim: number }> = {
+  forest: { wall: 0xa49a86, floor: 0x6e5a46, trim: 0x4a3e30 },
+  plains: { wall: 0xb0a48e, floor: 0x7a6850, trim: 0x544634 },
+  mountain: { wall: 0x9aa0a4, floor: 0x5c6064, trim: 0x3a3e42 },
+  desert: { wall: 0xb8a684, floor: 0x7a6a50, trim: 0x544632 },
+  snow: { wall: 0x8e949a, floor: 0x55595e, trim: 0x34383c },
+};
+
 export class World {
   readonly scene = new THREE.Scene();
   readonly terrain: Terrain;
@@ -39,11 +49,14 @@ export class World {
   private readonly disposables: { dispose(): void }[] = [];
   readonly sun: THREE.DirectionalLight;
   readonly maxDist: number;
+  /** 잠입 건물(있는 미션만) */
+  readonly interior: Interior | null = null;
 
   constructor(mission: MissionDef, quality: QualityLevel, seed: number) {
     this.theme = atmosphereFor(THEMES[mission.theme], mission.timeOfDay);
     this.maxDist = Math.max(...mission.targets.map((t) => t.dist), 300);
-    this.terrain = new Terrain({ theme: mission.theme, seed, maxDist: this.maxDist });
+    const pad = mission.interior ? { ...interiorBounds(mission.interior), h: SHOOTER_GROUND - 0.05 } : undefined;
+    this.terrain = new Terrain({ theme: mission.theme, seed, maxDist: this.maxDist, pad });
     const th = this.theme;
 
     this.scene.background = new THREE.Color(th.skyHorizon);
@@ -64,7 +77,10 @@ export class World {
     for (const p of mission.props) this.addProp(p, rnd);
     this.buildTrees(mission, quality, rnd);
     this.buildFlags(mission, rnd);
-    this.buildHide();
+    if (mission.interior) {
+      this.interior = new Interior(mission.interior, SHOOTER_GROUND, INTERIOR_PALETTE[mission.theme], quality === 'high');
+      this.scene.add(this.interior.group);
+    } else this.buildHide();
     if (quality !== 'low') this.buildGrass(quality, rnd);
   }
 
@@ -624,7 +640,10 @@ export class World {
       const z = -Math.cos(a) * r;
       const s = 0.6 + rnd() * 0.8;
       m.makeScale(s, s * (0.7 + rnd() * 0.6), s);
-      m.setPosition(x, this.terrain.height(x, z) - 0.05, z);
+      const pad = this.terrain.p.pad;
+      // 건물 안에는 풀을 심지 않는다
+      const inPad = pad && x > pad.minX - 1 && x < pad.maxX + 1 && z > pad.minZ - 1 && z < pad.maxZ + 1;
+      m.setPosition(x, this.terrain.height(x, z) - (inPad ? 50 : 0.05), z);
       mesh.setMatrixAt(i, m);
       c.copy(base).offsetHSL((rnd() - 0.5) * 0.04, 0, (rnd() - 0.4) * 0.1);
       mesh.setColorAt(i, c);
@@ -696,6 +715,7 @@ export class World {
   }
 
   dispose(): void {
+    this.interior?.dispose();
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
     this.scene.clear();

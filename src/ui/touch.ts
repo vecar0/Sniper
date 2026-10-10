@@ -123,6 +123,39 @@ export class TouchControls {
     if (this.aimTouches.size < 2) this.pinchDist = 0;
   }
 
+  private mode: 'infil' | 'snipe' | '' = '';
+  private crouchOn = false;
+  /**
+   * 잠입(건물 안)에서는 같은 버튼을 다른 뜻으로 쓴다:
+   * ▲▼◀▶ = 걷기, 발사 = 제압, 숨 = 숙이기(켜기/끄기), 스코프 = 창가에 자리 잡기.
+   * 저격에 쓰는 배율·표·거리·탄 버튼은 숨긴다.
+   */
+  setMode(mode: 'infil' | 'snipe', crouched: boolean): void {
+    if (mode === this.mode && crouched === this.crouchOn) return;
+    const changed = mode !== this.mode;
+    this.mode = mode;
+    this.crouchOn = crouched;
+    const infil = mode === 'infil';
+    const set = (cls: string, label: string, aria: string) => {
+      const b = this.el.querySelector<HTMLElement>(`.${cls}`);
+      if (!b) return;
+      b.textContent = label;
+      b.setAttribute('aria-label', aria);
+    };
+    if (changed) {
+      set('t-fire', infil ? '제압' : '발사', infil ? '경비 제압' : '발사');
+      set('t-breath', infil ? '숙이기' : '숨', infil ? '숙이기 켜기/끄기' : '숨 참기');
+      set('t-scope', infil ? '저격' : '스코프', infil ? '창가에 자리 잡기' : '스코프 전환');
+      set('t-up', '▲', infil ? '앞으로' : '위로 보정');
+      set('t-down', '▼', infil ? '뒤로' : '아래로 보정');
+      set('t-left', '◀', infil ? '왼쪽으로' : '왼쪽 보정');
+      set('t-right', '▶', infil ? '오른쪽으로' : '오른쪽 보정');
+      this.el.classList.toggle('mode-infil', infil);
+      this.el.querySelectorAll('.pressed').forEach((b) => b.classList.remove('pressed'));
+    }
+    this.el.querySelector('.t-breath')?.classList.toggle('on', infil && crouched);
+  }
+
   setAmmoVisible(v: boolean): void {
     const b = this.el.querySelector<HTMLElement>('.t-ammo');
     if (b) b.style.display = v ? '' : 'none';

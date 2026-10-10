@@ -21,6 +21,8 @@ export interface DifficultySpec {
   /** 표적 도주 속도·거리 배율(낮을수록 여유) */
   escapeSpeedMul: number;
   escapeDistanceMul: number;
+  /** 실내 경비의 발각 속도 배율(낮을수록 여유) */
+  detectMul: number;
   /** 별 해금 키 (없으면 기본 해금) */
   unlockKey?: 'expert';
 }
@@ -37,6 +39,7 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultySpec> = {
     breathHold: 8,
     escapeSpeedMul: 0.75,
     escapeDistanceMul: 1.4,
+    detectMul: 0.6,
   },
   marksman: {
     id: 'marksman',
@@ -49,6 +52,7 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultySpec> = {
     breathHold: 6,
     escapeSpeedMul: 1.0,
     escapeDistanceMul: 1.0,
+    detectMul: 1.0,
   },
   expert: {
     id: 'expert',
@@ -61,6 +65,7 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultySpec> = {
     breathHold: 5,
     escapeSpeedMul: 1.1,
     escapeDistanceMul: 0.9,
+    detectMul: 1.3,
     unlockKey: 'expert',
   },
 };

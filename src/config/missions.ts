@@ -96,7 +96,7 @@ export interface PropDef {
   rot?: number;
 }
 
-export type ObjectiveType = 'clear' | 'accuracy' | 'time' | 'headshots' | 'noAlert' | 'holdOnly' | 'maxShots';
+export type ObjectiveType = 'clear' | 'accuracy' | 'time' | 'headshots' | 'noAlert' | 'holdOnly' | 'maxShots' | 'ghost' | 'noTakedown';
 
 export interface ObjectiveDef {
   type: ObjectiveType;
@@ -116,6 +116,10 @@ export type HintTrigger =
   | 'rangefinder'
   | 'ammo'
   | 'tag'
+  | 'move'
+  | 'crouch'
+  | 'takedown'
+  | 'nest'
   | 'none';
 
 export interface HintDef {
@@ -125,6 +129,25 @@ export interface HintDef {
   until: HintTrigger;
   /** 터치 기기용 문구(없으면 text 사용) */
   touchText?: string;
+}
+
+/** 실내 경비 */
+export interface InteriorGuardDef {
+  /** 순찰 경유점(배치도 [열, 행]). 하나면 제자리 경비 */
+  path: [number, number][];
+  /** 경유점마다 멈추는 시간(초) */
+  pause?: number;
+  /** 제자리 경비가 바라보는 방향(도): 0 = 아래(뒤쪽), 90 = 오른쪽, 180 = 위(창문 쪽), -90 = 왼쪽 */
+  yaw?: number;
+  outfit?: OutfitId;
+  label?: string;
+}
+
+/** 잠입할 건물: 문자 배치도(설명은 src/game/interior.ts 맨 위) */
+export interface InteriorSpec {
+  name: string;
+  layout: string[];
+  guards: InteriorGuardDef[];
 }
 
 /** 표적 신상 파일 */
@@ -171,6 +194,8 @@ export interface MissionDef {
   flagSpacing?: number;
   /** 사격장 모드 */
   isRange?: boolean;
+  /** 잠입 → 저격 → 탈출: 건물 안에서 시작해 창가 저격 위치까지 이동 */
+  interior?: InteriorSpec;
 }
 
 const CLEAR: ObjectiveDef = { type: 'clear', label: '모든 필수 표적 제거' };
@@ -279,9 +304,9 @@ export const MISSIONS: MissionDef[] = [
     name: '초소 정리',
     subtitle: '연속 사격',
     category: 'operation',
-    briefing: ['침투조가 새벽에 이 숲길을 지납니다. 초소 경계병 3명을 제거하십시오.', '총성이 들리면 나머지는 바위 뒤로 달아납니다. 빠르게.'],
-    intel: ['경계병 3명, 470~515m', '도주 경로: 좌우 바위 엄폐물', '스코프로 1초 관측하면 표적이 식별(태그)됩니다'],
-    newSkill: '표적 식별 · 우선순위 · 연속 사격',
+    briefing: ['숲길 앞 산림 관리소에 잠입해 창가를 확보하고, 초소 경계병 3명을 제거하십시오.', '관리소 안에도 경비 3명. 들키지 말고 들어가 쏘고, 빠져나오십시오.'],
+    intel: ['건물 안: 입구 옆 보초(등을 돌리고 있음) · 복도 순찰 · 창고 순찰', '소음기 없이 쏘면 건물 안 경비가 저격 위치로 옵니다 → 소음기 권장', '경계병 3명, 470~515m · 총성 후 바위 뒤로 도주'],
+    newSkill: '잠입 · 숙이기 · 뒤에서 제압 · 연속 사격',
     theme: 'forest',
     timeOfDay: 'dawn',
     atmosphere: { altitude: 600, temperature: 8 },
@@ -300,6 +325,28 @@ export const MISSIONS: MissionDef[] = [
       { kind: 'tent', x: 14, dist: 505, w: 4, h: 2.2, d: 4 },
       { kind: 'barrel', x: -3, dist: 480, w: 0.6, h: 0.9, d: 0.6 },
     ],
+    interior: {
+      name: '산림 관리소',
+      layout: [
+        '#####wwwww######',
+        '#...#..N..#....#',
+        '#.B.........cc.#',
+        '#...#T.c..#....#',
+        '#...###.###....#',
+        '#..............#',
+        '#..............#',
+        '###.######.#####',
+        '#B.....#.....B.#',
+        '#..c...#.....c.#',
+        '#......#.......#',
+        '###S########E###',
+      ],
+      guards: [
+        { path: [[5, 9]], yaw: 90, label: '보초' },
+        { path: [[1, 5], [14, 5]], pause: 2.5, label: '복도 순찰' },
+        { path: [[8, 10], [14, 10]], pause: 3, label: '창고 순찰' },
+      ],
+    },
     objectives: [CLEAR, { type: 'maxShots', value: 3, label: '3발로 3명 제거 (1탄 1킬)' }, { type: 'headshots', value: 1, label: '헤드샷 1회 이상' }],
     hints: [
       { text: '스코프로 사람을 1초간 관측하면 식별 태그가 붙습니다. 3명 모두 식별하세요.', until: 'tag' },
@@ -312,8 +359,8 @@ export const MISSIONS: MissionDef[] = [
     name: '운반책',
     subtitle: '움직이는 표적 · 민간인 구별',
     category: 'operation',
-    briefing: ['무기 운반책 두 명이 도로를 오갑니다. 갈색 재킷에 배낭을 멨습니다.', '근처에 농부들이 있습니다. 민간인을 쏘면 작전은 즉시 중단됩니다.'],
-    intel: ['운반책 2명: 갈색 재킷 · 배낭', '민간인: 파란/빨간 셔츠 · 모자', '걷는 표적은 가는 방향 앞을 겨누기(600m ≈ 눈금 2개)'],
+    briefing: ['도로가 내려다보이는 농가 창고에 잠입하십시오. 운반책 두 명(갈색 재킷 · 배낭)이 도로를 오갑니다.', '근처에 농부들이 있습니다. 민간인을 쏘면 작전은 즉시 중단됩니다.'],
+    intel: ['창고 안 경비 3명: 현관 · 홀 순찰, 안쪽 방 감시병', '운반책 2명: 갈색 재킷 · 배낭 / 민간인: 파란·빨간 셔츠', '걷는 표적은 가는 방향 앞을 겨누기(600m ≈ 눈금 2개)'],
     dossier: {
       name: '운반책 2명',
       alias: '"짐꾼"',
@@ -343,6 +390,26 @@ export const MISSIONS: MissionDef[] = [
       { kind: 'fence', x: -26, dist: 606, w: 14, h: 1.1, d: 0.1 },
       { kind: 'crate', x: 30, dist: 596, w: 1.2, h: 0.9, d: 1.2 },
     ],
+    interior: {
+      name: '버려진 농가 창고',
+      layout: [
+        '###wwwww#######',
+        '#B....N.#.....#',
+        '#....cc.#..T..#',
+        '#..cc...#.....#',
+        '#.......##.####',
+        '####.##.......#',
+        '#.....#.......E',
+        '#.c...#..B....#',
+        '#.....#.......#',
+        '##S############',
+      ],
+      guards: [
+        { path: [[1, 6], [5, 6]], pause: 2, label: '현관 순찰' },
+        { path: [[7, 6], [13, 6]], pause: 2, label: '홀 순찰' },
+        { path: [[11, 1]], yaw: 0, label: '감시병' },
+      ],
+    },
     objectives: [CLEAR, ACCURACY, { type: 'headshots', value: 1, label: '헤드샷 1회 이상' }],
     hints: [
       { text: '먼저 관측하세요. 갈색 재킷 = 운반책, 파란·빨간 셔츠 = 민간인입니다.', until: 'tag' },
@@ -393,9 +460,9 @@ export const MISSIONS: MissionDef[] = [
     name: '레이더 기지',
     subtitle: '구간마다 다른 바람 · 돌풍',
     category: 'operation',
-    briefing: ['산악 레이더 기지의 경비 두 명을 제거해 공습로를 여십시오.', '계곡 구간마다 바람이 다릅니다. 돌풍은 깃발이 먼저 알려줍니다.'],
-    intel: ['가까이 3.5m/s · 중간 1.5m/s · 멀리 4.5m/s', '돌풍은 약 9~15초마다, 깃발이 먼저 세게 펄럭임', '먼 곳 바람이 더 중요(탄이 느려져 오래 밀림)'],
-    newSkill: '구간 바람 읽기 · 돌풍 피해서 쏘기',
+    briefing: ['능선의 관측 벙커에 잠입해 레이더 기지 경비 두 명을 제거하고 공습로를 여십시오.', '계곡 구간마다 바람이 다릅니다. 벙커 통로 보초는 창가 쪽을 지킵니다 – 다른 길을 찾으십시오.'],
+    intel: ['벙커: 저격실 문이 3개(아래 · 왼쪽 숙소 · 오른쪽 방)', '바람: 가까이 3.5 · 중간 1.5 · 멀리 4.5m/s, 돌풍 9~15초마다', '먼 곳 바람이 더 중요(탄이 느려져 오래 밀림)'],
+    newSkill: '우회로 찾기 · 구간 바람 읽기 · 돌풍 피해서 쏘기',
     theme: 'mountain',
     timeOfDay: 'day',
     atmosphere: { altitude: 1400, temperature: 6 },
@@ -422,7 +489,27 @@ export const MISSIONS: MissionDef[] = [
       { kind: 'antenna', x: 22, dist: 808, w: 1, h: 14, d: 1 },
       { kind: 'sandbag', x: 12, dist: 812, w: 3.5, h: 0.9, d: 1 },
     ],
-    objectives: [CLEAR, ACCURACY, { type: 'time', value: 150, label: '150초 이내 완료' }],
+    interior: {
+      name: '산악 관측 벙커',
+      layout: [
+        '#######www#####',
+        '#..B..#.N.....#',
+        '#.......c.#.T.#',
+        '#.....##.##...#',
+        '#..c......#...#',
+        '#.....#...##.##',
+        '####.##.......#',
+        '#.....#..c....#',
+        '#.B...#.......#',
+        '###S#######E###',
+      ],
+      guards: [
+        { path: [[1, 1], [1, 5]], pause: 2.5, label: '숙소 순찰' },
+        { path: [[9, 5]], yaw: 180, label: '통로 보초' },
+        { path: [[7, 8], [13, 8]], pause: 2, label: '홀 순찰' },
+      ],
+    },
+    objectives: [CLEAR, ACCURACY, { type: 'ghost', label: '잠입·탈출 중 한 번도 의심받지 않기' }],
     flagSpacing: 130,
     hints: [{ text: '가까운 깃발과 먼 깃발을 비교하세요. 먼 구간의 바람에 더 무게를 두세요.', until: 'hit' }],
   },
@@ -432,7 +519,7 @@ export const MISSIONS: MissionDef[] = [
     name: '1km',
     subtitle: '최종 암살',
     category: 'operation',
-    briefing: ['무기상 빅토르 렌코가 1km 밖 저택 단지에 있습니다. 건물 사이를 오갈 때만 노출됩니다.', '고지대(2200m)라 공기가 희박해 탄이 덜 떨어집니다. 150초 안에 끝내십시오.'],
+    briefing: ['연구소 별관에 잠입해 1km 밖 무기상 빅토르 렌코를 노리십시오. 건물 사이를 오갈 때만 노출됩니다.', '별관 경비 4명. 고지대(2200m)라 탄이 덜 떨어집니다. 창가에 자리 잡은 뒤 150초 안에 끝내십시오.'],
     intel: ['표적: 흰 정장 · 붉은 넥타이 · 선글라스', '경호원 2명(선택), 연구원 1명(민간인)', '건물 사이로 나왔다가 뒤에서 약 5초 멈춤', '탄 도착까지 약 1.6초'],
     dossier: {
       name: '빅토르 렌코',
@@ -469,6 +556,28 @@ export const MISSIONS: MissionDef[] = [
       { kind: 'barrel', x: 7, dist: 1044, w: 0.6, h: 0.9, d: 0.6 },
       { kind: 'antenna', x: 18, dist: 1050, w: 1, h: 16, d: 1 },
     ],
+    interior: {
+      name: '연구소 별관',
+      layout: [
+        '#########www#########',
+        '#...B.....N.#..T....#',
+        '#.......#.c.........#',
+        '#..cc...#.###...c...#',
+        '#...................#',
+        '#.......#B.B#.......#',
+        '####.####...####.####',
+        '#.......#...#.......#',
+        '#..T....#...#..B....#',
+        '#.......#...#.......#',
+        '####S#########E######',
+      ],
+      guards: [
+        { path: [[6, 2]], yaw: -90, label: '사무실 보초' },
+        { path: [[1, 4], [19, 4]], pause: 3, label: '복도 순찰' },
+        { path: [[10, 6], [10, 9]], pause: 2.5, label: '실험실 순찰' },
+        { path: [[13, 7], [19, 7]], pause: 2, label: '창고 순찰' },
+      ],
+    },
     objectives: [CLEAR, ACCURACY, { type: 'headshots', value: 1, label: '헤드샷 1회 이상' }],
     flagSpacing: 160,
     hints: [

@@ -893,10 +893,27 @@ export class UI {
               <tr><td>재시작</td><td>${k('restart')} 길게</td></tr>
               <tr><td>일시정지</td><td><kbd>Esc</kbd> / ${k('pause')}</td></tr>
             </table>
+            <h3>건물 안(잠입 · 탈출)</h3>
+            <table class="keys-table">
+              <tr><td>걷기</td><td>${k('elevUp')} ${k('windLeft')} ${k('elevDown')} ${k('windRight')} + 마우스로 방향</td></tr>
+              <tr><td>숙이기 켜기/끄기</td><td>${k('breath')}</td></tr>
+              <tr><td>경비 제압(뒤에서)</td><td>${k('fire')}</td></tr>
+              <tr><td>창가에 자리 잡기</td><td>${k('scope')} (◆ 저격 위치에서)</td></tr>
+            </table>
             <h3>터치</h3>
             <p class="small-text">빈 곳을 드래그해 조준 · 두 손가락으로 벌려 배율 조절 · 오른쪽 아래 [발사] · 왼쪽 아래 [숨] · 왼쪽 십자 버튼(▲▼◀▶)으로 보정</p>
+            <p class="small-text">건물 안에서는 같은 버튼이 바뀝니다: ▲▼◀▶ = 걷기 · [숙이기] · [제압] · [저격] = 창가에 자리 잡기</p>
           </section>
-          <section><h3>사격 요령</h3>
+          <section><h3>작전 순서 (건물이 있는 작전)</h3>
+            <ol class="howto">
+              <li><b>잠입</b> – 건물 입구에서 시작합니다. 경비에게 들키지 않고 노란 ◆ <b>저격 위치</b>(창가)까지 가세요.</li>
+              <li><b>숨기</b> – 숙이면 경비가 알아보는 거리가 12m → 7m로 줄고 발소리도 안 납니다. 낮은 상자 뒤에 숨을 수 있습니다.</li>
+              <li><b>경비 눈치</b> – 경비 머리 위 <b>?</b>가 보이면 나를 보고 있는 것. 위쪽 눈 모양 게이지가 가득 차면 발각(실패)입니다.</li>
+              <li><b>제압</b> – 경비 <b>뒤</b>로 다가가면 [제압]으로 조용히 쓰러뜨립니다. 쓰러진 모습을 다른 경비가 보면 수색합니다.</li>
+              <li><b>저격</b> – 창가에서 아래 요령대로 쏩니다. <b>소음기 없이 쏘면</b> 건물 안 경비가 8초 뒤 저격 위치로 옵니다.</li>
+              <li><b>탈출</b> – 목표를 모두 제거하면 초록 ◆ <b>EXIT</b>까지 빠져나가면 성공입니다.</li>
+            </ol>
+            <h3>사격 요령</h3>
             <ol class="howto">
               <li><b>찾기</b> – 스코프로 사람을 1초 보면 누구인지(표적·경비·민간인) 표시됩니다.</li>
               <li><b>거리 재기</b> – [거리] 버튼. 훈련병 난이도는 이때 보정이 <b>자동</b>으로 맞춰집니다.</li>
@@ -1047,7 +1064,9 @@ export class UI {
       <div class="hud-cam"><span>불릿캠 · 클릭하면 건너뜀</span></div>
       <div class="hud-lock">화면을 클릭하면 마우스가 고정됩니다</div>
       <div class="hud-markers" aria-hidden="true"></div>
-      <div class="hud-impact" aria-hidden="true"><i></i><span>탄착</span></div>`;
+      <div class="hud-impact" aria-hidden="true"><i></i><span>탄착</span></div>
+      <div class="hud-stealth" aria-live="polite"><div class="hs-eye" aria-hidden="true"><i></i></div><div class="hs-text"><b class="hs-state"></b><span class="hs-pose"></span></div></div>
+      <div class="hud-prompt" role="status"></div>`;
   }
   private q(sel: string): HTMLElement {
     return this.hudEl.querySelector<HTMLElement>(sel)!;
@@ -1093,7 +1112,24 @@ export class UI {
     const m = this.game.mission;
     this.setText('.hud-code', m ? `${m.codename}` : '');
     this.setText('.hud-mission', h.missionName);
-    this.setText('.hud-targets', h.isRange ? `${h.weaponName} · 자유 연습` : `◆ 표적 ${h.targetsTotal - h.targetsLeft} / ${h.targetsTotal}`);
+    const st = h.stealth;
+    const inside = h.phase !== 'snipe';
+    this.setText('.hud-targets', h.isRange ? `${h.weaponName} · 자유 연습` : inside && st ? st.objective : `◆ 표적 ${h.targetsTotal - h.targetsLeft} / ${h.targetsTotal}`);
+    this.hudEl.classList.toggle('infil', inside);
+    this.touch?.setMode(inside ? 'infil' : 'snipe', !!st?.crouched);
+    const stEl = this.q('.hud-stealth');
+    stEl.style.display = inside && st ? '' : 'none';
+    if (inside && st) {
+      const lvl = st.meter > 0.7 ? 'danger' : st.meter > 0.25 ? 'warn' : st.meter > 0.02 ? 'seen' : 'hidden';
+      stEl.className = `hud-stealth s-${lvl}`;
+      (stEl.querySelector('.hs-eye i') as HTMLElement).style.transform = `scaleY(${Math.max(0.08, st.meter).toFixed(3)})`;
+      this.setText('.hs-state', lvl === 'danger' ? '발각 직전!' : lvl === 'warn' ? '의심받는 중' : lvl === 'seen' ? '눈에 띄는 중' : '숨어 있음');
+      this.setText('.hs-pose', `${st.crouched ? '숙임 · 조용' : '서 있음'} · 제압 ${st.guardsDown}/${st.guardsTotal}`);
+    }
+    const pr = this.q('.hud-prompt');
+    const prompt = st?.prompt ?? null;
+    if (pr.textContent !== (prompt ?? '')) pr.textContent = prompt ?? '';
+    pr.classList.toggle('show', !!prompt);
     const timeText = h.timeLimit > 0 ? `T−${formatTime(h.timeLimit - h.time)}` : `T+${formatTime(h.time)}`;
     this.setText('.hud-time', timeText);
     this.q('.hud-time').classList.toggle('danger', h.timeLimit > 0 && h.timeLimit - h.time < 20);

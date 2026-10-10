@@ -232,8 +232,44 @@ test.describe('장시간 · 콘텐츠', () => {
     await aimAndFire(page, 0);
     await expect(page.locator('.hud-alert.show')).toBeVisible({ timeout: 90_000 });
     await page.waitForSelector('.screen-result', { timeout: 200_000 });
-    await expect(page.locator('.fail-reason')).toContainText('탈출');
+    // 바깥 표적이 달아나거나(탈출), 총성을 듣고 온 건물 안 경비에게 들키거나(발각)
+    await expect(page.locator('.fail-reason')).toContainText(/탈출|발각/);
     await expect(page.locator('.tip')).toBeVisible();
+  });
+
+  test('잠입 작전: 건물 안에서 시작 → 뒤에서 제압 → 창가 저격 위치 → 저격 단계', async ({ page }) => {
+    const w = watch(page);
+    await boot(page, { save: unlockedSave() });
+    await page.click('[data-go="missions"]');
+    await page.click('[data-mission="3"]');
+    await page.click('[data-start]');
+    expect(await page.evaluate(() => (window as any).__longshot.game.phase)).toBe('infil');
+    await expect(page.locator('.hud-stealth')).toBeVisible();
+    await expect(page.locator('.hud-targets')).toContainText('저격 위치');
+    // 첫 경비 바로 뒤로 이동해 제압
+    await page.evaluate(() => {
+      const g = (window as any).__longshot.game;
+      const it = g.interior;
+      const gd = it.guards[0];
+      const f = gd.forward;
+      g.ppos.set(gd.pos.x - f.x * 1.0, it.floorY, gd.pos.z - f.y * 1.0);
+      g.yaw = Math.atan2(-(gd.pos.x - g.ppos.x), -(gd.pos.z - g.ppos.z));
+    });
+    await expect(page.locator('.hud-prompt')).toContainText('제압', { timeout: 30_000 });
+    await page.evaluate(() => (window as any).__longshot.input.tapVirtual('fire'));
+    await page.waitForFunction(() => (window as any).__longshot.game.interior.guards[0].down, null, { timeout: 30_000 });
+    // 저격 위치로 이동 후 스코프 → 저격 단계
+    await page.evaluate(() => {
+      const g = (window as any).__longshot.game;
+      const it = g.interior;
+      const n = it.toWorld(it.nest);
+      g.ppos.set(n.x, it.floorY, n.y);
+    });
+    await expect(page.locator('.hud-prompt')).toContainText('창가', { timeout: 30_000 });
+    await page.evaluate(() => (window as any).__longshot.input.tapVirtual('scope'));
+    await page.waitForFunction(() => (window as any).__longshot.game.phase === 'snipe', null, { timeout: 30_000 });
+    await expect(page.locator('.hud-stealth')).toBeHidden();
+    expect(w.errors).toEqual([]);
   });
 
   test('관측 태깅 → 민간인 사살 시 즉시 작전 실패', async ({ page }) => {
