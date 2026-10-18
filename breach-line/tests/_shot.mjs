@@ -1,0 +1,21 @@
+import { chromium } from 'playwright-core';
+const S='/tmp/claude-0/-home-user-Sniper/57f0be59-9d6c-43c9-a88d-92039fcbca6b/scratchpad/shots';
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args:['--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
+const p = await b.newPage({ viewport: { width: 1280, height: 720 } });
+await p.goto('http://127.0.0.1:8765/index.html?test');
+await p.waitForFunction(() => window.__breach && window.__breach.state === 'menu');
+await p.evaluate(() => __breach.start('m2'));
+await p.waitForTimeout(800);
+await p.screenshot({ path: S+'/v-hip.png' });
+await p.keyboard.down('KeyV'); await p.waitForTimeout(200); await p.screenshot({ path: S+'/v-wheel.png' }); await p.keyboard.up('KeyV');
+// 대원 진입 장면
+await p.evaluate(() => { const w=__breach.world; w.command('all',{type:'breach',door:w.g.doors.findIndex(d=>!d.locked),mode:'flash'}); });
+await p.waitForTimeout(4000);
+await p.screenshot({ path: S+'/v-breach.png' });
+const m = await b.newPage({ viewport: { width: 844, height: 390 }, isMobile:true, hasTouch:true, deviceScaleFactor:2 });
+await m.goto('http://127.0.0.1:8765/index.html?test');
+await m.waitForFunction(() => window.__breach && window.__breach.state === 'menu');
+await m.evaluate(() => __breach.app.menus.openBriefing('m3'));
+await m.waitForTimeout(300);
+await m.screenshot({ path: S+'/v-mbrief.png' });
+await b.close();

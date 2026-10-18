@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d10">
+  <title>BREACH LINE</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <!-- 작전 HUD -->
+  <div id="hud" class="hidden">
+    <div id="squad-panel"></div>
+    <div id="team-chip"></div>
+    <div id="obj"></div>
+    <div id="go-chip"></div>
+    <div id="mapbox"><canvas id="minimap"></canvas><div id="timer">0:00</div></div>
+    <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i></div>
+    <div id="hitmark"></div>
+    <div id="look-hint"></div>
+    <div id="prompt" class="hidden"></div>
+    <div id="ammo"></div>
+    <div id="notices"></div>
+    <div id="dmg-arcs"></div>
+    <div id="dmg-vignette"></div>
+    <div id="flash-white"></div>
+    <div id="fps"></div>
+  </div>
+
+  <!-- 모바일 터치 조작 -->
+  <div id="touch">
+    <div id="joy-base"></div><div id="joy-knob"></div>
+    <button class="tbtn big" data-btn="fire" id="tb-fire"><span>발사</span></button>
+    <button class="tbtn" data-btn="shout" id="tb-shout"><span>손들어!</span></button>
+    <button class="tbtn ctx hidden" data-btn="interact" id="tb-interact"><span>상호작용</span></button>
+    <button class="tbtn" data-btn="aim" id="tb-aim"><span>조준</span></button>
+    <button class="tbtn" data-btn="reload" id="tb-reload"><span>장전</span></button>
+    <button class="tbtn" data-btn="throw" id="tb-throw"><span>투척</span></button>
+    <button class="tbtn" data-btn="crouch" id="tb-crouch"><span>숙이기</span></button>
+    <button class="tbtn" data-btn="weapon" id="tb-weapon"><span>무기</span></button>
+    <button class="tbtn" data-btn="grenade" id="tb-grenade"><span>섬광/연막</span></button>
+    <button class="tbtn cmd" data-btn="cmd" id="tb-cmd"><span>명령</span></button>
+    <button class="tbtn" data-btn="leanL" id="tb-leanL"><span>◀기울</span></button>
+    <button class="tbtn" data-btn="leanR" id="tb-leanR"><span>기울▶</span></button>
+    <button class="tbtn go hidden" data-btn="go" id="tb-go"><span>GO</span></button>
+    <button class="tbtn" data-btn="pause" id="tb-pause"><span>II</span></button>
+    <button class="tbtn team" data-btn="team" id="tb-team"></button>
+  </div>
+
+  <div id="wheel" class="hidden"></div>
+
+  <!-- 화면들 -->
+  <div id="screen-loading" class="screen"><div class="panel center"><h1 class="logo">BREACH<span>LINE</span></h1><p>불러오는 중…</p></div></div>
+
+  <div id="screen-menu" class="screen hidden">
+    <div class="panel center menu">
+      <h1 class="logo">BREACH<span>LINE</span></h1>
+      <p class="sub">4인 대테러 분대 · 계획하고, 동시에 돌입하고, 살려서 데려온다</p>
+      <button id="btn-play" class="btn primary">작전 선택</button>
+      <button id="btn-help" class="btn">조작법</button>
+      <button id="btn-settings" class="btn">설정</button>
+      <p class="fine">유혈 표현 없음 · 그래픽·사운드는 모두 코드로 생성</p>
+    </div>
+  </div>
+
+  <div id="screen-select" class="screen hidden">
+    <div class="panel wide">
+      <h2>작전 선택</h2>
+      <div id="mission-list"></div>
+      <div class="row-btns"><button id="btn-select-back" class="btn">뒤로</button></div>
+    </div>
+  </div>
+
+  <div id="screen-briefing" class="screen hidden">
+    <div class="panel brief">
+      <div class="brief-left">
+        <h2 id="brief-title"></h2>
+        <div class="map-wrap"><canvas id="brief-map"></canvas></div>
+        <div id="brief-legend"></div>
+        <p id="brief-text"></p>
+        <p id="brief-intel" class="intel"></p>
+        <p id="brief-tip" class="tip"></p>
+      </div>
+      <div class="brief-right">
+        <div id="brief-points"></div>
+        <div id="brief-entries"></div>
+        <div id="brief-members"></div>
+        <div class="row-btns"><button id="btn-brief-back" class="btn">뒤로</button><button id="btn-brief-start" class="btn primary">작전 시작</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-pause" class="screen hidden">
+    <div class="panel center menu">
+      <h2>일시정지</h2>
+      <button id="btn-resume" class="btn primary">계속</button>
+      <button id="btn-pause-settings" class="btn">설정</button>
+      <button id="btn-pause-help" class="btn">조작법</button>
+      <button id="btn-restart" class="btn">작전 다시 시작</button>
+      <button id="btn-quit" class="btn">작전 나가기</button>
+    </div>
+  </div>
+
+  <div id="screen-settings" class="screen hidden">
+    <div class="panel center settings">
+      <h2>설정</h2>
+      <label>시점 감도 <b id="set-sens-v"></b><input id="set-sens" type="range" min="0.2" max="3" step="0.05"></label>
+      <label>시야각(FOV) <b id="set-fov-v"></b><input id="set-fov" type="range" min="60" max="95" step="1"></label>
+      <label>음량 <b id="set-vol-v"></b><input id="set-vol" type="range" min="0" max="1" step="0.05"></label>
+      <label class="check"><input id="set-invert" type="checkbox"> 상하 반전</label>
+      <label class="check"><input id="set-assist" type="checkbox"> 모바일 조준 보정(적 근처에서 시점 속도 40% 감소)</label>
+      <label>그래픽 품질
+        <select id="set-quality"><option value="auto">자동</option><option value="low">낮음</option><option value="mid">중간</option><option value="high">높음</option></select>
+      </label>
+      <button id="btn-settings-close" class="btn primary">닫기</button>
+    </div>
+  </div>
+
+  <div id="screen-help" class="screen hidden">
+    <div class="panel wide help">
+      <h2>조작법</h2>
+      <table>
+        <tr><th>행동</th><th>PC</th><th>모바일</th></tr>
+        <tr><td>이동 / 달리기 / 숙이기</td><td>WASD / Shift / C</td><td>왼쪽 조이스틱(끝까지 밀면 달리기) / [숙이기]</td></tr>
+        <tr><td>시점</td><td>마우스</td><td>오른쪽 화면 드래그</td></tr>
+        <tr><td>사격 / 조준</td><td>좌클릭 / 우클릭</td><td>[발사](누른 채 드래그로 시점도 이동) / [조준]</td></tr>
+        <tr><td>기울이기</td><td>Q / E</td><td>[◀기울] [기울▶]</td></tr>
+        <tr><td>재장전 / 무기 / 투척물 종류</td><td>R / 1·2(휠) / 3</td><td>[장전] / [무기] / [섬광/연막]</td></tr>
+        <tr><td>경고("손들어!")</td><td>F 짧게</td><td>[손들어!]</td></tr>
+        <tr><td>문 열기·체포·인질 확보·증거 회수</td><td>F 길게(0.5초)</td><td>대상 앞에서 뜨는 상황 버튼을 누르고 있기</td></tr>
+        <tr><td>투척(섬광탄·연막탄)</td><td>G</td><td>[투척]</td></tr>
+        <tr><td>명령 휠</td><td>V 또는 가운데 버튼을 누른 채 고르고 떼기</td><td>[명령] → 항목 탭</td></tr>
+        <tr><td>명령 받을 팀(전원/Red/Blue)</td><td>Tab</td><td>왼쪽 위 [명령 대상]</td></tr>
+        <tr><td>GO 대기 켜기·끄기</td><td>T (휠 열린 상태에서 우클릭)</td><td>휠 가운데 탭</td></tr>
+        <tr><td>GO 코드(대기 명령 동시 실행)</td><td>Space</td><td>위쪽 가운데 [GO]</td></tr>
+        <tr><td>일시정지</td><td>Esc / P</td><td>[II]</td></tr>
+      </table>
+      <p class="tip">교전 규칙: 총을 겨누지 않은 용의자에게는 먼저 경고하세요. 항복한 사람·인질·민간인을 쏘면 큰 감점입니다. 항복한 용의자는 체포해야 무력화로 인정됩니다.</p>
+      <div class="row-btns"><button id="btn-help-close" class="btn primary">닫기</button></div>
+    </div>
+  </div>
+
+  <div id="screen-result" class="screen hidden">
+    <div class="panel center result">
+      <h2 id="res-title"></h2>
+      <p id="res-reason"></p>
+      <div id="res-stars"></div>
+      <div id="res-score"></div>
+      <table id="res-rows"></table>
+      <div id="res-violations"></div>
+      <p id="res-unlock"></p>
+      <div class="row-btns">
+        <button id="btn-res-retry" class="btn">다시 하기</button>
+        <button id="btn-res-next" class="btn primary">다음 작전</button>
+        <button id="btn-res-select" class="btn">작전 선택</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="rotate-notice" class="hidden"><div>📱↻<br>가로로 돌려 주세요</div></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
