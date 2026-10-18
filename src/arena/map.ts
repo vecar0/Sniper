@@ -5,20 +5,25 @@
  */
 import * as THREE from 'three';
 import { buildBuilding, floorAt, floorIndex, FLOOR_Y, type StairLink, type Surface } from './building';
+import { addCity, addClouds, addMountains, addPalms, gableEndGeometry, gableRoofGeometry, SandbagStacks, type SceneryCtx } from './scenery';
 import { surfaceMaterial, worldUvBox, worldUvPlane, type SurfaceId } from './textures';
 
 export const ROOF_Y = 9;
+/** 해 방향(앞쪽 왼편, 낮은 노을) – 하늘 · 조명이 같이 쓴다 */
+export const SUN_DIR = new THREE.Vector3(-1, 0.3, -1).normalize();
 /** 플레이어 건물 바닥 넓이(바깥벽 기준) */
 export const BUILDING = { minX: -10, maxX: 10, minZ: -5, maxZ: 5 };
 /** 플레이어가 돌아다닐 수 있는 범위 */
 export const WORLD = { minX: -70, maxX: 70, minZ: -124, maxZ: 9 };
-export const PARAPET_H = 1.05;
+export { PARAPET_H } from './building';
 
 export interface Box {
   min: THREE.Vector3;
   max: THREE.Vector3;
   /** 엄폐물 높이 분류: low = 숙이면 숨는 높이 */
   kind: 'solid' | 'low';
+  /** 플레이어가 뛰어넘거나 올라설 수 없는 벽(옥상 난간) */
+  wall?: boolean;
 }
 
 export interface CoverPoint {
@@ -218,7 +223,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   const shadows = quality !== 'low';
 
   /** 텍스처 상자 + 충돌 상자 */
-  const block = (x: number, y: number, z: number, w: number, h: number, d: number, m: THREE.Material, tile: number, opts: { collide?: Box['kind'] | false; rotY?: number } = {}) => {
+  const block = (x: number, y: number, z: number, w: number, h: number, d: number, m: THREE.Material, tile: number, opts: { collide?: Box['kind'] | false; rotY?: number; wall?: boolean } = {}) => {
     const g = worldUvBox(w, h, d, tile);
     disposables.push(g);
     const mesh = new THREE.Mesh(g, m);
@@ -231,7 +236,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
       // 회전한 상자는 90° 단위만 쓰므로 축을 바꿔 AABB로
       const swap = Math.abs(Math.sin(opts.rotY ?? 0)) > 0.5;
       const hw = (swap ? d : w) / 2, hd = (swap ? w : d) / 2;
-      boxes.push({ min: new THREE.Vector3(x - hw, y, z - hd), max: new THREE.Vector3(x + hw, y + h, z + hd), kind: opts.collide ?? 'solid' });
+      boxes.push({ min: new THREE.Vector3(x - hw, y, z - hd), max: new THREE.Vector3(x + hw, y + h, z + hd), kind: opts.collide ?? 'solid', wall: opts.wall });
     }
     return mesh;
   };
@@ -270,132 +275,220 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     boxes,
     quality !== 'low',
   );
-  // 옥상 난간(북쪽은 엄폐용, 나머지는 떨어지지 않게)
-  block(0, ROOF_Y, -4.85, 20, PARAPET_H, 0.3, concrete, 3, { collide: 'low' });
-  block(-9.85, ROOF_Y, 0, 0.3, PARAPET_H, 10, concrete, 3, { collide: 'low' });
-  block(9.85, ROOF_Y, 0, 0.3, PARAPET_H, 10, concrete, 3, { collide: 'low' });
-  block(0, ROOF_Y, 4.85, 20, PARAPET_H, 0.3, concrete, 3, { collide: 'low' });
   // 옥상 소품: 에어컨 실외기 · 물탱크(낮은 엄폐)
   block(-6.5, ROOF_Y, 2.4, 1.6, 1.0, 1.0, plain(0xb9bcbd, 0.5, 0.4), 2);
   block(-3.4, ROOF_Y, 3.1, 1.2, 0.9, 0.9, plain(0xb9bcbd, 0.5, 0.4), 2);
 
   // ── 적 기지 ──
   // 컨테이너 색(빨강 · 파랑 · 청록 · 녹슨 주황) – 회색 골함석 텍스처에 색을 입힌다
-  const metalTints = [0xe06450, 0x6d93cc, 0x66b0a2, 0xd8975e];
+  const metalTints = [0xf08a72, 0x8cb0e6, 0x86cbb8, 0xeab07a];
+  const sctx: SceneryCtx = { group, disposables, shadows, quality };
+  /** 보이지 않는 충돌 상자(모양은 따로 그린 것) */
+  const collider = (x: number, y: number, z: number, w: number, h: number, d: number, kind: Box['kind']) =>
+    boxes.push({ min: new THREE.Vector3(x - w / 2, y, z - d / 2), max: new THREE.Vector3(x + w / 2, y + h, z + d / 2), kind });
   // 기지 마당: 콘크리트 바닥
-  const yard = new THREE.Mesh(worldUvPlane(120, 100, 6), mat('concrete', 0xe6e0d6));
+  const yard = new THREE.Mesh(worldUvPlane(124, 104, 6), mat('concrete', 0xe8e2d8));
   disposables.push(yard.geometry);
-  yard.position.set(0, 0.012, -75);
+  yard.position.set(0, 0.012, -74);
   yard.receiveShadow = shadows;
   group.add(yard);
-  // 모래주머니 줄(낮은 엄폐)
-  const sandbag = plain(0x9c8a66, 0.95);
+  // 모래주머니 줄(낮은 엄폐) – 둥근 자루를 벽돌처럼 쌓은 모양
+  const bags = new SandbagStacks();
   for (const [x, z, w] of [[-12, -28, 9], [11, -30, 10], [-30, -46, 7], [2, -50, 8], [34, -62, 7], [-14, -78, 8], [12, -92, 8], [-46, -32, 6], [44, -36, 6], [-2, -100, 8], [-24, -60, 5]] as const) {
-    block(x, 0, z, w, 1.0, 1.1, sandbag, 2, { collide: 'low' });
-    coverBehind(x, z, w, 1.1, 1.0);
+    collider(x, 0, z, w, 0.95, 1.1, 'low');
+    bags.row(x, z, w, 0.95, 1.1);
+    coverBehind(x, z, w, 1.1, 0.95);
   }
-  // 컨테이너(높은 엄폐)
+  // 콘크리트 방호벽(낮은 엄폐)
+  const barrier = mat('concrete', 0xd9d3c8);
+  for (const [x, z, w] of [[-34, -24, 6], [36, -24, 6], [-52, -50, 4], [20, -112, 5]] as const) {
+    block(x, 0, z, w, 0.85, 0.7, barrier, 2, { collide: 'low' });
+    block(x, 0.85, z, w, 0.15, 0.35, barrier, 2, { collide: false });
+    coverBehind(x, z, w, 0.7, 1.0);
+  }
+  // 컨테이너(높은 엄폐) + 문짝 쪽 테두리
+  const frame = plain(0x2b2a28, 0.7, 0.4);
+  const container = (x: number, y: number, z: number, rot: number, t: number, collide = true) => {
+    const rotated = Math.abs(Math.sin(rot)) > 0.5;
+    block(x, y, z, 6, 2.6, 2.4, mat('metalg', metalTints[t]), 2.6, { rotY: rot, collide: collide ? 'solid' : false });
+    // 네 모서리 기둥(어두운 철골)
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const lx = sx * 2.95, lz = sz * 1.15;
+      const [wx, wz] = rotated ? [lz, lx] : [lx, lz];
+      block(x + wx, y, z + wz, 0.14, 2.6, 0.14, frame, 1, { collide: false });
+    }
+    return rotated;
+  };
   const containers: [number, number, number, number][] = [
     [-24, -38, 0, 0], [24, -40, Math.PI / 2, 1], [-6, -62, 0, 2], [30, -48, 0, 3], [-40, -66, Math.PI / 2, 0], [10, -74, 0, 1],
   ];
   for (const [x, z, rot, t] of containers) {
-    const rotated = Math.abs(Math.sin(rot)) > 0.5;
-    block(x, 0, z, 6, 2.6, 2.4, mat('metalg', metalTints[t]), 2.6, { rotY: rot });
+    const rotated = container(x, 0, z, rot, t);
     coverBehind(x, z, rotated ? 2.4 : 6, rotated ? 6 : 2.4, 2.6);
   }
-  block(10, 2.6, -74, 6, 2.6, 2.4, mat('metalg', metalTints[1]), 2.6); // 2단 적재
-  // 나무 상자 · 드럼통
-  const crate = plain(0x8a6a44, 0.9);
-  for (const [x, z] of [[-18, -55], [20, -58], [-2, -36], [40, -80], [-50, -78], [8, -40], [-36, -56]] as const) {
+  container(10, 2.6, -74, 0, 2); // 2단 적재
+  // 가장자리 컨테이너 더미(배경 – 컨셉 아트처럼 알록달록 쌓기)
+  for (const [x, z, rot, t, n] of [[-58, -30, Math.PI / 2, 2, 2], [-58, -38, Math.PI / 2, 0, 1], [58, -76, Math.PI / 2, 1, 2], [58, -84, Math.PI / 2, 3, 1], [-58, -96, Math.PI / 2, 1, 3]] as const) {
+    for (let k = 0; k < n; k++) container(x, k * 2.6, z, rot, (t + k) % 4);
+  }
+  // 나무 상자 · 드럼통 무더기
+  const crate = mat('plaster', 0x9a7550);
+  for (const [x, z, stack] of [[-18, -55, 1], [20, -58, 0], [-2, -36, 1], [40, -80, 1], [-50, -78, 0], [8, -40, 0], [-36, -56, 1]] as const) {
     block(x, 0, z, 1.3, 1.2, 1.3, crate, 1.3, { collide: 'low' });
-    coverBehind(x, z, 1.3, 1.3, 1.2);
+    block(x + 1.35, 0, z + 0.1, 1.1, 1.0, 1.1, crate, 1.3, { collide: 'low' });
+    if (stack) block(x + 0.1, 1.2, z, 1.1, 1.0, 1.1, crate, 1.3, { collide: 'solid' });
+    coverBehind(x + 0.6, z, 2.6, 1.3, 1.2);
   }
   const barrelGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.95, 12);
   disposables.push(barrelGeo);
-  for (const [x, z, c] of [[-20, -34, 0xa8402e], [-19.2, -34.4, 0x3d6b8c], [26, -66, 0xa8402e], [-8, -88, 0x5d6b3a]] as const) {
-    const b = new THREE.Mesh(barrelGeo, plain(c, 0.6, 0.3));
-    b.position.set(x, 0.475, z);
-    b.castShadow = b.receiveShadow = shadows;
-    group.add(b);
-    boxes.push({ min: new THREE.Vector3(x - 0.32, 0, z - 0.32), max: new THREE.Vector3(x + 0.32, 0.95, z + 0.32), kind: 'low' });
+  const barrelColors = [0xa8402e, 0x3d6b8c, 0x5d6b3a, 0x8c8478];
+  for (const [cx, cz] of [[-20, -34], [26, -66], [-8, -88], [16, -44], [-44, -58], [46, -86], [-28, -100]] as const) {
+    for (let k = 0; k < 4; k++) {
+      const x = cx + (k % 2) * 0.7 - 0.35, z = cz + Math.floor(k / 2) * 0.7 - 0.35;
+      const b = new THREE.Mesh(barrelGeo, plain(barrelColors[(k + Math.round(cx)) & 3], 0.6, 0.3));
+      b.position.set(x, 0.475, z);
+      b.castShadow = b.receiveShadow = shadows;
+      group.add(b);
+    }
+    collider(cx, 0, cz, 1.4, 0.95, 1.4, 'low');
   }
-  // 창고 2동
-  const roofMetal = mat('metalg', 0xb8bab6);
-  const shed = mat('metalg', 0xe2e4e0);
-  block(-32, 0, -86, 20, 8, 14, shed, 4);
-  block(-32, 8, -86, 21, 0.4, 15, roofMetal, 3, { collide: false });
-  block(-32, 0, -78.95, 6, 5, 0.1, plain(0x3a3632), 4, { collide: false });
-  coverBehind(-32, -86, 20, 14, 8);
-  block(32, 0, -96, 24, 9, 16, shed, 4);
-  block(32, 9, -96, 25, 0.4, 17, roofMetal, 3, { collide: false });
-  block(28, 0, -87.95, 6, 5.5, 0.1, plain(0x3a3632), 4, { collide: false });
-  coverBehind(32, -96, 24, 16, 9);
+  // 창고 2동: 골함석 벽 · 박공지붕 · 빨간 셔터 · 높은 창
+  const roofMetal = mat('metalg', 0x9c9890);
+  const shed = mat('metalg', 0xf4f2ec);
+  const shutter = mat('metalg', 0xe0745c);
+  const darkWin = plain(0x20262a, 0.3, 0.4);
+  const warehouse = (x: number, z: number, w: number, h: number, d: number, doors: number[]) => {
+    block(x, 0, z, w, h, d, shed, 4);
+    const rise = d * 0.22;
+    const roofGeo = gableRoofGeometry(w, d, rise, 0.6, 3);
+    disposables.push(roofGeo);
+    const roof = new THREE.Mesh(roofGeo, roofMetal);
+    roof.position.set(x, h, z);
+    roof.castShadow = roof.receiveShadow = shadows;
+    group.add(roof);
+    for (const sx of [-1, 1]) {
+      const endGeo = gableEndGeometry(d, rise);
+      disposables.push(endGeo);
+      const end = new THREE.Mesh(endGeo, shed);
+      end.position.set(x + sx * (w / 2 + 0.01), h, z);
+      if (sx < 0) end.rotation.y = Math.PI;
+      end.castShadow = shadows;
+      group.add(end);
+    }
+    for (const dx of doors) {
+      block(x + dx, 0, z + d / 2 + 0.06, 4.2, 4.6, 0.12, shutter, 2, { collide: false });
+      block(x + dx, 4.6, z + d / 2 + 0.1, 4.6, 0.3, 0.2, frame, 1, { collide: false });
+    }
+    for (let wx = -w / 2 + 2; wx <= w / 2 - 2; wx += 3.2) block(x + wx, h - 2.2, z + d / 2 + 0.05, 1.4, 0.9, 0.1, darkWin, 1, { collide: false });
+    coverBehind(x, z, w, d, h);
+  };
+  warehouse(-32, -86, 20, 8, 14, [-4.5, 4.5]);
+  warehouse(32, -96, 24, 9, 16, [-4, 5]);
+  // 철골 창고(벽 없는 빨간 철골 + 지붕)
+  {
+    const rust = plain(0x8e3b24, 0.6, 0.55);
+    const sx0 = 50, sz0 = -58, sw = 14, sd = 10, sh = 6;
+    for (const ox of [-sw / 2, 0, sw / 2]) for (const oz of [-sd / 2, sd / 2]) block(sx0 + ox, 0, sz0 + oz, 0.35, sh, 0.35, rust, 1);
+    for (const oz of [-sd / 2, sd / 2]) block(sx0, sh - 0.4, sz0 + oz, sw + 0.4, 0.4, 0.3, rust, 1, { collide: false });
+    for (const ox of [-sw / 2, 0, sw / 2]) block(sx0 + ox, sh - 0.4, sz0, 0.3, 0.4, sd, rust, 1, { collide: false });
+    const roofGeo = gableRoofGeometry(sw, sd, 1.6, 0.5, 3);
+    disposables.push(roofGeo);
+    const roof = new THREE.Mesh(roofGeo, mat('metalg', 0x8a7f74));
+    roof.position.set(sx0, sh, sz0);
+    roof.castShadow = shadows;
+    group.add(roof);
+    block(sx0 - 3, 0, sz0 + 1, 1.3, 1.2, 1.3, crate, 1.3, { collide: 'low' });
+    block(sx0 + 2.5, 0, sz0 - 1, 2.4, 0.9, 1.2, crate, 1.3, { collide: 'low' });
+    coverBehind(sx0 - 3, sz0 + 1, 1.3, 1.3, 1.2);
+  }
   // 먼 건물(창문에 적 저격수)
   block(2, 0, -116, 26, 13, 8, plaster, 4);
+  block(2, 13, -116, 26.4, 0.6, 8.4, mat('concrete', 0xcfc8bc), 3, { collide: false });
   for (const y of [4, 8.5]) for (const x of [-8, -2, 4, 10]) block(x, y, -112.0, 1.8, 2.0, 0.12, plain(0x161b20, 0.3, 0.3), 4, { collide: false });
-  // 기지 담장(가운데 정문)
+  // 기지 담장(뒤쪽 가운데 정문 · 양옆) + 기둥
   const wallMat = mat('concrete', 0xd8d2c8);
   block(-35, 0, -126, 60, 3, 0.6, wallMat, 3);
   block(35, 0, -126, 60, 3, 0.6, wallMat, 3);
-  // 급수탑(저격수 자리)
+  for (const sx of [-1, 1]) {
+    block(sx * 64, 0, -74, 0.6, 2.6, 104, wallMat, 3);
+    for (let z = -124; z <= -24; z += 6) block(sx * 64, 0, z, 0.9, 2.9, 0.9, wallMat, 3, { collide: false });
+  }
+  // 급수탑(저격수 자리): 다리 · X자 버팀대 · 원통 탱크 · 원뿔 지붕
   const towerX = -48, towerZ = -60;
-  const steel = plain(0x6a5a4a, 0.7, 0.5);
+  const steel = plain(0x5a5048, 0.7, 0.5);
   for (const [dx, dz] of [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]]) block(towerX + dx, 0, towerZ + dz, 0.3, 12, 0.3, steel, 2, { collide: false });
+  collider(towerX, 0, towerZ, 3.5, 12, 3.5, 'solid');
+  {
+    const len = Math.hypot(3.2, 4), ang = Math.atan2(3.2, 4);
+    const braceGeo = new THREE.BoxGeometry(0.09, len, 0.09);
+    disposables.push(braceGeo);
+    for (let lv = 0; lv < 3; lv++) {
+      for (const sgn of [-1, 1]) {
+        for (const side of [-1.6, 1.6]) {
+          const a = new THREE.Mesh(braceGeo, steel);
+          a.position.set(towerX, lv * 4 + 2, towerZ + side);
+          a.rotation.z = sgn * ang;
+          const b = new THREE.Mesh(braceGeo, steel);
+          b.position.set(towerX + side, lv * 4 + 2, towerZ);
+          b.rotation.x = sgn * ang;
+          group.add(a, b);
+        }
+      }
+    }
+  }
   block(towerX, 12, towerZ, 4.4, 0.25, 4.4, steel, 2);
-  const tank = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, 3.4, 16), mat('metal', 0xd8c39a));
+  const tankMat = mat('metalg', 0xc8c2b6);
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, 3.4, 20), tankMat);
   disposables.push(tank.geometry);
   tank.position.set(towerX, 12.25 + 1.7, towerZ - 0.6);
   tank.castShadow = shadows;
-  group.add(tank);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(2.35, 1.1, 20), plain(0x6f665c, 0.6, 0.5));
+  disposables.push(cap.geometry);
+  cap.position.set(towerX, 12.25 + 3.4 + 0.55, towerZ - 0.6);
+  cap.castShadow = shadows;
+  group.add(tank, cap);
   boxes.push({ min: new THREE.Vector3(towerX - 2.1, 12.25, towerZ - 2.7), max: new THREE.Vector3(towerX + 2.1, 15.65, towerZ + 1.5), kind: 'solid' });
+  bags.build(sctx);
 
-  // ── 먼 배경: 능선 · 나무 ──
-  const ridgeMat = plain(0x8c7a62, 1);
-  for (let i = 0; i < 14; i++) {
-    const a = (i / 14) * Math.PI - Math.PI;
-    const r = 260 + (i % 3) * 30;
-    const h = 30 + ((i * 37) % 40);
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(70 + (i % 4) * 15, h, 5), ridgeMat);
-    disposables.push(cone.geometry);
-    cone.position.set(Math.cos(a) * r, h / 2 - 4, -100 + Math.sin(a) * r);
-    group.add(cone);
+  // ── 먼 배경: 도시 · 야자수 · 바위산 · 구름 ──
+  addCity(sctx);
+  const palmSpots: [number, number][] = [];
+  for (let z = -26; z >= -122; z -= 13) palmSpots.push([-70 - ((z * 7) & 3), z], [71 + ((z * 5) & 3), z - 5]);
+  for (const p of [[-16, 9], [17, 7], [-30, -14], [30, -12], [-58, -110], [56, -22], [-58, -18]] as [number, number][]) palmSpots.push(p);
+  for (let k = 0; k < 46; k++) {
+    const t = Math.PI + 0.2 + (k / 46) * (Math.PI - 0.4);
+    const r = 120 + ((k * 37) % 90);
+    palmSpots.push([Math.cos(t) * r, -60 + Math.sin(t) * r]);
   }
-  const treeMat = plain(0x5f6e3a, 1);
-  const trunkMat = plain(0x5a4632, 1);
-  const leaf = new THREE.ConeGeometry(2.2, 6, 6);
-  const trunk = new THREE.CylinderGeometry(0.25, 0.35, 2, 5);
-  disposables.push(leaf, trunk);
-  for (let i = 0; i < 40; i++) {
-    const side = i % 2 ? 1 : -1;
-    const x = side * (66 + ((i * 13) % 40));
-    const z = -20 - ((i * 29) % 130);
-    const t = new THREE.Mesh(trunk, trunkMat);
-    t.position.set(x, 1, z);
-    const l = new THREE.Mesh(leaf, treeMat);
-    l.position.set(x, 4.8, z);
-    l.castShadow = shadows;
-    group.add(t, l);
-  }
+  addPalms(sctx, palmSpots);
+  for (const [x, z] of palmSpots) if (Math.abs(x) < 80 && z > -130) collider(x, 0, z, 0.5, 6, 0.5, 'solid');
+  addMountains(sctx);
+  addClouds(sctx, SUN_DIR);
 
-  // ── 조명: 해 질 녘 ──
-  const hemi = new THREE.HemisphereLight(0xa9d0e6, 0x8a6a48, 0.95);
+  // ── 조명: 해 질 녘(해는 앞쪽 왼편 낮게 – 그림자가 플레이어 쪽으로 길게) ──
+  const hemi = new THREE.HemisphereLight(0xbcd6ea, 0xb48c64, 1.25);
   group.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffc48a, 2.4);
-  sun.position.set(-140, 50, -10); // 해: 왼편 낮은 노을(적 쪽 면이 너무 어둡지 않게)
-  sun.target.position.set(0, 0, -50);
+  const sun = new THREE.DirectionalLight(0xffb878, 2.7);
+  sun.target.position.set(0, 0, -55);
+  sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 160);
   group.add(sun, sun.target);
+  // 반사광: 해를 등진 면(플레이어 쪽을 보는 면)이 새까맣지 않게 뒤에서 약하게 비춘다
+  const fill = new THREE.DirectionalLight(0xffdcb8, 0.75);
+  fill.position.set(30, 40, 120);
+  fill.target.position.set(0, 0, -50);
+  group.add(fill, fill.target);
   if (shadows) {
     sun.castShadow = true;
     sun.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024);
     const s = sun.shadow.camera;
-    s.left = -75;
-    s.right = 75;
-    s.top = 80;
-    s.bottom = -80;
+    s.left = -85;
+    s.right = 85;
+    s.top = 70;
+    s.bottom = -70;
     s.near = 10;
-    s.far = 260;
+    s.far = 360;
     sun.shadow.bias = -0.0006;
-    sun.shadow.normalBias = 0.04;
+    sun.shadow.normalBias = 0.05;
   }
 
   const nav = new NavGrid(boxes);
@@ -406,7 +499,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     boxes,
     covers,
     // 정문 앞은 먼 건물이 막고 있으므로 건물 양옆 · 기지 양쪽 끝에서 들어온다
-    spawns: [new THREE.Vector3(-20, 0, -123), new THREE.Vector3(22, 0, -123), new THREE.Vector3(-62, 0, -112), new THREE.Vector3(62, 0, -114)],
+    spawns: [new THREE.Vector3(-20, 0, -123), new THREE.Vector3(22, 0, -123), new THREE.Vector3(-60, 0, -112), new THREE.Vector3(60, 0, -114)],
     perches: [new THREE.Vector3(towerX, 12.25, towerZ + 1.9), new THREE.Vector3(-8, 4.1, -111.6), new THREE.Vector3(4, 8.6, -111.6), new THREE.Vector3(10, 4.1, -111.6)],
     entrance: info.entranceOutside,
     entranceInside: info.entranceInside,

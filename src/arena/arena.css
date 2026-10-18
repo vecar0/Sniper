@@ -153,6 +153,7 @@ button { font: inherit; color: inherit; }
 .a-touch .a-scope { right: calc(124px + var(--safe-r)); bottom: calc(30px + var(--safe-b)); width: 66px; height: 66px; }
 .a-touch .a-crouch { right: calc(40px + var(--safe-r)); bottom: calc(132px + var(--safe-b)); width: 58px; height: 58px; }
 .a-touch .a-reload { right: calc(110px + var(--safe-r)); bottom: calc(112px + var(--safe-b)); width: 46px; height: 46px; font-size: 12px; }
+.a-touch .a-jump { right: calc(44px + var(--safe-r)); bottom: calc(202px + var(--safe-b)); width: 52px; height: 52px; }
 .a-touch .a-swap { right: calc(14px + var(--safe-r)); top: calc(12px + var(--safe-t)); width: 64px; height: 36px; border-radius: 8px; font-size: 12px; }
 .a-touch .a-pause { right: calc(86px + var(--safe-r)); top: calc(12px + var(--safe-t)); width: 40px; height: 36px; border-radius: 8px; }
 .a-touch .a-zoom { right: calc(196px + var(--safe-r)); bottom: calc(40px + var(--safe-b)); width: 46px; height: 46px; display: none; }
@@ -177,6 +178,7 @@ body.a-is-touch .a-banner b { font-size: 28px; }
   .a-touch .a-scope { width: 56px; height: 56px; right: calc(102px + var(--safe-r)); bottom: calc(18px + var(--safe-b)); }
   .a-touch .a-crouch { width: 50px; height: 50px; right: calc(28px + var(--safe-r)); bottom: calc(102px + var(--safe-b)); }
   .a-touch .a-reload { width: 42px; height: 42px; right: calc(92px + var(--safe-r)); bottom: calc(86px + var(--safe-b)); }
+  .a-touch .a-jump { width: 46px; height: 46px; right: calc(30px + var(--safe-r)); bottom: calc(162px + var(--safe-b)); }
   .a-touch .a-zoom { right: calc(166px + var(--safe-r)); bottom: calc(24px + var(--safe-b)); }
   .a-banner b { font-size: 26px; }
   body.a-is-touch .a-hp { top: calc(90px + var(--safe-t)); }

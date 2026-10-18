@@ -13,8 +13,8 @@ import { HumanMaterials } from '../game/models/human';
 import { ViewModel } from '../game/viewmodel';
 import { Enemy, rayEnemy, SPECS, type EnemyKind, type PlayerTarget } from './enemy';
 import type { ArenaInput } from './input';
-import { moveWithCollision } from './building';
-import { buildMap, clearLine, rayBoxes, ROOF_Y, WORLD, type ArenaMap, type CoverPoint } from './map';
+import { groundAt, moveWithCollision } from './building';
+import { buildMap, clearLine, rayBoxes, ROOF_Y, SUN_DIR, WORLD, type ArenaMap, type CoverPoint } from './map';
 
 export const TUNING = {
   fov: 70,
@@ -27,6 +27,9 @@ export const TUNING = {
   hp: 100,
   regenDelay: 4.5,
   regenRate: 14,
+  /** 점프 속도(m/s) · 중력 – 0.66m 뜀: 모래주머니 · 창턱(0.95m)은 올라서고 옥상 난간(1.05m)은 못 넘는다 */
+  jump: 5.4,
+  gravity: 22,
   sniper: { mag: 5, bolt: 0.75, reload: 2.0, body: 150, head: 999, leg: 90, hipSpreadDeg: 3.5, zooms: [5, 10] as number[] },
   /** 처치 점수 배율 */
   headBonus: 1.5,
@@ -128,6 +131,9 @@ export class ArenaGame {
   private crouchT = 0;
   /** 떨어지는 속도(계단 구멍 · 낮은 턱에서) */
   private vy = 0;
+  private grounded = true;
+  /** 공중에 뜬 뒤 가장 높았던 발 높이(낙하 피해) */
+  private airTop = 0;
   /** 적에게 보이는 정도(0.1초마다 시야선으로 계산) */
   private exposeState: 'hidden' | 'peek' | 'open' = 'hidden';
   private exposeT = 0;
@@ -193,7 +199,7 @@ export class ArenaGame {
     container.appendChild(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(TUNING.fov, 1, 0.08, 1500);
     this.vmCamera = new THREE.PerspectiveCamera(TUNING.fov, 1, 0.01, 10);
-    this.scene.fog = new THREE.Fog(0xe7c8a0, 110, 520);
+    this.scene.fog = new THREE.Fog(0xe9c9a0, 140, 640);
     this.scene.add(buildSky());
     this.map = buildMap(quality);
     this.scene.add(this.map.group);
@@ -202,12 +208,12 @@ export class ArenaGame {
     this.fx.tracers.setScale(this.renderer.getPixelRatio());
     this.viewModel = new ViewModel(this.renderer);
     this.viewModel.compact = input.isTouch;
-    this.viewModel.build(getWeapon('r308'), false);
+    this.viewModel.build(getWeapon('k65'), false); // 검은 저격총(컨셉 아트)
     const smgParts = { muzzle: 'comp', optic: 'dot', mag: 'ext', under: 'grip' } as const;
     this.smg = new CqbGun('v45', { ...smgParts });
     this.viewModel.buildGuns([{ spec: getCqb('v45'), parts: { ...smgParts } }]);
     this.viewModel.setActive('rifle');
-    this.viewModel.setLighting(0xffc48a, 0xa9d0e6, 0x8a6a48, 2.4);
+    this.viewModel.setLighting(0xffb878, 0xbcd6ea, 0xb48c64, 2.7);
     this.glintMat = new THREE.SpriteMaterial({ map: glowTexture('#ffffff'), color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
     this.flashMat = new THREE.SpriteMaterial({ map: glowTexture('#ffd27a'), color: 0xffd27a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
     window.addEventListener('resize', () => this.resize());
@@ -256,6 +262,7 @@ export class ArenaGame {
     this.fx.clear();
     this.pos.set(0, ROOF_Y, -4.0);
     this.vy = 0;
+    this.grounded = true;
     this.exposeState = 'hidden';
     this.yaw = 0;
     this.pitch = -0.04;
@@ -477,18 +484,37 @@ export class ArenaGame {
       mx /= len;
       mz /= len;
     }
-    moveWithCollision(this.map.boxes, this.pos, mx * speed * dt, mz * speed * dt, 0.3, this.crouched ? 1.1 : 1.7);
+    // 점프: 땅에 있을 때만(숙인 상태면 일어나며 뛴다)
+    if (inp.consume('jump') && this.grounded) {
+      this.vy = TUNING.jump;
+      this.grounded = false;
+      this.airTop = this.pos.y;
+      this.crouched = false;
+    }
+    moveWithCollision(this.map.boxes, this.pos, mx * speed * dt, mz * speed * dt, 0.3);
     this.pos.x = Math.max(WORLD.minX, Math.min(WORLD.maxX, this.pos.x));
     this.pos.z = Math.max(WORLD.minZ, Math.min(WORLD.maxZ, this.pos.z));
-    // 발밑: 계단은 바로 올라서고, 바닥이 없으면 떨어진다
-    const floor = this.map.floorAt(this.pos.x, this.pos.z, this.pos.y);
-    if (floor >= this.pos.y - 0.02) {
+    // 발밑: 계단 · 낮은 상자는 바로 올라서고, 바닥이 없으면 떨어진다
+    const floor = groundAt(this.map.boxes, this.map.surfaces, this.pos.x, this.pos.z, this.pos.y);
+    if (this.vy <= 0 && floor >= this.pos.y - 0.02) {
       this.pos.y = floor;
       this.vy = 0;
+      this.grounded = true;
     } else {
-      this.vy -= 22 * dt;
-      this.pos.y = Math.max(floor, this.pos.y + this.vy * dt);
-      if (this.pos.y === floor) this.vy = 0;
+      if (this.grounded) this.airTop = this.pos.y;
+      this.grounded = false;
+      this.vy -= TUNING.gravity * dt;
+      this.pos.y += this.vy * dt;
+      this.airTop = Math.max(this.airTop, this.pos.y);
+      if (this.pos.y <= floor) {
+        // 착지: 4.5m 넘게 떨어지면 다친다
+        const drop = this.airTop - floor;
+        this.pos.y = floor;
+        this.vy = 0;
+        this.grounded = true;
+        if (drop > 4.5) this.fallDamage((drop - 4.5) * 15);
+        else if (drop > 0.4) this.shake = Math.min(1, this.shake + 0.15);
+      }
     }
     const moving = len > 0.1;
     this.moveAmt += ((moving ? 1 : 0) - this.moveAmt) * Math.min(1, dt * 8);
@@ -774,6 +800,15 @@ export class ArenaGame {
     if (this.hp <= 0) this.gameOver();
   }
 
+  private fallDamage(dmg: number): void {
+    this.hp -= dmg;
+    this.hurtT = 0;
+    this.hurtFlash = Math.min(1, this.hurtFlash + 0.6);
+    this.shake = Math.min(1, this.shake + 0.6);
+    this.audio.play('impactGround', { volume: 0.7 });
+    if (this.hp <= 0) this.gameOver();
+  }
+
   private gameOver(): void {
     if (this.over) return;
     this.over = true;
@@ -1046,12 +1081,16 @@ function buildSky(): THREE.Mesh {
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
-    uniforms: { top: { value: new THREE.Color(0x4f97c4) }, mid: { value: new THREE.Color(0xa9cfe0) }, horizon: { value: new THREE.Color(0xf6cf9c) }, sunDir: { value: new THREE.Vector3(-140, 50, -10).normalize() } },
+    uniforms: { top: { value: new THREE.Color(0x4f97c4) }, mid: { value: new THREE.Color(0xa9cfe0) }, horizon: { value: new THREE.Color(0xf6cf9c) }, sunDir: { value: SUN_DIR.clone() } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader:
       'uniform vec3 top; uniform vec3 mid; uniform vec3 horizon; uniform vec3 sunDir; varying vec3 vDir;' +
-      'void main(){ float h = max(vDir.y, 0.0); vec3 c = mix(horizon, mid, smoothstep(0.0, 0.18, h)); c = mix(c, top, smoothstep(0.18, 0.7, h));' +
-      ' float s = max(dot(normalize(vDir), sunDir), 0.0); c += vec3(1.0,0.75,0.45) * pow(s, 64.0) * 1.2 + vec3(1.0,0.6,0.3) * pow(s, 6.0) * 0.25;' +
+      'void main(){ vec3 d = normalize(vDir); float h = max(d.y, 0.0); float s = max(dot(d, sunDir), 0.0);' +
+      // 해 쪽 지평선은 금빛, 반대쪽은 옅은 복숭아빛
+      ' float az = max(dot(normalize(vec2(d.x, d.z)), normalize(vec2(sunDir.x, sunDir.z))), 0.0);' +
+      ' vec3 hz = mix(horizon, vec3(1.0, 0.72, 0.38), pow(az, 3.0) * 0.85);' +
+      ' vec3 c = mix(hz, mid, smoothstep(0.0, 0.22, h)); c = mix(c, top, smoothstep(0.22, 0.75, h));' +
+      ' c += vec3(1.0,0.85,0.6) * smoothstep(0.9993, 0.9998, s) * 2.0 + vec3(1.0,0.7,0.4) * pow(s, 24.0) * 0.9 + vec3(1.0,0.55,0.25) * pow(s, 4.0) * 0.3;' +
       ' if (vDir.y < 0.0) c = horizon * 0.9; gl_FragColor = vec4(c, 1.0); }',
   });
   const m = new THREE.Mesh(geo, mat);

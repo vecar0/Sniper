@@ -4,7 +4,7 @@
  * 발사 버튼을 누른 채 끌어도 조준이 움직인다(쏘면서 따라가기).
  */
 
-export type ButtonId = 'fire' | 'scope' | 'crouch' | 'reload' | 'swap' | 'zoom' | 'pause';
+export type ButtonId = 'fire' | 'scope' | 'crouch' | 'jump' | 'reload' | 'swap' | 'zoom' | 'pause';
 
 export class ArenaInput {
   readonly isTouch: boolean;
@@ -79,6 +79,7 @@ export class ArenaInput {
     if (['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(c)) e.preventDefault();
     if (down) {
       if (c === 'KeyC' || c === 'ControlLeft') this.press('crouch');
+      if (c === 'Space') this.press('jump');
       if (c === 'KeyR') this.press('reload');
       if (c === 'KeyQ' || c === 'Digit1' || c === 'Digit2' || c === 'Tab') this.press('swap');
       if (c === 'KeyE' || c === 'KeyZ') this.press('zoom');
@@ -173,6 +174,7 @@ export class TouchPad {
       <button class="a-btn a-fire" data-b="fire" aria-label="발사">발사</button>
       <button class="a-btn a-scope" data-b="scope" aria-label="스코프">스코프</button>
       <button class="a-btn a-crouch" data-b="crouch" aria-label="숙이기">숙이기</button>
+      <button class="a-btn a-jump" data-b="jump" aria-label="점프">점프</button>
       <button class="a-btn a-reload" data-b="reload" aria-label="재장전">장전</button>
       <button class="a-btn a-swap" data-b="swap" aria-label="무기 교체">무기</button>
       <button class="a-btn a-zoom" data-b="zoom" aria-label="배율">4×</button>

@@ -335,10 +335,14 @@ export class Enemy {
   }
 
   private blocked(x: number, z: number, boxes: Box[]): boolean {
-    const r = 0.35;
+    const r = 0.35, p = this.pos;
     for (const b of boxes) {
-      if (b.min.y > this.pos.y + 1.5 || b.max.y < this.pos.y + 0.35) continue;
-      if (x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z) return true;
+      if (b.min.y > p.y + 1.2 || b.max.y < p.y + 0.35) continue;
+      if (x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z) {
+        // 이미 겹쳐 있던 상자는 무시(끼었을 때 빠져나오게)
+        if (p.x + r > b.min.x && p.x - r < b.max.x && p.z + r > b.min.z && p.z - r < b.max.z) continue;
+        return true;
+      }
     }
     return false;
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildBuilding, floorAt, FLOOR_Y, moveWithCollision } from '../../src/arena/building';
+import { buildBuilding, FLOOR_Y, groundAt, moveWithCollision } from '../../src/arena/building';
 import { BUILDING, NavGrid, planRoute, type Box } from '../../src/arena/map';
 
 /** 화면 없이 건물의 충돌 상자 · 밟는 면만 만든다 */
@@ -28,7 +28,7 @@ function walk(b: ReturnType<typeof makeBuilding>, start: THREE.Vector3, goal: TH
       if (d < 0.06) break;
       const s = Math.min(0.05, d);
       moveWithCollision(b.boxes, pos, (dx / d) * s, (dz / d) * s, 0.3);
-      const f = floorAt(b.info.surfaces, pos.x, pos.z, pos.y);
+      const f = groundAt(b.boxes, b.info.surfaces, pos.x, pos.z, pos.y);
       pos.y = f < pos.y ? Math.max(f, pos.y - 0.1) : f;
     }
   }
@@ -68,5 +68,50 @@ describe('플레이어 건물', () => {
     const pos = new THREE.Vector3(-3.5, 3, -3);
     for (let i = 0; i < 80; i++) moveWithCollision(b.boxes, pos, 0, -0.05, 0.3);
     expect(pos.z).toBeGreaterThan(-4.8);
+  });
+
+  it('계단 가장자리로 붙어 걸어도 끼지 않는다(머리 위 천장 끝)', () => {
+    const b = makeBuilding();
+    for (const x of [5.85, 6.75]) {
+      const pos = new THREE.Vector3(x, 6, 2.6);
+      for (let i = 0; i < 200; i++) {
+        moveWithCollision(b.boxes, pos, 0, -0.05, 0.3);
+        pos.y = groundAt(b.boxes, b.info.surfaces, pos.x, pos.z, pos.y);
+      }
+      expect(pos.y).toBeCloseTo(9, 1);
+    }
+  });
+
+  it('건물 어디서 아무렇게나 걸어도 갇히는 곳이 없다', () => {
+    const b = makeBuilding();
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let run = 0; run < 40; run++) {
+      const f = run % 4;
+      const pos = new THREE.Vector3(-8 + rnd() * 6, FLOOR_Y[f], -3 + rnd() * 6);
+      let vy = 0;
+      for (let step = 0; step < 1500; step++) {
+        if (step % 60 === 0) seed += 1;
+        const a = rnd() < 0.05 ? rnd() * Math.PI * 2 : Math.floor(step / 60) * 2.1 + run;
+        moveWithCollision(b.boxes, pos, Math.cos(a) * 0.04, Math.sin(a) * 0.04, 0.3);
+        const g = groundAt(b.boxes, b.info.surfaces, pos.x, pos.z, pos.y);
+        if (g >= pos.y - 0.02) { pos.y = g; vy = 0; } else { vy -= 22 / 120; pos.y = Math.max(g, pos.y + vy / 120); }
+      }
+      // 끝난 자리에서 8방향 중 어디로든 움직일 수 있어야 한다
+      let free = 0;
+      for (let k = 0; k < 8; k++) {
+        const p = pos.clone();
+        moveWithCollision(b.boxes, p, Math.cos((k * Math.PI) / 4) * 0.05, Math.sin((k * Math.PI) / 4) * 0.05, 0.3);
+        if (p.distanceTo(pos) > 0.01) free++;
+      }
+      expect(free, `갇힘: ${pos.toArray().map((v) => v.toFixed(2))}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('옥상 난간은 점프해도 넘을 수 없다', () => {
+    const b = makeBuilding();
+    const pos = new THREE.Vector3(0, 9.7, -4.2); // 점프 꼭대기
+    for (let i = 0; i < 30; i++) moveWithCollision(b.boxes, pos, 0, -0.05, 0.3);
+    expect(pos.z).toBeGreaterThan(-4.41);
   });
 });

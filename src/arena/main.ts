@@ -30,6 +30,9 @@ const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()
 
 /** GPU가 없는 환경(소프트웨어 렌더링)은 그림자를 끈다 */
 function detectQuality(touch: boolean): 'high' | 'medium' | 'low' {
+  // ?q=high 처럼 직접 고를 수 있다(화면 확인용)
+  const forced = new URLSearchParams(location.search).get('q');
+  if (forced === 'high' || forced === 'medium' || forced === 'low') return forced;
   try {
     const c = document.createElement('canvas');
     const gl = (c.getContext('webgl2') || c.getContext('webgl')) as WebGLRenderingContext | null;

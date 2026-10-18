@@ -47,7 +47,10 @@ export interface BuildingInfo {
   roofDoor: THREE.Vector3;
 }
 
-type BlockFn = (x: number, y: number, z: number, w: number, h: number, d: number, m: THREE.Material, tile: number, opts?: { collide?: Box['kind'] | false }) => THREE.Mesh;
+type BlockFn = (x: number, y: number, z: number, w: number, h: number, d: number, m: THREE.Material, tile: number, opts?: { collide?: Box['kind'] | false; wall?: boolean }) => THREE.Mesh;
+
+/** 옥상 난간 높이: 숙이면 몸이 가려지고, 점프로는 못 넘는다 */
+export const PARAPET_H = 1.05;
 
 /** 사각형에서 구멍을 뺀 나머지 사각형들 */
 function minusHole(r: Rect, h: Rect): Rect[] {
@@ -76,9 +79,9 @@ export function buildBuilding(
   const winXs = [-7, -3.5, 3.2];
   for (let f = 0; f < 3; f++) {
     const y0 = FLOOR_Y[f];
-    const openings: { x0: number; x1: number; b: number; t: number }[] = winXs.map((x) => ({ x0: x - 0.8, x1: x + 0.8, b: 1.0, t: 2.3 }));
+    const openings: { x0: number; x1: number; b: number; t: number }[] = winXs.map((x) => ({ x0: x - 0.8, x1: x + 0.8, b: 0.95, t: 2.3 }));
     if (f === 0) openings.push({ x0: -1.1, x1: 1.1, b: 0, t: 2.4 });
-    else openings.push({ x0: -0.8, x1: 0.8, b: 1.0, t: 2.3 });
+    else openings.push({ x0: -0.8, x1: 0.8, b: 0.95, t: 2.3 });
     openings.sort((a, b) => a.x0 - b.x0);
     let cx = -W;
     for (const o of openings) {
@@ -152,6 +155,12 @@ export function buildBuilding(
   block((hx0 + hx1) / 2, 9 + 2.6, (hz0 + hz1) / 2, hx1 - hx0 + 0.3, 0.2, hz1 - hz0 + 0.3, mats.trim, 2);
   block((hx0 + hx1) / 2, 9 + 2.2, hz0 + 0.1, hx1 - hx0, 0.4, 0.2, mats.wall, 4);
 
+  // 옥상 난간(북쪽은 엄폐용, 나머지는 떨어지지 않게)
+  block(0, 9, -D + 0.15, 2 * W, PARAPET_H, 0.3, mats.trim, 3, { collide: 'low', wall: true });
+  block(-W + 0.15, 9, 0, 0.3, PARAPET_H, 2 * D, mats.trim, 3, { collide: 'low', wall: true });
+  block(W - 0.15, 9, 0, 0.3, PARAPET_H, 2 * D, mats.trim, 3, { collide: 'low', wall: true });
+  block(0, 9, D - 0.15, 2 * W, PARAPET_H, 0.3, mats.trim, 3, { collide: 'low', wall: true });
+
   // ── 실내 소품(엄폐) ──
   const crate = (x: number, y: number, z: number, s = 1.1) => block(x, y, z, s, s * 0.9, s, mats.wood, 1.2, { collide: 'low' });
   crate(-7.8, 0, 2.6);
@@ -205,17 +214,32 @@ export function floorIndex(y: number): number {
 }
 
 /**
- * 원기둥(반지름 r, 발 y ~ 머리 y+h)을 벽 상자 밖으로 밀어내며 이동한다(축별로 시도).
- * 발목 높이(0.35m) 아래 물체는 무시한다.
+ * 원기둥(반지름 r, 발 y ~ 몸통 y+h)을 벽 상자 밖으로 밀어내며 이동한다(축별로 시도해 벽을 따라 미끄러진다).
+ * - 발목 높이(0.35m)까지는 걸어서 넘는다(그 위는 groundAt이 올려 준다).
+ * - 머리 위 물체(계단 위 천장 끝 등)는 몸통 높이 h까지만 보므로 걸리지 않는다.
+ * - 이미 겹쳐 있는 상자는 무시한다: 어쩌다 끼어도 빠져나올 수 있다.
+ * - wall 상자(옥상 난간)는 높이와 상관없이 막는다(뛰어넘어 떨어지지 않게).
  */
-export function moveWithCollision(boxes: Box[], pos: THREE.Vector3, dx: number, dz: number, r: number, h = 1.7): void {
+export function moveWithCollision(boxes: Box[], pos: THREE.Vector3, dx: number, dz: number, r: number, h = 1.2): void {
+  const hits = (b: Box, x: number, z: number) => {
+    if (!b.wall && b.max.y <= pos.y + 0.35) return false;
+    if (b.min.y >= pos.y + h) return false;
+    return x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z;
+  };
   const blocked = (x: number, z: number) => {
-    for (const b of boxes) {
-      if (b.max.y <= pos.y + 0.35 || b.min.y >= pos.y + h) continue;
-      if (x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z) return true;
-    }
+    for (const b of boxes) if (hits(b, x, z) && !hits(b, pos.x, pos.z)) return true;
     return false;
   };
   if (!blocked(pos.x + dx, pos.z)) pos.x += dx;
   if (!blocked(pos.x, pos.z + dz)) pos.z += dz;
+}
+
+/** 발밑 높이: 층 바닥 · 계단 + 올라설 수 있는 상자 윗면(상자 · 창턱 · 모래주머니) */
+export function groundAt(boxes: Box[], surfaces: Surface[], x: number, z: number, yRef: number, r = 0.22): number {
+  let best = floorAt(surfaces, x, z, yRef);
+  for (const b of boxes) {
+    if (b.wall || b.max.y <= best || b.max.y > yRef + 0.36) continue;
+    if (x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z) best = b.max.y;
+  }
+  return best;
 }
