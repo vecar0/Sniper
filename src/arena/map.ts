@@ -4,11 +4,14 @@
  * 맵이 돌려주는 것: 충돌 상자(탄·시야 판정), 엄폐 지점, 적 등장 지점, 적 저격수 자리, 옥상 출입구.
  */
 import * as THREE from 'three';
+import { buildBuilding, floorAt, floorIndex, FLOOR_Y, type StairLink, type Surface } from './building';
 import { surfaceMaterial, worldUvBox, worldUvPlane, type SurfaceId } from './textures';
 
 export const ROOF_Y = 9;
-/** 옥상에서 플레이어가 움직일 수 있는 범위 */
-export const ROOF = { minX: -8.4, maxX: 8.4, minZ: -4.3, maxZ: 3.4 };
+/** 플레이어 건물 바닥 넓이(바깥벽 기준) */
+export const BUILDING = { minX: -10, maxX: 10, minZ: -5, maxZ: 5 };
+/** 플레이어가 돌아다닐 수 있는 범위 */
+export const WORLD = { minX: -70, maxX: 70, minZ: -124, maxZ: 9 };
 export const PARAPET_H = 1.05;
 
 export interface Box {
@@ -33,12 +36,22 @@ export interface ArenaMap {
   covers: CoverPoint[];
   spawns: THREE.Vector3[];
   perches: THREE.Vector3[];
-  /** 돌격병이 들어가는 1층 입구, 옥상에 나타나는 계단 문 */
+  /** 건물 1층 정문 바깥 · 안쪽, 옥상 계단실 문 앞 */
   entrance: THREE.Vector3;
-  hatch: THREE.Vector3;
+  entranceInside: THREE.Vector3;
+  roofDoor: THREE.Vector3;
   sun: THREE.DirectionalLight;
   /** 지상 길찾기 격자 */
   nav: NavGrid;
+  /** 건물 층별(0~3 = 1층~옥상) 길찾기 격자 */
+  floorNav: NavGrid[];
+  /** 밟을 수 있는 면(층 바닥 · 계단) */
+  surfaces: Surface[];
+  stairs: StairLink[];
+  /** (x,z)에서 발 높이 yRef 기준으로 디딜 높이 */
+  floorAt(x: number, z: number, yRef: number): number;
+  /** 어디서든(밖 · 건물 몇 층) 어디로든 가는 경유점 – 계단을 거친다 */
+  plan(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3[];
   dispose(): void;
 }
 
@@ -46,31 +59,62 @@ export interface ArenaMap {
  * 지상 길찾기: 1m 격자, 장애물(높이 1.5m 아래까지 닿는 상자)을 0.5m 부풀려 막는다.
  * 경로는 8방향 BFS 후 곧게 갈 수 있는 경유점은 건너뛴다.
  */
+export interface NavOpts {
+  minX: number;
+  minZ: number;
+  cols: number;
+  rows: number;
+  /** 칸 크기(m) */
+  cell: number;
+  /** 장애물 부풀림(m) */
+  pad: number;
+  /** 이 격자가 덮는 바닥 높이 */
+  y: number;
+  /** 있으면: 그 칸의 디딜 면이 y가 아니면(계단 구멍 등) 막힌 칸 */
+  surfaces?: Surface[];
+}
+
+const GROUND_NAV: NavOpts = { minX: -90, minZ: -140, cols: 180, rows: 136, cell: 1, pad: 0.5, y: 0 };
+
 export class NavGrid {
-  readonly minX = -90;
-  readonly minZ = -140;
-  readonly cols = 180;
-  readonly rows = 136;
+  readonly minX: number;
+  readonly minZ: number;
+  readonly cols: number;
+  readonly rows: number;
+  readonly cell: number;
+  readonly y: number;
   private readonly blocked: Uint8Array;
 
-  constructor(boxes: Box[]) {
+  constructor(boxes: Box[], o: NavOpts = GROUND_NAV) {
+    this.minX = o.minX;
+    this.minZ = o.minZ;
+    this.cols = o.cols;
+    this.rows = o.rows;
+    this.cell = o.cell;
+    this.y = o.y;
     this.blocked = new Uint8Array(this.cols * this.rows);
-    const pad = 0.5;
+    const pad = o.pad, cs = o.cell;
     for (const b of boxes) {
-      if (b.min.y > 1.5 || b.max.y < 0.2) continue;
-      const c0 = Math.floor(b.min.x - pad - this.minX), c1 = Math.ceil(b.max.x + pad - this.minX);
-      const r0 = Math.floor(b.min.z - pad - this.minZ), r1 = Math.ceil(b.max.z + pad - this.minZ);
+      if (b.min.y > o.y + 1.5 || b.max.y < o.y + 0.2) continue;
+      const c0 = Math.floor((b.min.x - pad - this.minX) / cs), c1 = Math.ceil((b.max.x + pad - this.minX) / cs);
+      const r0 = Math.floor((b.min.z - pad - this.minZ) / cs), r1 = Math.ceil((b.max.z + pad - this.minZ) / cs);
       for (let r = Math.max(0, r0); r < Math.min(this.rows, r1); r++) {
         for (let c = Math.max(0, c0); c < Math.min(this.cols, c1); c++) {
-          const x = c + 0.5 + this.minX, z = r + 0.5 + this.minZ;
+          const x = (c + 0.5) * cs + this.minX, z = (r + 0.5) * cs + this.minZ;
           if (x > b.min.x - pad && x < b.max.x + pad && z > b.min.z - pad && z < b.max.z + pad) this.blocked[r * this.cols + c] = 1;
         }
+      }
+    }
+    if (o.surfaces) {
+      for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
+        const x = (c + 0.5) * cs + this.minX, z = (r + 0.5) * cs + this.minZ;
+        if (Math.abs(floorAt(o.surfaces, x, z, o.y) - o.y) > 0.1) this.blocked[r * this.cols + c] = 1;
       }
     }
   }
 
   private cellOf(x: number, z: number): [number, number] {
-    return [Math.max(0, Math.min(this.cols - 1, Math.floor(x - this.minX))), Math.max(0, Math.min(this.rows - 1, Math.floor(z - this.minZ)))];
+    return [Math.max(0, Math.min(this.cols - 1, Math.floor((x - this.minX) / this.cell))), Math.max(0, Math.min(this.rows - 1, Math.floor((z - this.minZ) / this.cell)))];
   }
 
   free(x: number, z: number): boolean {
@@ -80,7 +124,7 @@ export class NavGrid {
 
   private walkable(a: THREE.Vector3, b: THREE.Vector3): boolean {
     const d = Math.hypot(b.x - a.x, b.z - a.z);
-    const n = Math.max(1, Math.ceil(d / 0.5));
+    const n = Math.max(1, Math.ceil(d / (this.cell * 0.5)));
     for (let i = 1; i <= n; i++) {
       const t = i / n;
       if (!this.free(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t)) return false;
@@ -128,7 +172,7 @@ export class NavGrid {
     }
     if (prev[goal] === -1) return [to.clone()];
     const cells: THREE.Vector3[] = [];
-    for (let i = goal; i !== start; i = prev[i]) cells.push(new THREE.Vector3((i % this.cols) + 0.5 + this.minX, 0, Math.floor(i / this.cols) + 0.5 + this.minZ));
+    for (let i = goal; i !== start; i = prev[i]) cells.push(new THREE.Vector3(((i % this.cols) + 0.5) * this.cell + this.minX, this.y, (Math.floor(i / this.cols) + 0.5) * this.cell + this.minZ));
     cells.reverse();
     cells[cells.length - 1] = to.clone();
     const out: THREE.Vector3[] = [];
@@ -216,33 +260,34 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   road.receiveShadow = shadows;
   group.add(road);
 
-  // ── 플레이어 건물 ──
+  // ── 플레이어 건물(1~3층 + 옥상, 안으로 들어가 계단으로 오르내린다) ──
   const concrete = mat('concrete');
   const plaster = mat('plaster');
-  block(0, 0, 0, 20, ROOF_Y, 10, plaster, 4, { collide: 'solid' });
-  // 창문 줄(어두운 유리)
-  for (const y of [2, 5.5]) for (let x = -8; x <= 8; x += 4) block(x, y, -5.02, 1.6, 1.8, 0.1, plain(0x1e262c, 0.25, 0.4), 4, { collide: false });
-  block(0, 0, -5.1, 2.4, 2.6, 0.2, plain(0x2a2420), 4, { collide: false }); // 1층 입구
-  // 옥상 바닥(얇은 판, 그림자 받음)
-  const roofTop = new THREE.Mesh(worldUvPlane(20, 10, 3), concrete);
-  disposables.push(roofTop.geometry);
-  roofTop.position.set(0, ROOF_Y + 0.01, 0);
-  roofTop.receiveShadow = shadows;
-  group.add(roofTop);
-  // 난간(북쪽은 엄폐용, 나머지는 낮은 턱)
+  const info = buildBuilding(
+    block,
+    { wall: plaster, floor: concrete, trim: mat('concrete', 0xcfc8bc), glassDark: plain(0x1e262c, 0.25, 0.4), wood: plain(0x8a6a44, 0.9), steel: plain(0x5b5f63, 0.6, 0.5) },
+    group,
+    boxes,
+    quality !== 'low',
+  );
+  // 옥상 난간(북쪽은 엄폐용, 나머지는 떨어지지 않게)
   block(0, ROOF_Y, -4.85, 20, PARAPET_H, 0.3, concrete, 3, { collide: 'low' });
   block(-9.85, ROOF_Y, 0, 0.3, PARAPET_H, 10, concrete, 3, { collide: 'low' });
   block(9.85, ROOF_Y, 0, 0.3, PARAPET_H, 10, concrete, 3, { collide: 'low' });
   block(0, ROOF_Y, 4.85, 20, PARAPET_H, 0.3, concrete, 3, { collide: 'low' });
-  // 계단실(돌격병이 올라오는 문)
-  block(6.2, ROOF_Y, 2.9, 3.2, 2.6, 2.2, plaster, 4, { collide: 'solid' });
-  block(6.2, ROOF_Y, 1.78, 1.1, 2.1, 0.06, plain(0x3b2f26), 4, { collide: false });
   // 옥상 소품: 에어컨 실외기 · 물탱크(낮은 엄폐)
   block(-6.5, ROOF_Y, 2.4, 1.6, 1.0, 1.0, plain(0xb9bcbd, 0.5, 0.4), 2);
   block(-3.4, ROOF_Y, 3.1, 1.2, 0.9, 0.9, plain(0xb9bcbd, 0.5, 0.4), 2);
 
   // ── 적 기지 ──
-  const metalTints = [0xffffff, 0xd98a5c, 0x8fa6d6, 0xd6c46a];
+  // 컨테이너 색(빨강 · 파랑 · 청록 · 녹슨 주황) – 회색 골함석 텍스처에 색을 입힌다
+  const metalTints = [0xe06450, 0x6d93cc, 0x66b0a2, 0xd8975e];
+  // 기지 마당: 콘크리트 바닥
+  const yard = new THREE.Mesh(worldUvPlane(120, 100, 6), mat('concrete', 0xe6e0d6));
+  disposables.push(yard.geometry);
+  yard.position.set(0, 0.012, -75);
+  yard.receiveShadow = shadows;
+  group.add(yard);
   // 모래주머니 줄(낮은 엄폐)
   const sandbag = plain(0x9c8a66, 0.95);
   for (const [x, z, w] of [[-12, -28, 9], [11, -30, 10], [-30, -46, 7], [2, -50, 8], [34, -62, 7], [-14, -78, 8], [12, -92, 8], [-46, -32, 6], [44, -36, 6], [-2, -100, 8], [-24, -60, 5]] as const) {
@@ -255,10 +300,10 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   ];
   for (const [x, z, rot, t] of containers) {
     const rotated = Math.abs(Math.sin(rot)) > 0.5;
-    block(x, 0, z, 6, 2.6, 2.4, mat('metal', metalTints[t]), 2.6, { rotY: rot });
+    block(x, 0, z, 6, 2.6, 2.4, mat('metalg', metalTints[t]), 2.6, { rotY: rot });
     coverBehind(x, z, rotated ? 2.4 : 6, rotated ? 6 : 2.4, 2.6);
   }
-  block(10, 2.6, -74, 6, 2.6, 2.4, mat('metal', metalTints[2]), 2.6); // 2단 적재
+  block(10, 2.6, -74, 6, 2.6, 2.4, mat('metalg', metalTints[1]), 2.6); // 2단 적재
   // 나무 상자 · 드럼통
   const crate = plain(0x8a6a44, 0.9);
   for (const [x, z] of [[-18, -55], [20, -58], [-2, -36], [40, -80], [-50, -78], [8, -40], [-36, -56]] as const) {
@@ -275,12 +320,13 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     boxes.push({ min: new THREE.Vector3(x - 0.32, 0, z - 0.32), max: new THREE.Vector3(x + 0.32, 0.95, z + 0.32), kind: 'low' });
   }
   // 창고 2동
-  const roofMetal = mat('metal', 0xb8b0a4);
-  block(-32, 0, -86, 20, 8, 14, plaster, 4);
+  const roofMetal = mat('metalg', 0xb8bab6);
+  const shed = mat('metalg', 0xe2e4e0);
+  block(-32, 0, -86, 20, 8, 14, shed, 4);
   block(-32, 8, -86, 21, 0.4, 15, roofMetal, 3, { collide: false });
   block(-32, 0, -78.95, 6, 5, 0.1, plain(0x3a3632), 4, { collide: false });
   coverBehind(-32, -86, 20, 14, 8);
-  block(32, 0, -96, 24, 9, 16, plaster, 4);
+  block(32, 0, -96, 24, 9, 16, shed, 4);
   block(32, 9, -96, 25, 0.4, 17, roofMetal, 3, { collide: false });
   block(28, 0, -87.95, 6, 5.5, 0.1, plain(0x3a3632), 4, { collide: false });
   coverBehind(32, -96, 24, 16, 9);
@@ -335,8 +381,8 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   const hemi = new THREE.HemisphereLight(0xa9d0e6, 0x8a6a48, 0.95);
   group.add(hemi);
   const sun = new THREE.DirectionalLight(0xffc48a, 2.4);
-  sun.position.set(-90, 55, 30);
-  sun.target.position.set(0, 0, -55);
+  sun.position.set(-140, 50, -10); // 해: 왼편 낮은 노을(적 쪽 면이 너무 어둡지 않게)
+  sun.target.position.set(0, 0, -50);
   group.add(sun, sun.target);
   if (shadows) {
     sun.castShadow = true;
@@ -352,6 +398,9 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     sun.shadow.normalBias = 0.04;
   }
 
+  const nav = new NavGrid(boxes);
+  const floorNav = FLOOR_Y.map((y) => new NavGrid(boxes, { minX: BUILDING.minX, minZ: BUILDING.minZ, cols: 40, rows: 20, cell: 0.5, pad: 0.3, y, surfaces: y > 0 ? info.surfaces : undefined }));
+
   return {
     group,
     boxes,
@@ -359,15 +408,56 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     // 정문 앞은 먼 건물이 막고 있으므로 건물 양옆 · 기지 양쪽 끝에서 들어온다
     spawns: [new THREE.Vector3(-20, 0, -123), new THREE.Vector3(22, 0, -123), new THREE.Vector3(-62, 0, -112), new THREE.Vector3(62, 0, -114)],
     perches: [new THREE.Vector3(towerX, 12.25, towerZ + 1.9), new THREE.Vector3(-8, 4.1, -111.6), new THREE.Vector3(4, 8.6, -111.6), new THREE.Vector3(10, 4.1, -111.6)],
-    entrance: new THREE.Vector3(0, 0, -6.2),
-    hatch: new THREE.Vector3(6.2, ROOF_Y, 1.2),
+    entrance: info.entranceOutside,
+    entranceInside: info.entranceInside,
+    roofDoor: info.roofDoor,
     sun,
-    nav: new NavGrid(boxes),
+    nav,
+    floorNav,
+    surfaces: info.surfaces,
+    stairs: info.stairs,
+    floorAt: (x, z, yRef) => floorAt(info.surfaces, x, z, yRef),
+    plan: (from, to) => planRoute(nav, floorNav, info.stairs, info.entranceOutside, info.entranceInside, from, to),
     dispose() {
       for (const d of disposables) d.dispose();
       group.removeFromParent();
     },
   };
+}
+
+/** 건물 안(벽 안쪽)인가 */
+export function insideBuilding(p: THREE.Vector3): boolean {
+  return p.x > BUILDING.minX + 0.1 && p.x < BUILDING.maxX - 0.1 && p.z > BUILDING.minZ + 0.1 && p.z < BUILDING.maxZ - 0.1;
+}
+
+/**
+ * 층을 넘나드는 경로: 밖 → 정문 → (층마다) 계단 아래 → 계단 위 → … → 목표.
+ * 층 안에서는 그 층 격자로 길을 찾는다.
+ */
+export function planRoute(nav: NavGrid, floors: NavGrid[], stairs: StairLink[], doorOut: THREE.Vector3, doorIn: THREE.Vector3, from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3[] {
+  const fromIn = insideBuilding(from), toIn = insideBuilding(to);
+  if (!fromIn && !toIn) return nav.path(from, to);
+  const out: THREE.Vector3[] = [];
+  let cur = from.clone();
+  let f = 0;
+  if (!fromIn) {
+    out.push(...nav.path(cur, doorOut), doorIn.clone());
+    cur = doorIn.clone();
+  } else f = floorIndex(from.y);
+  const ft = toIn ? floorIndex(to.y) : 0;
+  while (f < ft) {
+    out.push(...floors[f].path(cur, stairs[f].from), stairs[f].to.clone());
+    cur = stairs[f].to.clone();
+    f++;
+  }
+  while (f > ft) {
+    out.push(...floors[f].path(cur, stairs[f - 1].to), stairs[f - 1].from.clone());
+    cur = stairs[f - 1].from.clone();
+    f--;
+  }
+  if (toIn) out.push(...floors[f].path(cur, to));
+  else out.push(...floors[0].path(cur, doorIn), doorOut.clone(), ...nav.path(doorOut, to));
+  return out;
 }
 
 /** 광선과 상자들: 가장 가까운 충돌 거리 */

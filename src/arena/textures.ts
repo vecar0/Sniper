@@ -7,10 +7,10 @@
  */
 import * as THREE from 'three';
 
-export type SurfaceId = 'ground' | 'concrete' | 'plaster' | 'metal' | 'asphalt';
+export type SurfaceId = 'ground' | 'concrete' | 'plaster' | 'metal' | 'asphalt' | 'metalg';
 
 /** 실제 이미지가 들어 있는 텍스처(파일을 추가하면 여기에 등록) */
-export const AVAILABLE: SurfaceId[] = [];
+export const AVAILABLE: SurfaceId[] = ['ground', 'concrete', 'plaster', 'metal', 'asphalt', 'metalg'];
 
 /** 이미지가 없을 때의 기본 색과 잔무늬 */
 const FALLBACK: Record<SurfaceId, { base: string; dark: string; light: string; grain: number; streaks?: 'v' | 'h' }> = {
@@ -19,6 +19,7 @@ const FALLBACK: Record<SurfaceId, { base: string; dark: string; light: string; g
   plaster: { base: '#c9b694', dark: '#a8906c', light: '#ddcfb2', grain: 0.35 },
   metal: { base: '#4f7a72', dark: '#3a5c56', light: '#6c968e', grain: 0.2, streaks: 'v' },
   asphalt: { base: '#45474a', dark: '#33353a', light: '#5a5c60', grain: 0.6 },
+  metalg: { base: '#b0b0ac', dark: '#8c8c88', light: '#cfcfca', grain: 0.2, streaks: 'v' },
 };
 
 const cache = new Map<SurfaceId, THREE.Texture>();
@@ -84,8 +85,8 @@ export function surfaceMaterial(id: SurfaceId, opts: { tint?: number; roughness?
   return new THREE.MeshStandardMaterial({
     map,
     color: opts.tint ?? 0xffffff,
-    roughness: opts.roughness ?? (id === 'metal' ? 0.55 : 0.92),
-    metalness: opts.metalness ?? (id === 'metal' ? 0.35 : 0.02),
+    roughness: opts.roughness ?? (id === 'metal' || id === 'metalg' ? 0.55 : 0.92),
+    metalness: opts.metalness ?? (id === 'metal' || id === 'metalg' ? 0.35 : 0.02),
   });
 }
 

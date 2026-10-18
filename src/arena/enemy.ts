@@ -1,12 +1,13 @@
 /**
- * 적: 소총병(엄폐 → 일어나 사격) · 돌격병(건물로 돌진 → 옥상 계단문으로 올라옴) ·
+ * 적: 소총병(엄폐 → 일어나 사격) · 돌격병(플레이어를 끝까지 쫓아옴 – 정문으로 들어와 계단을 타고 층을 오르내림) ·
  * 저격수(창문·급수탑, 레이저와 반짝임으로 예고 후 강한 한 발) · 중장갑(체력 많음).
  * 피해·명중 수치는 맨 위 SPECS에 모아 둔다.
  */
 import * as THREE from 'three';
 import type { OutfitId } from '../config/missions';
 import { buildHuman, type HumanMaterials, type HumanRig } from '../game/models/human';
-import { clearLine, ROOF_Y, type ArenaMap, type Box, type CoverPoint } from './map';
+import { FLOOR_Y, floorIndex } from './building';
+import { clearLine, insideBuilding, type ArenaMap, type Box, type CoverPoint } from './map';
 
 export type EnemyKind = 'rifle' | 'rusher' | 'sniper' | 'heavy';
 
@@ -33,13 +34,15 @@ export const SPECS: Record<EnemyKind, EnemySpec> = {
 /** 저격수가 조준을 시작해 쏘기까지(초) – 이 동안 레이저가 보인다 */
 export const SNIPER_CHARGE = 3.0;
 
-export type EnemyState = 'move' | 'hide' | 'peek' | 'inside' | 'roof' | 'aim' | 'dead' | 'gone';
+export type EnemyState = 'move' | 'hide' | 'peek' | 'chase' | 'aim' | 'dead' | 'gone';
 
 export interface PlayerTarget {
   /** 머리(눈) 위치 */
   head: THREE.Vector3;
   /** 몸통 중심 */
   chest: THREE.Vector3;
+  /** 발 위치 */
+  feet: THREE.Vector3;
   /** 몸통이 난간 위로 드러나 있는가(서 있음) */
   chestExposed: boolean;
   moving: boolean;
@@ -54,7 +57,6 @@ export interface EnemyShot {
   to: THREE.Vector3;
 }
 
-const tmp = new THREE.Vector3();
 
 export class Enemy {
   readonly kind: EnemyKind;
@@ -71,6 +73,9 @@ export class Enemy {
   /** 지상 경로(경유점) */
   private route: THREE.Vector3[] = [];
   private stuckT = 0;
+  private replanT = 0;
+  /** 돌격병: 플레이어가 보여 겨누는 중 */
+  private aiming = false;
   private lastPos = new THREE.Vector3();
   cover: CoverPoint | null = null;
   private timer = 0;
@@ -150,6 +155,7 @@ export class Enemy {
           this.route.shift();
           arrived = this.route.length === 0;
         }
+        this.settle(map, dt);
         // 이동하면서도 가끔 쏜다(압박): 플레이어가 보이면 정확도 절반으로 한 발
         if ((this.kind === 'rifle' || this.kind === 'heavy') && this.fireT <= 0) {
           this.fireT = this.spec.interval * (0.8 + Math.random() * 0.6);
@@ -165,11 +171,8 @@ export class Enemy {
         } else this.stuckT = 0;
         this.lastPos.copy(this.pos);
         if (arrived) {
-          if (this.kind === 'rusher') {
-            this.state = 'inside';
-            this.timer = 3.5;
-            this.rig.root.visible = false;
-          } else if (this.cover) {
+          if (this.kind === 'rusher') this.chase();
+          else if (this.cover) {
             this.state = 'hide';
             this.timer = 1 + Math.random() * 1.5;
           } else {
@@ -228,29 +231,45 @@ export class Enemy {
         }
         break;
       }
-      case 'inside': {
-        this.timer -= dt;
-        if (this.timer <= 0) {
-          // 옥상 계단문에서 등장
-          this.pos.copy(map.hatch);
-          this.rig.root.visible = true;
-          this.state = 'roof';
-          this.aimT = 0;
+      case 'chase': {
+        // 돌격병: 플레이어가 있는 곳(밖 · 몇 층이든)까지 계단을 타고 쫓아가 근거리 사격
+        const d = this.pos.distanceTo(player.feet);
+        const sameLevel = Math.abs(player.feet.y - this.pos.y) < 1.2;
+        const see = d < 45 && clearLine(map.boxes, this.eye(), player.head);
+        // 계단을 오르내리는 도중에는 경로를 바꾸지 않는다(층 바닥에 있을 때만 다시 계산)
+        const onFloor = !insideBuilding(this.pos) || Math.abs(this.pos.y - FLOOR_Y[floorIndex(this.pos.y)]) < 0.08;
+        this.replanT -= dt;
+        if (onFloor && (this.replanT <= 0 || !this.route.length)) {
+          this.route = map.plan(this.pos, player.feet);
+          this.replanT = 0.9;
         }
-        break;
-      }
-      case 'roof': {
-        // 옥상 위: 플레이어에게 다가가며 근거리 사격
-        const flat = tmp.set(player.head.x, ROOF_Y, player.head.z);
-        const d = flat.distanceTo(this.pos);
-        if (d > 2.2) this.walk(flat, dt, [], 0.6);
-        else this.idle(dt);
-        this.face(player.head, dt);
-        this.aimT += dt;
-        if (this.aimT > 0.5 && this.fireT <= 0) {
-          shot = this.shoot(player, map.boxes, accMul * 1.4);
-          this.fireT = this.spec.interval;
+        if (see && sameLevel && d < 3.2) this.idle(dt);
+        else {
+          const next = this.route[0];
+          if (next) {
+            // 건물 안에서는 조금 천천히(좁은 곳에서 부딪히지 않게)
+            if (this.walk(next, dt, map.boxes, insideBuilding(this.pos) ? 0.7 : 1)) this.route.shift();
+          } else this.idle(dt);
+          if (this.pos.distanceToSquared(this.lastPos) < 0.0004 && next) {
+            this.stuckT += dt;
+            if (this.stuckT > 0.8) {
+              this.route = [];
+              this.replanT = 0;
+              this.stuckT = 0;
+            }
+          } else this.stuckT = 0;
+          this.lastPos.copy(this.pos);
         }
+        this.settle(map, dt);
+        this.aiming = see && d < 32;
+        if (this.aiming) {
+          this.face(player.head, dt);
+          this.aimT += dt;
+          if (this.aimT > 0.45 && this.fireT <= 0) {
+            shot = this.shoot(player, map.boxes, accMul * (d < 12 ? 1.4 : 1));
+            this.fireT = this.spec.interval;
+          }
+        } else this.aimT = 0;
         break;
       }
       case 'aim': {
@@ -272,6 +291,20 @@ export class Enemy {
     this.crouch += (this.crouchTarget - this.crouch) * Math.min(1, dt * 8);
     this.sync(dt);
     return shot;
+  }
+
+  /** 돌격병 추격 시작 */
+  chase(): void {
+    this.state = 'chase';
+    this.route = [];
+    this.replanT = 0;
+    this.aimT = 0;
+  }
+
+  /** 발밑 높이 맞추기(계단을 오르면 바로 올라서고, 떨어지면 빠르게 내려온다) */
+  private settle(map: ArenaMap, dt: number): void {
+    const f = map.floorAt(this.pos.x, this.pos.z, this.pos.y);
+    this.pos.y = f < this.pos.y ? Math.max(f, this.pos.y - 12 * dt) : f;
   }
 
   private walk(goal: THREE.Vector3, dt: number, boxes: Box[], speedMul = 1): boolean {
@@ -304,7 +337,7 @@ export class Enemy {
   private blocked(x: number, z: number, boxes: Box[]): boolean {
     const r = 0.35;
     for (const b of boxes) {
-      if (b.min.y > this.pos.y + 1.5 || b.max.y < this.pos.y + 0.2) continue;
+      if (b.min.y > this.pos.y + 1.5 || b.max.y < this.pos.y + 0.35) continue;
       if (x + r > b.min.x && x - r < b.max.x && z + r > b.min.z && z - r < b.max.z) return true;
     }
     return false;
@@ -402,7 +435,7 @@ export class Enemy {
     r.body.rotation.x = 0;
     r.body.position.y = -c * 0.45;
     const s = Math.sin(this.animT * 2) * this.swing;
-    const aiming = this.state === 'peek' || this.state === 'aim' || this.state === 'roof' || this.state === 'hide';
+    const aiming = this.state === 'peek' || this.state === 'aim' || this.state === 'hide' || (this.state === 'chase' && this.aiming);
     r.legL.rotation.x = s - c * 1.4;
     r.legR.rotation.x = -s - c * 0.4;
     if (aiming && r.gun) {

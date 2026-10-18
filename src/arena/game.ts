@@ -13,7 +13,8 @@ import { HumanMaterials } from '../game/models/human';
 import { ViewModel } from '../game/viewmodel';
 import { Enemy, rayEnemy, SPECS, type EnemyKind, type PlayerTarget } from './enemy';
 import type { ArenaInput } from './input';
-import { buildMap, clearLine, PARAPET_H, rayBoxes, ROOF, ROOF_Y, type ArenaMap, type CoverPoint } from './map';
+import { moveWithCollision } from './building';
+import { buildMap, clearLine, rayBoxes, ROOF_Y, WORLD, type ArenaMap, type CoverPoint } from './map';
 
 export const TUNING = {
   fov: 70,
@@ -125,6 +126,11 @@ export class ArenaGame {
   pitch = -0.04;
   crouched = false;
   private crouchT = 0;
+  /** 떨어지는 속도(계단 구멍 · 낮은 턱에서) */
+  private vy = 0;
+  /** 적에게 보이는 정도(0.1초마다 시야선으로 계산) */
+  private exposeState: 'hidden' | 'peek' | 'open' = 'hidden';
+  private exposeT = 0;
   hp: number = TUNING.hp;
   private hurtT = 99;
   private hurtFlash = 0;
@@ -191,7 +197,7 @@ export class ArenaGame {
     this.scene.add(buildSky());
     this.map = buildMap(quality);
     this.scene.add(this.map.group);
-    this.fx = new Effects((x, z) => (Math.abs(x) < 10 && Math.abs(z) < 5 ? ROOF_Y : 0), 0xb59a72);
+    this.fx = new Effects((x, z) => this.map.floorAt(x, z, this.pos.y + 0.5), 0xb59a72);
     this.scene.add(this.fx.group);
     this.fx.tracers.setScale(this.renderer.getPixelRatio());
     this.viewModel = new ViewModel(this.renderer);
@@ -249,6 +255,8 @@ export class ArenaGame {
     this.tracers = [];
     this.fx.clear();
     this.pos.set(0, ROOF_Y, -4.0);
+    this.vy = 0;
+    this.exposeState = 'hidden';
     this.yaw = 0;
     this.pitch = -0.04;
     this.crouched = false;
@@ -313,7 +321,7 @@ export class ArenaGame {
     } else {
       const sp = m.spawns[Math.floor(Math.random() * m.spawns.length)];
       e.spawnAt(sp.clone().add(new THREE.Vector3((Math.random() - 0.5) * 4, 0, 0)));
-      if (kind === 'rusher') e.moveTo(m.entrance, m.nav);
+      if (kind === 'rusher') e.chase();
       else {
         const c = this.pickCover(e, true) ?? this.openSpot();
         e.cover = c;
@@ -340,7 +348,7 @@ export class ArenaGame {
 
   /** 엄폐물이 모자랄 때: 옥상이 보이는 빈 땅(교착 방지 – 숨지 못하니 위험하지만 공격적) */
   private openSpot(): CoverPoint {
-    const roof = new THREE.Vector3(0, ROOF_Y + 1.4, -4);
+    const roof = this.pos.clone().setY(this.pos.y + 1.4);
     for (let i = 0; i < 40; i++) {
       const p = new THREE.Vector3((Math.random() - 0.5) * 70, 0, -28 - Math.random() * 70);
       if (!this.map.nav.free(p.x, p.z)) continue;
@@ -457,7 +465,7 @@ export class ArenaGame {
     const ex = this.crouchT; // 숙인 정도
     this.crouchT += ((this.crouched ? 1 : 0) - this.crouchT) * Math.min(1, dt * 10);
     void ex;
-    // ── 이동(옥상 안) ──
+    // ── 이동(옥상 · 건물 안 · 밖 어디든 – 벽에 막히고 계단으로 오르내림) ──
     const scopedNow = this.scopeT > 0.5 || this.smg.ads > 0.5;
     const speed = (this.crouched ? TUNING.crouchWalk : TUNING.walk) * (scopedNow ? 0.45 : 1);
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
@@ -469,12 +477,18 @@ export class ArenaGame {
       mx /= len;
       mz /= len;
     }
-    this.pos.x = Math.max(ROOF.minX, Math.min(ROOF.maxX, this.pos.x + mx * speed * dt));
-    this.pos.z = Math.max(ROOF.minZ, Math.min(ROOF.maxZ, this.pos.z + mz * speed * dt));
-    // 계단실 안으로는 못 들어감
-    if (this.pos.x > 4.3 && this.pos.z > 1.5) {
-      if (this.pos.x - 4.3 < this.pos.z - 1.5) this.pos.x = 4.3;
-      else this.pos.z = 1.5;
+    moveWithCollision(this.map.boxes, this.pos, mx * speed * dt, mz * speed * dt, 0.3, this.crouched ? 1.1 : 1.7);
+    this.pos.x = Math.max(WORLD.minX, Math.min(WORLD.maxX, this.pos.x));
+    this.pos.z = Math.max(WORLD.minZ, Math.min(WORLD.maxZ, this.pos.z));
+    // 발밑: 계단은 바로 올라서고, 바닥이 없으면 떨어진다
+    const floor = this.map.floorAt(this.pos.x, this.pos.z, this.pos.y);
+    if (floor >= this.pos.y - 0.02) {
+      this.pos.y = floor;
+      this.vy = 0;
+    } else {
+      this.vy -= 22 * dt;
+      this.pos.y = Math.max(floor, this.pos.y + this.vy * dt);
+      if (this.pos.y === floor) this.vy = 0;
     }
     const moving = len > 0.1;
     this.moveAmt += ((moving ? 1 : 0) - this.moveAmt) * Math.min(1, dt * 8);
@@ -483,6 +497,11 @@ export class ArenaGame {
     this.updateWeapons(dt, moving);
     // ── 적 ──
     const target = this.playerTarget(moving);
+    this.exposeT -= dt;
+    if (this.exposeT <= 0) {
+      this.exposeT = 0.1;
+      this.exposeState = this.computeExposure(target);
+    }
     const acc = ACC_MUL[this.difficulty];
     for (const e of this.enemies) {
       const shot = e.update(dt, this.map, target, acc, (en) => this.pickCover(en, false));
@@ -570,20 +589,27 @@ export class ArenaGame {
     return TUNING.standEye + (crouchEye - TUNING.standEye) * this.crouchT;
   }
 
-  /** 적에게 보이는 정도: 숨음 / 고개만 / 상체까지 */
-  private exposure(): 'hidden' | 'peek' | 'open' {
-    const eye = this.eyeHeight();
-    if (eye < PARAPET_H + 0.02 && this.pos.z < -2.8) return 'hidden';
-    if (eye < 1.45) return this.pos.z < -2.8 ? 'peek' : 'open';
-    return 'open';
+  /** 적에게 보이는 정도: 숨음 / 고개만 / 상체까지 – 살아 있는 적이 일어섰을 때의 눈에서 시야선으로 판단 */
+  private computeExposure(t: PlayerTarget): 'hidden' | 'peek' | 'open' {
+    let head = false;
+    const eye = new THREE.Vector3();
+    for (const e of this.enemies) {
+      if (!e.alive || !e.rig.root.visible) continue;
+      eye.set(e.pos.x, e.pos.y + 1.6 * e.rig.root.scale.y, e.pos.z);
+      if (eye.distanceToSquared(t.head) > 220 * 220) continue;
+      if (clearLine(this.map.boxes, eye, t.chest)) return 'open';
+      if (!head && clearLine(this.map.boxes, eye, t.head)) head = true;
+    }
+    return head ? 'peek' : 'hidden';
   }
 
   private playerTarget(moving: boolean): PlayerTarget {
     const eye = this.eyeHeight();
-    const head = new THREE.Vector3(this.pos.x, ROOF_Y + eye, this.pos.z);
-    // 몸통: 서 있으면 난간 위로 드러남
-    const chest = new THREE.Vector3(this.pos.x, ROOF_Y + Math.max(0.6, eye - 0.45), this.pos.z);
-    return { head, chest, chestExposed: eye - 0.45 > PARAPET_H || this.pos.z > -2.8, moving };
+    const y = this.pos.y;
+    const head = new THREE.Vector3(this.pos.x, y + eye, this.pos.z);
+    const chest = new THREE.Vector3(this.pos.x, y + Math.max(0.6, eye - 0.35), this.pos.z);
+    // 몸통이 실제로 보이는지는 적마다 시야선으로 따진다
+    return { head, chest, feet: this.pos.clone(), chestExposed: true, moving };
   }
 
   private updateWeapons(dt: number, moving: boolean): void {
@@ -918,7 +944,7 @@ export class ArenaGame {
     }
     const eye = this.eyeHeight();
     const bob = Math.sin(this.bob) * 0.03 * this.moveAmt;
-    cam.position.set(this.pos.x, ROOF_Y + eye + Math.abs(bob), this.pos.z);
+    cam.position.set(this.pos.x, this.pos.y + eye + Math.abs(bob), this.pos.z);
     // 스코프 흔들림(작게) – 숙여서 고개만 내밀면 더 안정
     const swayAmp = this.weapon === 'sniper' ? this.scopeT * (this.crouched ? 0.0009 : 0.0018) : 0;
     const sx = Math.sin(this.swayT * 0.9) * swayAmp, sy = Math.sin(this.swayT * 1.37) * swayAmp * 0.7;
@@ -958,7 +984,7 @@ export class ArenaGame {
         rel = Math.atan2(Math.sin(rel), Math.cos(rel));
         snipers.push({ dir: (-rel * 180) / Math.PI, charge: e.charge, onScreen: on, x: sx, y: sy });
       }
-      if (on && this.scopeT < 0.5) markers.push({ x: sx, y: sy, kind: e.kind, roof: e.state === 'roof' });
+      if (on && this.scopeT < 0.5) markers.push({ x: sx, y: sy, kind: e.kind, roof: e.state === 'chase' && e.pos.distanceTo(this.pos) < 25 });
     }
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const spreadDeg = this.weapon === 'sniper' ? (this.scopeT > 0.7 ? 0 : TUNING.sniper.hipSpreadDeg) : this.smg.spread(this.moveAmt > 0.3, this.crouched);
@@ -977,7 +1003,7 @@ export class ArenaGame {
       scopeT: this.cam ? 0 : this.scopeT,
       zoom: TUNING.sniper.zooms[this.zoomIndex],
       crouched: this.crouched,
-      exposed: this.exposure(),
+      exposed: this.exposeState,
       score: this.score,
       wave: this.wave,
       enemiesLeft: this.toSpawn.length + this.enemies.filter((e) => e.alive).length,
@@ -1020,7 +1046,7 @@ function buildSky(): THREE.Mesh {
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
-    uniforms: { top: { value: new THREE.Color(0x4f97c4) }, mid: { value: new THREE.Color(0xa9cfe0) }, horizon: { value: new THREE.Color(0xf6cf9c) }, sunDir: { value: new THREE.Vector3(-90, 55, 30).normalize() } },
+    uniforms: { top: { value: new THREE.Color(0x4f97c4) }, mid: { value: new THREE.Color(0xa9cfe0) }, horizon: { value: new THREE.Color(0xf6cf9c) }, sunDir: { value: new THREE.Vector3(-140, 50, -10).normalize() } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader:
       'uniform vec3 top; uniform vec3 mid; uniform vec3 horizon; uniform vec3 sunDir; varying vec3 vDir;' +
