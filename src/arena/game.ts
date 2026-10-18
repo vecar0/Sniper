@@ -14,6 +14,7 @@ import { ViewModel } from '../game/viewmodel';
 import { Enemy, rayEnemy, SPECS, type EnemyKind, type PlayerTarget } from './enemy';
 import type { ArenaInput } from './input';
 import { groundAt, moveWithCollision } from './building';
+import { getModel } from './models';
 import { buildMap, clearLine, rayBoxes, ROOF_Y, SUN_DIR, WORLD, type ArenaMap, type CoverPoint } from './map';
 
 export const TUNING = {
@@ -209,11 +210,13 @@ export class ArenaGame {
     this.viewModel = new ViewModel(this.renderer);
     this.viewModel.compact = input.isTouch;
     this.viewModel.build(getWeapon('k65'), false); // 검은 저격총(컨셉 아트)
+    const rifleModel = getModel('rifle');
+    if (rifleModel) this.viewModel.replaceRifleVisual(rifleModel.scene.clone());
     const smgParts = { muzzle: 'comp', optic: 'dot', mag: 'ext', under: 'grip' } as const;
     this.smg = new CqbGun('v45', { ...smgParts });
     this.viewModel.buildGuns([{ spec: getCqb('v45'), parts: { ...smgParts } }]);
     this.viewModel.setActive('rifle');
-    this.viewModel.setLighting(0xffb878, 0xbcd6ea, 0xb48c64, 2.7);
+    this.viewModel.setLighting(0xffd6b0, 0x9fb4c4, 0x5a4a3c, 0.8);
     this.glintMat = new THREE.SpriteMaterial({ map: glowTexture('#ffffff'), color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
     this.flashMat = new THREE.SpriteMaterial({ map: glowTexture('#ffd27a'), color: 0xffd27a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
     window.addEventListener('resize', () => this.resize());

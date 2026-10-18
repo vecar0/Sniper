@@ -8,6 +8,7 @@ import './arena.css';
 import { AudioEngine } from '../audio/audio';
 import { ArenaGame } from './game';
 import { ArenaInput, TouchPad } from './input';
+import { preloadModels } from './models';
 import { ArenaUI } from './ui';
 
 function setProgress(p: number, text: string): void {
@@ -56,6 +57,7 @@ async function boot(): Promise<void> {
   setProgress(0.45, '기지 건설 중…');
   await nextFrame();
   const quality = detectQuality(input.isTouch);
+  await preloadModels((d, t) => setProgress(0.45 + (0.3 * d) / Math.max(1, t), `3D 모델 불러오는 중… ${d}/${t}`));
   const game = new ArenaGame(gameEl, input, audio, quality);
   setProgress(0.8, '셰이더 준비 중…');
   await nextFrame();

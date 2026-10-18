@@ -8,6 +8,7 @@ import type { OutfitId } from '../config/missions';
 import { buildHuman, type HumanMaterials, type HumanRig } from '../game/models/human';
 import { FLOOR_Y, floorIndex } from './building';
 import { clearLine, insideBuilding, type ArenaMap, type Box, type CoverPoint } from './map';
+import { createSoldier, type SoldierVisual } from './soldier';
 
 export type EnemyKind = 'rifle' | 'rusher' | 'sniper' | 'heavy';
 
@@ -62,6 +63,8 @@ export class Enemy {
   readonly kind: EnemyKind;
   readonly spec: EnemySpec;
   readonly rig: HumanRig;
+  /** 사실적인 3D 병사(있으면 코드로 만든 몸 대신 보인다) */
+  private readonly visual: SoldierVisual | null;
   readonly pos = new THREE.Vector3();
   yaw = Math.PI;
   hp: number;
@@ -105,6 +108,11 @@ export class Enemy {
     this.rig = buildHuman(this.spec.outfit, mats);
     if (kind === 'heavy') this.rig.root.scale.setScalar(1.12);
     this.rig.alertLight.visible = false;
+    this.visual = createSoldier(kind);
+    if (this.visual) {
+      this.rig.body.visible = false;
+      this.rig.root.add(this.visual.root);
+    }
   }
 
   get alive(): boolean {
@@ -433,6 +441,10 @@ export class Enemy {
       r.legL.rotation.x = e * 0.3;
       r.legR.rotation.x = -e * 0.2;
       if (r.gun) r.gun.visible = this.fall < 0.3;
+      if (this.visual) {
+        this.visual.pivot.rotation.x = -e * (Math.PI / 2 - 0.08);
+        this.visual.update(dt, { moving: false, aiming: true, speed: 0, crouch: this.crouch * (1 - e), fall: Math.max(0.001, this.fall) });
+      }
       return;
     }
     const c = this.crouch;
@@ -440,6 +452,10 @@ export class Enemy {
     r.body.position.y = -c * 0.45;
     const s = Math.sin(this.animT * 2) * this.swing;
     const aiming = this.state === 'peek' || this.state === 'aim' || this.state === 'hide' || (this.state === 'chase' && this.aiming);
+    if (this.visual) {
+      this.visual.pivot.rotation.x = 0;
+      this.visual.update(dt, { moving: this.swing > 0.35, aiming: aiming || (this.state === 'move' && this.flashT > 0), speed: this.spec.speed, crouch: c, fall: 0 });
+    }
     r.legL.rotation.x = s - c * 1.4;
     r.legR.rotation.x = -s - c * 0.4;
     if (aiming && r.gun) {

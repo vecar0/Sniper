@@ -1,0 +1,27 @@
+{
+  "_comment": "Higgsfield(Tripo · Meshy)로 만든 GLB 원본 주소와 텍스처 크기. node scripts/models.mjs 로 public/models 에 최적화해 저장",
+  "rifle": {
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_122147_422ebbf6-8220-4cb2-a4f8-da049d2899cd.glb",
+    "tex": 1024
+  },
+  "container": {
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_122148_9c3ca5e9-8c57-454e-90f0-212b72b5ec32.glb",
+    "tex": 1024
+  },
+  "soldier": {
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_125638_e01c2c27-38ff-4d15-975b-60fa2bfbfcff.glb",
+    "tex": 1024
+  },
+  "sandbags": {
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_122150_f9c106b3-6023-48ec-b293-4a2f77e4f3e1.glb",
+    "tex": 1024
+  },
+  "crate": {
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_122536_d2e30f1e-115e-46bd-a9dd-69999eae3ef1.glb",
+    "tex": 512
+  },
+  "barrel": {
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_122538_a815c59f-9e6f-42d8-a58a-c44eb9bb01e6.glb",
+    "tex": 512
+  }
+}

@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import { buildBuilding, floorAt, floorIndex, FLOOR_Y, type StairLink, type Surface } from './building';
+import { fitTransform, getModel, instancedModel } from './models';
 import { addCity, addClouds, addMountains, addPalms, gableEndGeometry, gableRoofGeometry, SandbagStacks, type SceneryCtx } from './scenery';
 import { surfaceMaterial, worldUvBox, worldUvPlane, type SurfaceId } from './textures';
 
@@ -294,11 +295,20 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   group.add(yard);
   // 모래주머니 줄(낮은 엄폐) – 둥근 자루를 벽돌처럼 쌓은 모양
   const bags = new SandbagStacks();
+  const bagFit = getModel('sandbags') ? fitTransform('sandbags', 2.3, 0.95, 1.0) : null;
+  const bagSpots: THREE.Matrix4[] = [];
   for (const [x, z, w] of [[-12, -28, 9], [11, -30, 10], [-30, -46, 7], [2, -50, 8], [34, -62, 7], [-14, -78, 8], [12, -92, 8], [-46, -32, 6], [44, -36, 6], [-2, -100, 8], [-24, -60, 5]] as const) {
     collider(x, 0, z, w, 0.95, 1.1, 'low');
-    bags.row(x, z, w, 0.95, 1.1);
+    if (bagFit) {
+      // 3D 모래주머니 벽 조각(약 2.3m)을 이어 붙인다
+      const n = Math.max(1, Math.round(w / 2.3));
+      for (let i = 0; i < n; i++) {
+        bagSpots.push(new THREE.Matrix4().makeTranslation(x - w / 2 + ((i + 0.5) * w) / n, 0, z).multiply(new THREE.Matrix4().makeScale(w / n / 2.3, 1, 1)).multiply(bagFit));
+      }
+    } else bags.row(x, z, w, 0.95, 1.1);
     coverBehind(x, z, w, 1.1, 0.95);
   }
+  if (bagFit) group.add(instancedModel('sandbags', bagSpots, undefined, shadows));
   // 콘크리트 방호벽(낮은 엄폐)
   const barrier = mat('concrete', 0xd9d3c8);
   for (const [x, z, w] of [[-34, -24, 6], [36, -24, 6], [-52, -50, 4], [20, -112, 5]] as const) {
@@ -308,8 +318,19 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   }
   // 컨테이너(높은 엄폐) + 문짝 쪽 테두리
   const frame = plain(0x2b2a28, 0.7, 0.4);
+  // 3D 모델이 있으면 사실적인 컨테이너(색만 입힘)를 한 번에 그리고, 없으면 상자 + 철골 모서리
+  const containerFit = getModel('container') ? fitTransform('container', 6, 2.6, 2.4) : null;
+  const containerSpots: THREE.Matrix4[] = [];
+  const containerColors: THREE.Color[] = [];
   const container = (x: number, y: number, z: number, rot: number, t: number, collide = true) => {
     const rotated = Math.abs(Math.sin(rot)) > 0.5;
+    if (containerFit) {
+      const [w, d] = rotated ? [2.4, 6] : [6, 2.4];
+      if (collide) collider(x, y, z, w, 2.6, d, 'solid');
+      containerSpots.push(new THREE.Matrix4().makeTranslation(x, y, z).multiply(new THREE.Matrix4().makeRotationY(rot)).multiply(containerFit));
+      containerColors.push(new THREE.Color(metalTints[t]).lerp(new THREE.Color(0xffffff), 0.15));
+      return rotated;
+    }
     block(x, y, z, 6, 2.6, 2.4, mat('metalg', metalTints[t]), 2.6, { rotY: rot, collide: collide ? 'solid' : false });
     // 네 모서리 기둥(어두운 철골)
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
@@ -331,20 +352,36 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   for (const [x, z, rot, t, n] of [[-58, -30, Math.PI / 2, 2, 2], [-58, -38, Math.PI / 2, 0, 1], [58, -76, Math.PI / 2, 1, 2], [58, -84, Math.PI / 2, 3, 1], [-58, -96, Math.PI / 2, 1, 3]] as const) {
     for (let k = 0; k < n; k++) container(x, k * 2.6, z, rot, (t + k) % 4);
   }
+  if (containerFit) group.add(instancedModel('container', containerSpots, containerColors, shadows));
   // 나무 상자 · 드럼통 무더기
   const crate = mat('plaster', 0x9a7550);
+  // 나무 상자: 3D 모델이 있으면 인스턴싱, 없으면 상자
+  const crateSpots: THREE.Matrix4[] = [];
+  const crateBox = (x: number, y: number, z: number, sz: number, h: number, kind: Box['kind'], yaw = 0) => {
+    if (getModel('crate')) {
+      collider(x, y, z, sz, h, sz, kind);
+      crateSpots.push(new THREE.Matrix4().makeTranslation(x, y, z).multiply(new THREE.Matrix4().makeRotationY(yaw)).multiply(fitTransform('crate', sz, h, sz)));
+    } else block(x, y, z, sz, h, sz, crate, 1.3, { collide: kind });
+  };
   for (const [x, z, stack] of [[-18, -55, 1], [20, -58, 0], [-2, -36, 1], [40, -80, 1], [-50, -78, 0], [8, -40, 0], [-36, -56, 1]] as const) {
-    block(x, 0, z, 1.3, 1.2, 1.3, crate, 1.3, { collide: 'low' });
-    block(x + 1.35, 0, z + 0.1, 1.1, 1.0, 1.1, crate, 1.3, { collide: 'low' });
-    if (stack) block(x + 0.1, 1.2, z, 1.1, 1.0, 1.1, crate, 1.3, { collide: 'solid' });
+    crateBox(x, 0, z, 1.3, 1.2, 'low');
+    crateBox(x + 1.35, 0, z + 0.1, 1.1, 1.0, 'low', Math.PI / 2);
+    if (stack) crateBox(x + 0.1, 1.2, z, 1.1, 1.0, 'solid', 0.2);
     coverBehind(x + 0.6, z, 2.6, 1.3, 1.2);
   }
+  const barrelColors = [0xa8402e, 0x3d6b8c, 0x5d6b3a, 0x8c8478];
+  const barrelSpots: THREE.Matrix4[] = [];
+  const barrelTints: THREE.Color[] = [];
   const barrelGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.95, 12);
   disposables.push(barrelGeo);
-  const barrelColors = [0xa8402e, 0x3d6b8c, 0x5d6b3a, 0x8c8478];
   for (const [cx, cz] of [[-20, -34], [26, -66], [-8, -88], [16, -44], [-44, -58], [46, -86], [-28, -100]] as const) {
     for (let k = 0; k < 4; k++) {
       const x = cx + (k % 2) * 0.7 - 0.35, z = cz + Math.floor(k / 2) * 0.7 - 0.35;
+      if (getModel('barrel')) {
+        barrelSpots.push(new THREE.Matrix4().makeTranslation(x, 0, z).multiply(new THREE.Matrix4().makeRotationY(k * 1.7 + cx)).multiply(fitTransform('barrel', 0.64, 0.95, 0.64)));
+        barrelTints.push(new THREE.Color(k === 1 ? 0xd8e0e8 : 0xffffff));
+        continue;
+      }
       const b = new THREE.Mesh(barrelGeo, plain(barrelColors[(k + Math.round(cx)) & 3], 0.6, 0.3));
       b.position.set(x, 0.475, z);
       b.castShadow = b.receiveShadow = shadows;
@@ -397,8 +434,9 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     roof.position.set(sx0, sh, sz0);
     roof.castShadow = shadows;
     group.add(roof);
-    block(sx0 - 3, 0, sz0 + 1, 1.3, 1.2, 1.3, crate, 1.3, { collide: 'low' });
-    block(sx0 + 2.5, 0, sz0 - 1, 2.4, 0.9, 1.2, crate, 1.3, { collide: 'low' });
+    crateBox(sx0 - 3, 0, sz0 + 1, 1.3, 1.2, 'low');
+    crateBox(sx0 + 2.2, 0, sz0 - 1, 1.2, 1.0, 'low', 0.4);
+    crateBox(sx0 + 3.5, 0, sz0 - 0.8, 1.2, 1.0, 'low', -0.3);
     coverBehind(sx0 - 3, sz0 + 1, 1.3, 1.3, 1.2);
   }
   // 먼 건물(창문에 적 저격수)
@@ -449,6 +487,8 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   group.add(tank, cap);
   boxes.push({ min: new THREE.Vector3(towerX - 2.1, 12.25, towerZ - 2.7), max: new THREE.Vector3(towerX + 2.1, 15.65, towerZ + 1.5), kind: 'solid' });
   bags.build(sctx);
+  if (crateSpots.length) group.add(instancedModel('crate', crateSpots, undefined, shadows));
+  if (barrelSpots.length) group.add(instancedModel('barrel', barrelSpots, barrelTints, shadows));
 
   // ── 먼 배경: 도시 · 야자수 · 바위산 · 구름 ──
   addCity(sctx);

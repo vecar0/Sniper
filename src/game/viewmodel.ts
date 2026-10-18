@@ -58,6 +58,48 @@ export class ViewModel {
     this.root.add(this.rig.group);
   }
 
+  /**
+   * 코드로 만든 저격총 모양을 사실적인 3D 모델로 바꾼다(총구 -Z).
+   * 원래 모양의 크기에 맞춰(길이 · 스코프 위쪽 높이 · 총구 위치) 얹고, 원래 메시는 숨긴다.
+   */
+  replaceRifleVisual(model: THREE.Object3D): void {
+    const rig = this.rig;
+    if (!rig) return;
+    const g = rig.group;
+    const keepScale = g.scale.clone();
+    g.scale.set(1, 1, 1);
+    g.updateMatrixWorld(true);
+    const inv = g.matrixWorld.clone().invert();
+    const target = new THREE.Box3();
+    g.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.geometry.computeBoundingBox();
+      target.union(m.geometry.boundingBox!.clone().applyMatrix4(inv.clone().multiply(m.matrixWorld)));
+      m.visible = false;
+    });
+    const src = new THREE.Box3().setFromObject(model);
+    const size = src.getSize(new THREE.Vector3());
+    const s = (target.max.z - target.min.z) / size.z;
+    model.scale.setScalar(s);
+    model.position.set(-((src.min.x + src.max.x) / 2) * s, target.max.y - src.max.y * s, target.min.z - src.min.z * s);
+    model.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.frustumCulled = false;
+      // 환경 반사를 줄여 무광 총처럼(가까이서 번쩍이지 않게)
+      const mat = (m.material as THREE.MeshStandardMaterial).clone();
+      mat.envMapIntensity = 0.3;
+      mat.metalness = 0.25;
+      mat.roughnessMap = null;
+      mat.roughness = 0.62;
+      mat.color.multiplyScalar(0.5);
+      m.material = mat;
+    });
+    g.add(model);
+    g.scale.copy(keepScale);
+  }
+
   /** 실내 화기 모델을 (다시) 만든다. 같은 구성이면 그대로 둔다 */
   buildGuns(list: { spec: CqbSpec; parts: PartChoice }[]): void {
     const key = list.map((g) => `${g.spec.id}:${Object.values(g.parts).join(',')}`).join('|');

@@ -58,6 +58,9 @@ export class ArenaInput {
     this.on(el, 'contextmenu', (e) => e.preventDefault());
     this.on(document, 'pointerlockchange', () => {
       this.pointerLocked = document.pointerLockElement === this.el;
+      // 잠금이 바뀌는 순간 브라우저가 큰 이동값을 한 번 보내는 경우가 있다 → 잠깐 무시
+      this.enabledAt = Math.max(this.enabledAt, performance.now() - 150);
+      this.lookX = this.lookY = 0;
     });
     this.on(window, 'blur', () => this.releaseAll());
   }

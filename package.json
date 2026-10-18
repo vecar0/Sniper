@@ -19,6 +19,8 @@
     "three": "0.170.0"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
     "@playwright/test": "1.56.1",
     "@types/node": "^22.10.2",
     "@types/three": "0.170.0",
