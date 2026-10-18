@@ -105,5 +105,10 @@
     "tex": 512,
     "_note": "Poly Haven CC0",
     "simplify": 0.025
+  },
+  "pistol": {
+    "polyhaven": "service_pistol",
+    "tex": 1024,
+    "_note": "Poly Haven CC0 – 1인칭 권총"
   }
 }

@@ -78,5 +78,5 @@ test('옥상 저격전 터치: 조이스틱으로 이동 · 숙이기 · 스코�
   await page.waitForFunction(() => (window as any).__arena.game.scopeT > 0.9, null, { timeout: 30_000 });
   await expect(page.locator('.a-touch .a-zoom')).toBeVisible();
   await page.tap('.a-touch .a-swap');
-  await page.waitForFunction(() => (window as any).__arena.game.weapon === 'smg', null, { timeout: 30_000 });
+  await page.waitForFunction(() => (window as any).__arena.game.weapon === 'pistol', null, { timeout: 30_000 });
 });

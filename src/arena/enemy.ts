@@ -79,6 +79,11 @@ export class Enemy {
   private replanT = 0;
   /** 돌격병: 플레이어가 보여 겨누는 중 */
   private aiming = false;
+  /** 쏜 뒤 잠깐은 계속 겨눈 자세(쏠 때마다 자세가 깜빡이지 않게) */
+  private aimHold = 0;
+  /** 실제 움직인 속도(m/s) – 걷기 동작을 실제 이동에 맞춘다(옆걸음 포함) */
+  private vel = 0;
+  private readonly prevPos = new THREE.Vector3();
   private lastPos = new THREE.Vector3();
   cover: CoverPoint | null = null;
   private timer = 0;
@@ -135,6 +140,7 @@ export class Enemy {
 
   spawnAt(p: THREE.Vector3): void {
     this.pos.copy(p);
+    this.prevPos.copy(p);
     this.sync(0);
   }
 
@@ -335,7 +341,7 @@ export class Enemy {
     const want = Math.atan2(dx, dz);
     let dy = want - this.yaw;
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-    this.yaw += dy * Math.min(1, dt * 10);
+    this.yaw += dy * Math.min(1, dt * 6);
     this.animT += dt * (2 + this.spec.speed * speedMul * 1.4);
     this.swing += (0.9 - this.swing) * Math.min(1, dt * 6);
     this.crouchTarget = 0;
@@ -363,7 +369,7 @@ export class Enemy {
     const want = Math.atan2(p.x - this.pos.x, p.z - this.pos.z);
     let dy = want - this.yaw;
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-    this.yaw += dy * Math.min(1, dt * 6);
+    this.yaw += dy * Math.min(1, dt * 4.5);
   }
 
   /** 높은 엄폐물: 옆으로 몸을 내밀었다 숨는다 */
@@ -382,6 +388,7 @@ export class Enemy {
   private shoot(player: PlayerTarget, boxes: Box[], accMul: number): EnemyShot {
     this.flashT = 0.07;
     this.visual?.fire();
+    this.aimHold = 1.5;
     const from = this.eye();
     // 머리·몸통 중 보이는 곳을 노린다
     const headVis = clearLine(boxes, from, player.head);
@@ -418,6 +425,7 @@ export class Enemy {
       this.charge = 0;
       return true;
     }
+    this.visual?.hit();
     // 맞으면 잠깐 움찔하고 엄폐물로
     if (this.state === 'peek' && this.cover) {
       this.state = 'hide';
@@ -452,14 +460,21 @@ export class Enemy {
     r.body.rotation.x = 0;
     r.body.position.y = -c * 0.45;
     const s = Math.sin(this.animT * 2) * this.swing;
+    // 실제 이동 속도(순간이동 · 큰 튐은 무시)
+    if (dt > 0) {
+      const d = Math.hypot(this.pos.x - this.prevPos.x, this.pos.z - this.prevPos.z) / dt;
+      this.vel += (Math.min(d, 12) - this.vel) * Math.min(1, dt * 10);
+    }
+    this.prevPos.copy(this.pos);
+    this.aimHold = Math.max(0, this.aimHold - dt);
     const aiming = this.state === 'peek' || this.state === 'aim' || this.state === 'hide' || (this.state === 'chase' && this.aiming);
     if (this.visual) {
       this.visual.pivot.rotation.x = 0;
       this.visual.update(dt, {
-        moving: this.swing > 0.35,
+        moving: this.vel > 0.35,
         running: this.kind === 'rusher',
-        aiming: aiming || (this.state === 'move' && this.flashT > 0),
-        speed: this.spec.speed,
+        aiming: aiming || this.aimHold > 0,
+        speed: Math.max(0.6, this.vel),
         crouch: c,
         fall: 0,
       });

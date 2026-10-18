@@ -47,7 +47,7 @@ export interface KillInfo {
   distance: number;
   score: number;
   combo: number;
-  weapon: 'sniper' | 'smg';
+  weapon: 'sniper' | 'pistol';
 }
 
 export interface ArenaResult {
@@ -73,7 +73,7 @@ export interface ArenaHud {
   hp: number;
   hurt: number;
   hurtDirs: number[];
-  weapon: 'sniper' | 'smg';
+  weapon: 'sniper' | 'pistol';
   weaponName: string;
   inMag: number;
   reserve: number | null;
@@ -147,11 +147,11 @@ export class ArenaGame {
   private shake = 0;
 
   // 무기
-  weapon: 'sniper' | 'smg' = 'sniper';
+  weapon: 'sniper' | 'pistol' = 'sniper';
   sniperMag: number = TUNING.sniper.mag;
   private boltT = 0;
   private reloadT = 0;
-  private smg: CqbGun;
+  private pistol: CqbGun;
   scoped = false;
   scopeT = 0;
   zoomIndex = 0;
@@ -226,9 +226,22 @@ export class ArenaGame {
     this.viewModel.build(getWeapon('k65'), false); // 검은 저격총(컨셉 아트)
     const rifleModel = getModel('rifle');
     if (rifleModel) this.viewModel.replaceRifleVisual(rifleModel.scene.clone());
-    const smgParts = { muzzle: 'comp', optic: 'dot', mag: 'ext', under: 'grip' } as const;
-    this.smg = new CqbGun('v45', { ...smgParts });
-    this.viewModel.buildGuns([{ spec: getCqb('v45'), parts: { ...smgParts } }]);
+    const pistolParts = { muzzle: 'none', optic: 'iron', mag: 'ext', under: 'laser' } as const;
+    this.pistol = new CqbGun('p9', { ...pistolParts });
+    this.viewModel.buildGuns([{ spec: getCqb('p9'), parts: { ...pistolParts } }]);
+    // 권총: Poly Haven 실사 권총(진열용 파일에서 한 자루만 – 이름이 _a인 부품) · 총구 +X → -Z
+    const pistolModel = getModel('pistol');
+    if (pistolModel) {
+      const pm = pistolModel.scene.clone();
+      pm.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh && !/_a$/.test(o.name)) o.visible = false;
+      });
+      for (const o of [...pm.children]) if (!o.visible) o.removeFromParent();
+      const holder = new THREE.Group();
+      pm.rotation.y = Math.PI / 2;
+      holder.add(pm);
+      this.viewModel.replaceGunVisual('p9', holder, 0.28);
+    }
     this.viewModel.setActive('rifle');
     this.viewModel.setLighting(0xffd6b0, 0x9fb4c4, 0x5a4a3c, 0.8);
     this.glintMat = new THREE.SpriteMaterial({ map: glowTexture('#ffffff'), color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
@@ -293,7 +306,7 @@ export class ArenaGame {
     this.viewModel.setActive('rifle');
     this.sniperMag = TUNING.sniper.mag;
     this.boltT = this.reloadT = 0;
-    this.smg.reset();
+    this.pistol.reset();
     this.scoped = false;
     this.scopeT = 0;
     this.zoomIndex = 0;
@@ -424,8 +437,8 @@ export class ArenaGame {
 
   /** 현재 화면 시야각 */
   private fovNow(): number {
-    const z = this.weapon === 'sniper' ? TUNING.sniper.zooms[this.zoomIndex] : this.smg.stats.adsZoom;
-    const k = this.weapon === 'sniper' ? this.scopeT : this.smg.ads;
+    const z = this.weapon === 'sniper' ? TUNING.sniper.zooms[this.zoomIndex] : this.pistol.stats.adsZoom;
+    const k = this.weapon === 'sniper' ? this.scopeT : this.pistol.ads;
     return TUNING.fov / (1 + (z - 1) * k);
   }
 
@@ -490,7 +503,7 @@ export class ArenaGame {
     this.crouchT += ((this.crouched ? 1 : 0) - this.crouchT) * Math.min(1, dt * 10);
     void ex;
     // ── 이동(옥상 · 건물 안 · 밖 어디든 – 벽에 막히고 계단으로 오르내림) ──
-    const scopedNow = this.scopeT > 0.5 || this.smg.ads > 0.5;
+    const scopedNow = this.scopeT > 0.5 || this.pistol.ads > 0.5;
     const speed = (this.crouched ? TUNING.crouchWalk : TUNING.walk) * (scopedNow ? 0.45 : 1);
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
     const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
@@ -574,7 +587,7 @@ export class ArenaGame {
       const bonus = 300 * this.wave;
       this.score += bonus;
       this.hp = Math.min(TUNING.hp, this.hp + 35);
-      this.smg.reserve = this.smg.stats.reserve;
+      this.pistol.reserve = this.pistol.stats.reserve;
       this.breakT = 4;
       this.audio.play('success', { volume: 0.6 });
       this.hooks?.onWave(this.wave + 1, bonus);
@@ -600,13 +613,13 @@ export class ArenaGame {
   }
 
   private swapWeapon(): void {
-    this.weapon = this.weapon === 'sniper' ? 'smg' : 'sniper';
+    this.weapon = this.weapon === 'sniper' ? 'pistol' : 'sniper';
     this.scoped = false;
     this.scopeT = 0;
     this.reloadT = 0;
-    this.smg.holster();
+    this.pistol.holster();
     this.swapT = 0;
-    this.viewModel.setActive(this.weapon === 'sniper' ? 'rifle' : 'v45');
+    this.viewModel.setActive(this.weapon === 'sniper' ? 'rifle' : 'p9');
     this.audio.play('reload', { weight: 0.3, volume: 0.6 });
   }
 
@@ -627,7 +640,7 @@ export class ArenaGame {
   }
 
   private eyeHeight(): number {
-    const scoped = this.scopeT > 0.3 || this.smg.ads > 0.3;
+    const scoped = this.scopeT > 0.3 || this.pistol.ads > 0.3;
     const crouchEye = scoped ? TUNING.peekEye : TUNING.crouchEye;
     return TUNING.standEye + (crouchEye - TUNING.standEye) * this.crouchT;
   }
@@ -673,12 +686,12 @@ export class ArenaGame {
       }
       if (!inp.fireDown) this.fireLatch = false;
     } else {
-      if (inp.consume('reload') && this.smg.startReload()) this.audio.play('reload', { weight: 0.8 });
+      if (inp.consume('reload') && this.pistol.startReload()) this.audio.play('reload', { weight: 0.8 });
       const wantAds = this.scoped || inp.scopeHeld;
-      const before = this.smg.reloading;
-      this.smg.update(dt, wantAds, this.swapT >= 1);
-      if (this.swapT >= 1 && this.smg.trigger(inp.fireDown)) this.fireSmg(moving);
-      if (!before && this.smg.reloading) this.audio.play('reload', { weight: 0.8 });
+      const before = this.pistol.reloading;
+      this.pistol.update(dt, wantAds, this.swapT >= 1);
+      if (this.swapT >= 1 && this.pistol.trigger(inp.fireDown)) this.firePistol(moving);
+      if (!before && this.pistol.reloading) this.audio.play('reload', { weight: 0.8 });
     }
   }
   private fireLatch = false;
@@ -715,15 +728,15 @@ export class ArenaGame {
     this.addTracer(this.muzzlePos(), hit, this.tracerMat, 0.35);
   }
 
-  private fireSmg(moving: boolean): void {
+  private firePistol(moving: boolean): void {
     this.stats.shots++;
-    const spread = this.smg.spread(moving, this.crouched);
+    const spread = this.pistol.spread(moving, this.crouched);
     const { o, d } = this.aimRay(spread);
-    const hit = this.resolveShot(o, d, 'smg');
+    const hit = this.resolveShot(o, d, 'pistol');
     this.audio.play('shot', { weight: 0.35, volume: 0.55, pitch: 1.4 });
     this.viewModel.kick(2, true);
-    this.pitch += (this.smg.stats.recoil * 0.5 * Math.PI) / 180;
-    this.yaw += (((Math.random() - 0.5) * this.smg.stats.recoil * 0.4) * Math.PI) / 180;
+    this.pitch += (this.pistol.stats.recoil * 0.5 * Math.PI) / 180;
+    this.yaw += (((Math.random() - 0.5) * this.pistol.stats.recoil * 0.4) * Math.PI) / 180;
     if (Math.random() < 0.5) this.addTracer(this.muzzlePos(), hit, this.tracerMat, 0.12);
   }
 
@@ -736,7 +749,7 @@ export class ArenaGame {
   }
 
   /** 탄 판정: 가장 가까운 벽 또는 적. 맞은 지점 반환 */
-  private resolveShot(o: THREE.Vector3, d: THREE.Vector3, weapon: 'sniper' | 'smg'): THREE.Vector3 {
+  private resolveShot(o: THREE.Vector3, d: THREE.Vector3, weapon: 'sniper' | 'pistol'): THREE.Vector3 {
     const max = 600;
     const wall = rayBoxes(this.map.boxes, o, d, max);
     let best: { e: Enemy; t: number; zone: 'head' | 'body' | 'leg' } | null = null;
@@ -753,7 +766,7 @@ export class ArenaGame {
       const head = best.zone === 'head';
       let dmg: number;
       if (weapon === 'sniper') dmg = head ? TUNING.sniper.head : best.zone === 'leg' ? TUNING.sniper.leg : TUNING.sniper.body;
-      else dmg = this.smg.stats.damage * (head ? this.smg.stats.headMul : best.zone === 'leg' ? 0.75 : 1);
+      else dmg = this.pistol.stats.damage * (head ? this.pistol.stats.headMul : best.zone === 'leg' ? 0.75 : 1);
       const dist = o.distanceTo(point);
       const lastOfWave = this.toSpawn.length === 0 && this.enemies.filter((x) => x.alive).length === 1;
       const killed = e.damage(dmg, d, head);
@@ -781,7 +794,7 @@ export class ArenaGame {
     return p;
   }
 
-  private onKill(e: Enemy, head: boolean, dist: number, weapon: 'sniper' | 'smg'): void {
+  private onKill(e: Enemy, head: boolean, dist: number, weapon: 'sniper' | 'pistol'): void {
     this.stats.kills++;
     if (head) this.stats.headshots++;
     this.stats.longest = Math.max(this.stats.longest, dist);
@@ -1015,7 +1028,7 @@ export class ArenaGame {
       const rel = this.reloadT > 0 ? 1 - this.reloadT / TUNING.sniper.reload : -1;
       this.viewModel.update(real, this.scopeT, bolt, rel, 0, 0, sway);
     } else {
-      this.viewModel.updateGun(real, this.smg.ads, this.swapT, this.smg.reloadProgress, sway);
+      this.viewModel.updateGun(real, this.pistol.ads, this.swapT, this.pistol.reloadProgress, sway);
     }
   }
 
@@ -1039,7 +1052,7 @@ export class ArenaGame {
       if (on && this.scopeT < 0.5) markers.push({ x: sx, y: sy, kind: e.kind, roof: e.state === 'chase' && e.pos.distanceTo(this.pos) < 25 });
     }
     const fovRad = (this.camera.fov * Math.PI) / 180;
-    const spreadDeg = this.weapon === 'sniper' ? (this.scopeT > 0.7 ? 0 : TUNING.sniper.hipSpreadDeg) : this.smg.spread(this.moveAmt > 0.3, this.crouched);
+    const spreadDeg = this.weapon === 'sniper' ? (this.scopeT > 0.7 ? 0 : TUNING.sniper.hipSpreadDeg) : this.pistol.spread(this.moveAmt > 0.3, this.crouched);
     const spreadPx = (Math.tan((spreadDeg * Math.PI) / 180) / Math.tan(fovRad / 2)) * (H / 2);
     const swayAmp = this.weapon === 'sniper' ? this.scopeT * (this.crouched ? 0.0009 : 0.0018) : 0;
     return {
@@ -1047,10 +1060,10 @@ export class ArenaGame {
       hurt: this.hurtFlash,
       hurtDirs: this.hurtDirs.map((h) => h.dir),
       weapon: this.weapon,
-      weaponName: this.weapon === 'sniper' ? 'R-308 저격총' : 'V45 기관단총',
-      inMag: this.weapon === 'sniper' ? this.sniperMag : this.smg.inMag,
-      reserve: this.weapon === 'sniper' ? null : this.smg.reserve,
-      reloading: this.weapon === 'sniper' ? (this.reloadT > 0 ? 1 - this.reloadT / TUNING.sniper.reload : -1) : this.smg.reloadProgress,
+      weaponName: this.weapon === 'sniper' ? 'R-308 저격총' : 'P9 권총',
+      inMag: this.weapon === 'sniper' ? this.sniperMag : this.pistol.inMag,
+      reserve: this.weapon === 'sniper' ? null : this.pistol.reserve,
+      reloading: this.weapon === 'sniper' ? (this.reloadT > 0 ? 1 - this.reloadT / TUNING.sniper.reload : -1) : this.pistol.reloadProgress,
       bolting: this.weapon === 'sniper' && this.boltT > 0,
       scopeT: this.cam ? 0 : this.scopeT,
       zoom: TUNING.sniper.zooms[this.zoomIndex],

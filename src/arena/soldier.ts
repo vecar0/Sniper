@@ -373,6 +373,8 @@ export interface SoldierVisual {
   animatedDeath: boolean;
   /** 한 발 쏠 때 */
   fire(): void;
+  /** 맞았을 때(움찔) */
+  hit(): void;
   update(dt: number, o: { moving: boolean; running: boolean; aiming: boolean; speed: number; crouch: number; fall: number }): void;
 }
 
@@ -430,6 +432,12 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
   };
   const shoot = act(part(C('Ranged_2H_Shoot'), true), true);
   if (shoot) shoot.stop();
+  // 맞았을 때 움찔(몸통 · 머리만 – 다리는 하던 동작 그대로)
+  const hitClip = part(C('Hit_A'), true);
+  if (hitClip) hitClip.tracks = hitClip.tracks.filter((t) => /^(spine|chest|head)/.test(t.name));
+  const hitAct = act(hitClip, true);
+  if (hitAct) hitAct.stop();
+  let breathT = Math.random() * 10;
   const death = act(C(Math.random() < 0.5 ? 'Death_A' : 'Death_B') ?? null, true);
   if (death) death.stop();
   const w = { idle: 1, walk: 0, run: 0, crouch: 0, aim: 1, carry: 0 };
@@ -452,7 +460,14 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
     g.rotation.y = Math.PI; // 총구 -Z → +Z
     g.position.z = 0.12; // 손잡이(뒤쪽)가 오른손에 오게
     g.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.castShadow = true;
+      // 검은 무광 총
+      const mat = (m.material as THREE.MeshStandardMaterial).clone();
+      mat.color.multiplyScalar(0.35);
+      mat.envMapIntensity = 0.3;
+      m.material = mat;
     });
     gun = new THREE.Group();
     gun.add(g);
@@ -484,6 +499,12 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
       shoot.weight = 1;
       shoot.play();
     },
+    hit() {
+      if (!hitAct || dying) return;
+      hitAct.reset();
+      hitAct.weight = 1;
+      hitAct.play();
+    },
     update(dt, o) {
       if (o.fall > 0 && !dying && death) {
         dying = true;
@@ -511,6 +532,14 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
         if (lower.run) lower.run.timeScale = THREE.MathUtils.clamp(o.speed / runSpeed, 0.6, 2.2);
       }
       mixer.update(dt);
+      if (hitAct && !hitAct.isRunning()) hitAct.weight = 0;
+      // 숨쉬기: 서서 겨눌 때 몸통이 아주 조금 오르내리고 흔들린다(완전히 굳어 보이지 않게)
+      breathT += dt;
+      if (!dying && !o.moving) {
+        const sp = bones.get('spine'), ch = bones.get('chest');
+        if (sp) sp.rotation.x += Math.sin(breathT * 1.6) * 0.018;
+        if (ch) ch.rotation.z += Math.sin(breathT * 0.7) * 0.012;
+      }
       // 겨눈 채 걷기 → 힉스필드 동작의 뼈 방향을 옮겨 준다(엉덩이 높이도 그 동작대로)
       const wantMeshy = !dying && meshy && o.aiming && o.moving && !o.running && o.crouch < 0.3 ? 1 : 0;
       wMeshy += (wantMeshy - wMeshy) * Math.min(1, dt * 6);

@@ -62,10 +62,18 @@ export class ViewModel {
    * 코드로 만든 저격총 모양을 사실적인 3D 모델로 바꾼다(총구 -Z).
    * 원래 모양의 크기에 맞춰(길이 · 스코프 위쪽 높이 · 총구 위치) 얹고, 원래 메시는 숨긴다.
    */
-  replaceRifleVisual(model: THREE.Object3D): void {
-    const rig = this.rig;
-    if (!rig) return;
-    const g = rig.group;
+  replaceRifleVisual(model: THREE.Object3D, darken = 0.26): void {
+    if (this.rig) this.fitModel(this.rig.group, model, darken);
+  }
+
+  /** 실내 화기(권총 등)의 모양을 사실적인 모델로 바꾼다(총구 -Z로 돌려서 넘길 것) */
+  replaceGunVisual(id: string, model: THREE.Object3D, darken = 0.45): void {
+    const g = this.guns.get(id);
+    if (g) this.fitModel(g.group, model, darken);
+  }
+
+  /** 원래 모양의 크기(길이 · 위쪽 높이 · 총구 위치)에 맞춰 모델을 얹고 원래 메시는 숨긴다. darken: 색을 이만큼 곱해 검게 */
+  private fitModel(g: THREE.Group, model: THREE.Object3D, darken: number): void {
     const keepScale = g.scale.clone();
     g.scale.set(1, 1, 1);
     g.updateMatrixWorld(true);
@@ -73,7 +81,7 @@ export class ViewModel {
     const target = new THREE.Box3();
     g.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
+      if (!m.isMesh || !m.visible) return;
       m.geometry.computeBoundingBox();
       target.union(m.geometry.boundingBox!.clone().applyMatrix4(inv.clone().multiply(m.matrixWorld)));
       m.visible = false;
@@ -81,19 +89,19 @@ export class ViewModel {
     const src = new THREE.Box3().setFromObject(model);
     const size = src.getSize(new THREE.Vector3());
     const s = (target.max.z - target.min.z) / size.z;
-    model.scale.setScalar(s);
-    model.position.set(-((src.min.x + src.max.x) / 2) * s, target.max.y - src.max.y * s, target.min.z - src.min.z * s);
+    model.scale.multiplyScalar(s);
+    model.position.add(new THREE.Vector3(-((src.min.x + src.max.x) / 2) * s, target.max.y - src.max.y * s, target.min.z - src.min.z * s));
     model.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
       m.frustumCulled = false;
-      // 환경 반사를 줄여 무광 총처럼(가까이서 번쩍이지 않게)
+      // 환경 반사를 줄이고 색을 낮춰 무광의 검은 총처럼(가까이서 번쩍이지 않게)
       const mat = (m.material as THREE.MeshStandardMaterial).clone();
-      mat.envMapIntensity = 0.3;
-      mat.metalness = 0.25;
+      mat.envMapIntensity = 0.25;
+      mat.metalness = 0.3;
       mat.roughnessMap = null;
-      mat.roughness = 0.62;
-      mat.color.multiplyScalar(0.5);
+      mat.roughness = 0.55;
+      mat.color.multiplyScalar(darken);
       m.material = mat;
     });
     g.add(model);

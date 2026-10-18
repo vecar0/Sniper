@@ -527,7 +527,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   const nearTrees: [number, number][] = [];
   for (let z = -26; z >= -122; z -= 13) nearTrees.push([-70 - ((z * 7) & 3), z], [71 + ((z * 5) & 3), z - 5]);
   for (const p of [[-16, 9], [17, 7], [-30, -14], [30, -12], [-58, -110], [56, -22], [-58, -18]] as [number, number][]) nearTrees.push(p);
-  if (getModel('quiver')) {
+  if (getModel('quiver') && quality !== 'low') {
     group.add(instancedModel('quiver', nearTrees.map(([x, z], i) => new THREE.Matrix4().makeTranslation(x, 0, z).multiply(new THREE.Matrix4().makeRotationY(i * 2.4)).multiply(fitTransform('quiver', 0, 4.5 + (i % 4) * 0.8, 0, true))), undefined, shadows));
     for (const [x, z] of nearTrees) collider(x, 0, z, 0.6, 4, 0.6, 'solid');
   } else palmSpots.push(...nearTrees);
@@ -540,7 +540,8 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   for (const [x, z] of palmSpots) if (Math.abs(x) < 80 && z > -130) collider(x, 0, z, 0.5, 6, 0.5, 'solid');
   addMountains(sctx);
   // 바위 언덕(Poly Haven 절벽 바위): 도시 너머 · 기지 양옆에 크게
-  if (getModel('cliffA') && getModel('cliffB')) {
+  // 저사양(low)에서는 생략 – 폴리곤이 많다
+  if (getModel('cliffA') && getModel('cliffB') && quality !== 'low') {
     const rocks: Record<'cliffA' | 'cliffB', THREE.Matrix4[]> = { cliffA: [], cliffB: [] };
     let seed = 41;
     const rr = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
