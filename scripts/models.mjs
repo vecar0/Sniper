@@ -15,7 +15,7 @@ mkdirSync('public/models', { recursive: true });
 const gt = (...args) => execFileSync('npx', ['--yes', '@gltf-transform/cli@4', ...args], { stdio: 'inherit' });
 
 const done = [];
-for (const [id, { url, tex, animOnly }] of Object.entries(list)) {
+for (const [id, { url, tex, animOnly, keep }] of Object.entries(list)) {
   if (id.startsWith('_')) continue;
   const raw = join(work, `${id}.raw.glb`);
   if (!existsSync(raw)) {
@@ -30,6 +30,15 @@ for (const [id, { url, tex, animOnly }] of Object.entries(list)) {
     const doc = await io.read(raw);
     for (const n of doc.getRoot().listNodes()) n.setMesh(null).setSkin(null);
     for (const m of doc.getRoot().listMeshes()) m.dispose();
+    // 필요한 동작만 남긴다
+    if (keep) {
+      for (const a of doc.getRoot().listAnimations()) {
+        if (keep.includes(a.getName())) continue;
+        for (const c of a.listChannels()) c.dispose();
+        for (const sm of a.listSamplers()) sm.dispose();
+        a.dispose();
+      }
+    }
     await doc.transform(prune());
     await io.write(`public/models/${id}.glb`, doc);
     console.log(`${id}: ${(statSync(raw).size / 1e6).toFixed(1)}MB → ${(statSync(`public/models/${id}.glb`).size / 1e6).toFixed(2)}MB (애니메이션만)`);

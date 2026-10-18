@@ -381,6 +381,7 @@ export class Enemy {
 
   private shoot(player: PlayerTarget, boxes: Box[], accMul: number): EnemyShot {
     this.flashT = 0.07;
+    this.visual?.fire();
     const from = this.eye();
     // 머리·몸통 중 보이는 곳을 노린다
     const headVis = clearLine(boxes, from, player.head);
@@ -442,8 +443,8 @@ export class Enemy {
       r.legR.rotation.x = -e * 0.2;
       if (r.gun) r.gun.visible = this.fall < 0.3;
       if (this.visual) {
-        this.visual.pivot.rotation.x = -e * (Math.PI / 2 - 0.08);
-        this.visual.update(dt, { moving: false, aiming: true, speed: 0, crouch: this.crouch * (1 - e), fall: Math.max(0.001, this.fall) });
+        if (!this.visual.animatedDeath) this.visual.pivot.rotation.x = -e * (Math.PI / 2 - 0.08);
+        this.visual.update(dt, { moving: false, running: false, aiming: true, speed: 0, crouch: 0, fall: Math.max(0.001, this.fall) });
       }
       return;
     }
@@ -454,7 +455,14 @@ export class Enemy {
     const aiming = this.state === 'peek' || this.state === 'aim' || this.state === 'hide' || (this.state === 'chase' && this.aiming);
     if (this.visual) {
       this.visual.pivot.rotation.x = 0;
-      this.visual.update(dt, { moving: this.swing > 0.35, aiming: aiming || (this.state === 'move' && this.flashT > 0), speed: this.spec.speed, crouch: c, fall: 0 });
+      this.visual.update(dt, {
+        moving: this.swing > 0.35,
+        running: this.kind === 'rusher',
+        aiming: aiming || (this.state === 'move' && this.flashT > 0),
+        speed: this.spec.speed,
+        crouch: c,
+        fall: 0,
+      });
     }
     r.legL.rotation.x = s - c * 1.4;
     r.legR.rotation.x = -s - c * 0.4;
