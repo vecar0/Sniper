@@ -3,6 +3,8 @@
  * 판정(충돌 · 엄폐)과는 상관없는 "보이기만 하는" 것들이라 인스턴싱으로 한 번에 그린다.
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { surfaceMaterial, worldUvBox } from './textures';
 
 export interface SceneryCtx {
   group: THREE.Group;
@@ -24,14 +26,12 @@ const inPlay = (x: number, z: number) => Math.abs(x) < 82 && z > -150 && z < 30;
 export function addCity(ctx: SceneryCtx): void {
   const r = rng(11);
   const N = ctx.quality === 'low' ? 320 : 560;
-  const geo = new THREE.BoxGeometry(1, 1, 1);
-  geo.translate(0, 0.5, 0);
-  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-  ctx.disposables.push(geo, mat);
-  const mesh = new THREE.InstancedMesh(geo, mat, N);
-  const palette = [0xd9c3a1, 0xcdb18b, 0xe4d4b6, 0xc2a37f, 0xd6b690, 0xb3a28c, 0xe8dcc6, 0xa98d70];
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
+  // 건물마다 실제 크기의 상자(창문 무늬 PBR 텍스처가 늘어나지 않게 월드 UV)를 만들어 하나로 합친다 → 한 번에 그림
+  // 멀리서 보이는 밝은 회반죽 벽(어두운 창문 무늬는 역광에서 새까맣게 보여서)
+  const mat = surfaceMaterial('plaster');
+  mat.vertexColors = true;
+  const palette = [0xe8d8c0, 0xd8c4a4, 0xf0e4d0, 0xcdb594, 0xe0c8a8, 0xbfb2a0, 0xf4ece0, 0xc0a888];
+  const parts: THREE.BufferGeometry[] = [];
   const c = new THREE.Color();
   let i = 0;
   while (i < N) {
@@ -42,18 +42,32 @@ export function addCity(ctx: SceneryCtx): void {
     const tower = r() < 0.05;
     const w = 6 + r() * 14, d = 6 + r() * 14;
     const h = tower ? 24 + r() * 26 : 3.5 + r() * r() * 14;
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), t + (r() - 0.5) * 0.3);
-    m.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(w, h, d));
-    mesh.setMatrixAt(i, m);
-    mesh.setColorAt(i, c.setHex(palette[Math.floor(r() * palette.length)]));
+    const g = worldUvBox(w, h, d, 9);
+    g.translate(0, h / 2, 0);
+    g.rotateY(t + (r() - 0.5) * 0.3);
+    g.translate(x, 0, z);
+    c.setHex(palette[Math.floor(r() * palette.length)]);
+    const n = g.getAttribute('position').count;
+    const col = new Float32Array(n * 3);
+    for (let k = 0; k < n; k++) col.set([c.r, c.g, c.b], k * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    parts.push(g);
     i++;
   }
+  const city = mergeGeometries(parts);
+  for (const g of parts) g.dispose();
+  ctx.disposables.push(city, mat);
+  const mesh = new THREE.Mesh(city, mat);
+  mesh.receiveShadow = false;
   ctx.group.add(mesh);
+  const m = new THREE.Matrix4();
   // 굴뚝 · 급수탑 실루엣
   const chimGeo = new THREE.CylinderGeometry(1.2, 1.6, 1, 8);
   chimGeo.translate(0, 0.5, 0);
   ctx.disposables.push(chimGeo);
-  const chim = new THREE.InstancedMesh(chimGeo, mat, 10);
+  const chimMat = new THREE.MeshStandardMaterial({ color: 0x9a8a78, roughness: 0.9 });
+  ctx.disposables.push(chimMat);
+  const chim = new THREE.InstancedMesh(chimGeo, chimMat, 10);
   for (let k = 0; k < 10; k++) {
     const t = Math.PI + 0.3 + r() * (Math.PI - 0.6);
     const rad = 200 + r() * 120;
@@ -122,6 +136,7 @@ export function addMountains(ctx: SceneryCtx): void {
       heights.push(Math.max(8, h + (rr() - 0.5) * 8));
     }
     const verts: number[] = [];
+    const uvs: number[] = [];
     const idx: number[] = [];
     for (let i = 0; i <= seg; i++) {
       const t = (i / seg) * Math.PI * 2;
@@ -131,6 +146,7 @@ export function addMountains(ctx: SceneryCtx): void {
         const rad = L.r + (1 - v) * 60 + (rr() - 0.5) * 14 * (j > 0 && j < rows ? 1 : 0);
         const y = -6 + heights[i] * Math.pow(v, 0.8) + (j > 0 && j < rows ? (rr() - 0.5) * 6 : 0);
         verts.push(Math.cos(t) * rad, y, -60 + Math.sin(t) * rad);
+        uvs.push((t * L.r) / 45, y / 45);
       }
     }
     for (let i = 0; i < seg; i++) {
@@ -141,10 +157,12 @@ export function addMountains(ctx: SceneryCtx): void {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    // 멀리 있는 산은 대기에 묻혀 밝게 보인다 → 자체 발광으로 그늘을 띄운다
-    const mat = new THREE.MeshLambertMaterial({ color: L.color, emissive: new THREE.Color(L.color).multiplyScalar(0.38), flatShading: true, fog: false, side: THREE.DoubleSide });
+    // 바위 PBR 텍스처 + 안개(멀수록 대기에 묻혀 흐릿하게)
+    const mat = surfaceMaterial('rock', { tint: L.color });
+    mat.side = THREE.DoubleSide;
     ctx.disposables.push(g, mat);
     ctx.group.add(new THREE.Mesh(g, mat));
   }

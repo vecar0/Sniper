@@ -224,7 +224,7 @@ function part(clip: THREE.AnimationClip | undefined, upper: boolean): THREE.Anim
 /** 겨누기 때 두 손 목표(몸 기준): 오른손 = 손잡이, 왼손 = 총열 덮개. 뛰며 들고 갈 땐 가슴 앞 비스듬히 */
 const GRIP = {
   aim: { r: new THREE.Vector3(-0.07, 1.33, 0.22), l: new THREE.Vector3(-0.03, 1.33, 0.45) },
-  carry: { r: new THREE.Vector3(-0.1, 1.12, 0.22), l: new THREE.Vector3(0.1, 1.28, 0.36) },
+  carry: { r: new THREE.Vector3(-0.12, 1.16, 0.2), l: new THREE.Vector3(-0.03, 1.05, 0.44) }, // 로우 레디: 총구를 앞 아래로
 };
 const POLE = { r: new THREE.Vector3(-1, -1.2, -0.2), l: new THREE.Vector3(0.7, -1.2, -0.2) };
 const t1 = new THREE.Vector3(), t2 = new THREE.Vector3(), t3 = new THREE.Vector3();
@@ -340,6 +340,30 @@ class MeshyMotion {
   }
 }
 
+/** 동작 한 주기 동안 발이 땅을 미는 속도(m/s) – 이동 속도에 맞춰 재생 빠르기를 정해 발이 미끄러지지 않게 */
+const strideSpeed = new Map<string, number>();
+function measureStride(T: Template, clip: THREE.AnimationClip): number {
+  const hit = strideSpeed.get(clip.name);
+  if (hit) return hit;
+  const g = cloneSkinned(T.group) as THREE.Group;
+  const foot = g.getObjectByName('footl')!;
+  const mixer = new THREE.AnimationMixer(g);
+  mixer.clipAction(clip).play();
+  let mn = Infinity, mx = -Infinity;
+  const v = new THREE.Vector3();
+  for (let k = 0; k <= 24; k++) {
+    mixer.setTime((clip.duration * k) / 24);
+    g.updateMatrixWorld(true);
+    foot.getWorldPosition(v);
+    mn = Math.min(mn, v.z);
+    mx = Math.max(mx, v.z);
+  }
+  // 한 주기에 발은 (앞뒤 폭)만큼 두 번 뒤로 민다 → 속도 = 2 × 폭 / 주기
+  const sp = Math.max(0.5, (2 * (mx - mn)) / clip.duration);
+  strideSpeed.set(clip.name, sp);
+  return sp;
+}
+
 export interface SoldierVisual {
   root: THREE.Group;
   /** 쓰러질 때 발 기준으로 기우는 축(동작이 있으면 쓰지 않음) */
@@ -391,6 +415,9 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
     return a;
   };
   const C = (n: string) => T.clips.get(n);
+  const walkClip = part(C('Walking_A'), false), runClip = part(C('Running_HoldingRifle'), false);
+  const walkSpeed = walkClip ? measureStride(T, walkClip) : 3;
+  const runSpeed = runClip ? measureStride(T, runClip) : 6;
   const lower = {
     idle: act(part(C('Idle_A'), false)),
     walk: act(part(C('Walking_A'), false)),
@@ -441,6 +468,7 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
   const cr = chain('r'), clft = chain('l');
   const arms = cr && clft ? { r: cr, l: clft } : null;
   const hipsBone = bones.get('hips');
+  const footL = bones.get('footl'), footR = bones.get('footr');
   const hipsY = () => hipsBone?.position.y ?? J.hips[1];
   const pr = new THREE.Vector3(), pl = new THREE.Vector3(), fwd = new THREE.Vector3(), upv = new THREE.Vector3(0, 1, 0);
   const mtx = new THREE.Matrix4();
@@ -479,8 +507,8 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
         if (shoot && !shoot.isRunning()) shoot.weight = 0;
         if (upper.aim) upper.aim.weight = w.aim * (shoot?.isRunning() ? 0 : 1);
         if (upper.carry) upper.carry.weight = w.carry;
-        if (lower.walk) lower.walk.timeScale = Math.max(0.7, o.speed / 3.2);
-        if (lower.run) lower.run.timeScale = Math.max(0.7, o.speed / 6);
+        if (lower.walk) lower.walk.timeScale = THREE.MathUtils.clamp(o.speed / walkSpeed, 0.6, 2.2);
+        if (lower.run) lower.run.timeScale = THREE.MathUtils.clamp(o.speed / runSpeed, 0.6, 2.2);
       }
       mixer.update(dt);
       // 겨눈 채 걷기 → 힉스필드 동작의 뼈 방향을 옮겨 준다(엉덩이 높이도 그 동작대로)
@@ -497,6 +525,14 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
           bone.getWorldPosition(tgt3).add(dl);
           aimBone(bone, child, tgt3, wMeshy);
         }
+      }
+      // 발 붙이기: KayKit 몸 비율 때문에 엉덩이가 높게(또는 낮게) 오면 발이 뜨거나 묻힌다 → 낮은 발이 땅에 닿게 엉덩이를 맞춘다
+      if (!dying && hipsBone && footL && footR) {
+        inner.updateMatrixWorld(true);
+        const yl = pivot.worldToLocal(footL.getWorldPosition(t1)).y;
+        const yr = pivot.worldToLocal(footR.getWorldPosition(t2)).y;
+        hipsBone.position.y += ankleY - Math.min(yl, yr);
+        inner.updateMatrixWorld(true);
       }
       // 두 손을 소총에: KayKit 캐릭터는 팔이 길어서 그대로 두면 손이 벌어진다 → 2관절 IK로 맞춘다
       if (!dying && arms) {

@@ -15,7 +15,7 @@ import { Enemy, rayEnemy, SPECS, type EnemyKind, type PlayerTarget } from './ene
 import type { ArenaInput } from './input';
 import { groundAt, moveWithCollision } from './building';
 import { getModel } from './models';
-import { buildMap, clearLine, rayBoxes, ROOF_Y, SUN_DIR, WORLD, type ArenaMap, type CoverPoint } from './map';
+import { buildMap, clearLine, rayBoxes, ROOF_Y, SKY, SUN_DIR, WORLD, type ArenaMap, type CoverPoint } from './map';
 
 export const TUNING = {
   fov: 70,
@@ -200,8 +200,22 @@ export class ArenaGame {
     container.appendChild(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(TUNING.fov, 1, 0.08, 1500);
     this.vmCamera = new THREE.PerspectiveCamera(TUNING.fov, 1, 0.01, 10);
-    this.scene.fog = new THREE.Fog(0xe9c9a0, 140, 640);
-    this.scene.add(buildSky());
+    this.scene.fog = new THREE.Fog(0xcfc3b1, 160, 900);
+    // 하늘: 실사 사진을 배경으로, 같은 사진으로 주변광(환경맵)도 만든다. 사진을 못 불러오면 그라데이션 하늘
+    const skyFallback = buildSky();
+    this.scene.add(skyFallback);
+    new THREE.TextureLoader().load(SKY.url, (tex) => {
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.scene.background = tex;
+      this.scene.backgroundRotation.set(0, SKY.yaw, 0);
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      this.scene.environment = pm.fromEquirectangular(tex).texture;
+      this.scene.environmentRotation.set(0, SKY.yaw, 0);
+      this.scene.environmentIntensity = 0.55;
+      pm.dispose();
+      skyFallback.removeFromParent();
+    });
     this.map = buildMap(quality);
     this.scene.add(this.map.group);
     this.fx = new Effects((x, z) => this.map.floorAt(x, z, this.pos.y + 0.5), 0xb59a72);

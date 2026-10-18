@@ -6,10 +6,10 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-export type ModelId = 'soldier' | 'rig' | 'animRanged' | 'animMove' | 'animMoveAdv' | 'animGeneral' | 'animShoot' | 'rifle' | 'container' | 'sandbags' | 'crate' | 'barrel';
+export type ModelId = 'soldier' | 'rig' | 'animRanged' | 'animMove' | 'animMoveAdv' | 'animGeneral' | 'animShoot' | 'barrier' | 'aircon' | 'shutter' | 'cliffA' | 'cliffB' | 'quiver' | 'rifle' | 'container' | 'sandbags' | 'crate' | 'barrel';
 
 /** 실제 파일이 들어 있는 모델(scripts/models.py가 갱신) */
-export const MODELS_AVAILABLE: ModelId[] = ['rifle', 'container', 'soldier', 'sandbags', 'crate', 'barrel', 'rig', 'animRanged', 'animMove', 'animMoveAdv', 'animGeneral', 'animShoot'];
+export const MODELS_AVAILABLE: ModelId[] = ['rifle', 'container', 'soldier', 'sandbags', 'crate', 'barrel', 'rig', 'animRanged', 'animMove', 'animMoveAdv', 'animGeneral', 'animShoot', 'barrier', 'aircon', 'shutter', 'cliffA', 'cliffB', 'quiver'];
 
 const loaded = new Map<ModelId, GLTF>();
 

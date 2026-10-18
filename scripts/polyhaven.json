@@ -1,0 +1,26 @@
+{
+  "_comment": "Poly Haven CC0 텍스처(https://polyhaven.com). size = 색 지도 크기(px), 노멀 · 거칠기는 절반",
+  "textures": {
+    "dry_ground_rocks": {
+      "size": 1024
+    },
+    "brushed_concrete": {
+      "size": 1024
+    },
+    "worn_corrugated_iron": {
+      "size": 1024
+    },
+    "rusty_corrugated_iron": {
+      "size": 512
+    },
+    "asphalt_02": {
+      "size": 512
+    },
+    "rock_face_03": {
+      "size": 512
+    },
+    "sandstone_blocks_04": {
+      "size": 1024
+    }
+  }
+}

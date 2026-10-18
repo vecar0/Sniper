@@ -15,10 +15,25 @@ mkdirSync('public/models', { recursive: true });
 const gt = (...args) => execFileSync('npx', ['--yes', '@gltf-transform/cli@4', ...args], { stdio: 'inherit' });
 
 const done = [];
-for (const [id, { url, tex, animOnly, keep }] of Object.entries(list)) {
+for (const [id, { url, tex, animOnly, keep, polyhaven, simplify }] of Object.entries(list)) {
   if (id.startsWith('_')) continue;
-  const raw = join(work, `${id}.raw.glb`);
-  if (!existsSync(raw)) {
+  let raw = join(work, `${id}.raw.glb`);
+  if (polyhaven) {
+    // Poly Haven(CC0): 1k glTF(+bin · 텍스처)를 폴더째 받는다
+    const dir = join(work, `ph_${polyhaven}`);
+    mkdirSync(dir, { recursive: true });
+    const meta = join(dir, 'files.json');
+    execFileSync('curl', ['-sSfL', '-o', meta, `https://api.polyhaven.com/files/${polyhaven}`]);
+    const g = JSON.parse(readFileSync(meta, 'utf8')).gltf['1k'].gltf;
+    raw = join(dir, `${polyhaven}.gltf`);
+    if (!existsSync(raw)) {
+      execFileSync('curl', ['-sSfL', '-o', raw, g.url]);
+      for (const [rel, f] of Object.entries(g.include ?? {})) {
+        mkdirSync(join(dir, rel, '..'), { recursive: true });
+        execFileSync('curl', ['-sSfL', '-o', join(dir, rel), f.url]);
+      }
+    }
+  } else if (!existsSync(raw)) {
     // curl은 환경의 프록시 설정을 그대로 따른다(node fetch는 아님)
     execFileSync('curl', ['-sSfL', '-o', raw, url], { stdio: 'inherit' });
   }
@@ -47,7 +62,12 @@ for (const [id, { url, tex, animOnly, keep }] of Object.entries(list)) {
   }
   const a = join(work, `${id}.a.glb`), b = join(work, `${id}.b.glb`);
   gt('weld', raw, a);
-  gt('resize', a, b, '--width', String(tex), '--height', String(tex));
+  if (simplify) {
+    // 다각형 줄이기(meshoptimizer): 멀리서 보는 바위 · 나무 등
+    const s2 = join(work, `${id}.s.glb`);
+    gt('simplify', a, s2, '--ratio', String(simplify), '--error', '0.01');
+    gt('resize', s2, b, '--width', String(tex), '--height', String(tex));
+  } else gt('resize', a, b, '--width', String(tex), '--height', String(tex));
   gt('webp', b, `public/models/${id}.glb`, '--quality', '82');
   console.log(`${id}: ${(statSync(raw).size / 1e6).toFixed(1)}MB → ${(statSync(`public/models/${id}.glb`).size / 1e6).toFixed(2)}MB`);
   done.push(id);

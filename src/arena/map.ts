@@ -6,12 +6,22 @@
 import * as THREE from 'three';
 import { buildBuilding, floorAt, floorIndex, FLOOR_Y, type StairLink, type Surface } from './building';
 import { fitTransform, getModel, instancedModel } from './models';
-import { addCity, addClouds, addMountains, addPalms, gableEndGeometry, gableRoofGeometry, SandbagStacks, type SceneryCtx } from './scenery';
+import { addCity, addMountains, addPalms, gableEndGeometry, gableRoofGeometry, SandbagStacks, type SceneryCtx } from './scenery';
 import { surfaceMaterial, worldUvBox, worldUvPlane, type SurfaceId } from './textures';
 
 export const ROOF_Y = 9;
-/** 해 방향(앞쪽 왼편, 낮은 노을) – 하늘 · 조명이 같이 쓴다 */
-export const SUN_DIR = new THREE.Vector3(-1, 0.3, -1).normalize();
+/**
+ * 하늘: Poly Haven의 실사 노을 하늘 사진(kloppenheim_06_puresky, CC0)을 배경 · 주변광으로 쓴다.
+ * 사진 속 해의 위치(u, v)를 재 두었고, 하늘을 yaw만큼 돌려 해가 플레이어 앞쪽 왼편에 오게 한다.
+ */
+export const SKY = { url: './textures/sky.jpg', sunU: 0.585, sunV: 0.432, yaw: 2.89 };
+/** 해 방향 – 하늘 사진의 해와 같은 쪽(그림자 방향이 사진과 맞는다) */
+export const SUN_DIR = (() => {
+  const phi = (SKY.sunU - 0.5) * Math.PI * 2; // three.js 등장방형 지도: u = atan2(z, x) / 2π + 0.5
+  const el = (0.5 - SKY.sunV) * Math.PI;
+  const d = new THREE.Vector3(Math.cos(phi) * Math.cos(el), Math.sin(el), Math.sin(phi) * Math.cos(el));
+  return d.applyAxisAngle(new THREE.Vector3(0, 1, 0), SKY.yaw).normalize();
+})();
 /** 플레이어 건물 바닥 넓이(바깥벽 기준) */
 export const BUILDING = { minX: -10, maxX: 10, minZ: -5, maxZ: 5 };
 /** 플레이어가 돌아다닐 수 있는 범위 */
@@ -255,7 +265,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   };
 
   // ── 바닥 · 도로 ──
-  const ground = new THREE.Mesh(worldUvPlane(500, 500, 9), mat('ground'));
+  const ground = new THREE.Mesh(worldUvPlane(2400, 2400, 5), mat('ground')); // 지평선 끝까지(하늘 사진의 아래쪽이 보이지 않게)
   disposables.push(ground.geometry);
   ground.position.z = -100;
   ground.receiveShadow = shadows;
@@ -277,8 +287,14 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     quality !== 'low',
   );
   // 옥상 소품: 에어컨 실외기 · 물탱크(낮은 엄폐)
-  block(-6.5, ROOF_Y, 2.4, 1.6, 1.0, 1.0, plain(0xb9bcbd, 0.5, 0.4), 2);
-  block(-3.4, ROOF_Y, 3.1, 1.2, 0.9, 0.9, plain(0xb9bcbd, 0.5, 0.4), 2);
+  if (getModel('aircon')) {
+    // 실외기 두 대(Poly Haven) – 남쪽 난간 앞
+    boxes.push({ min: new THREE.Vector3(-5.7, ROOF_Y, 4.05), max: new THREE.Vector3(-3.5, ROOF_Y + 1.0, 4.55), kind: 'low' });
+    group.add(instancedModel('aircon', [new THREE.Matrix4().makeTranslation(-4.6, ROOF_Y, 4.3).multiply(new THREE.Matrix4().makeRotationY(Math.PI)).multiply(fitTransform('aircon', 2.2, 1.05, 0.45))], undefined, shadows));
+  } else {
+    block(-6.5, ROOF_Y, 2.4, 1.6, 1.0, 1.0, plain(0xb9bcbd, 0.5, 0.4), 2);
+    block(-3.4, ROOF_Y, 3.1, 1.2, 0.9, 0.9, plain(0xb9bcbd, 0.5, 0.4), 2);
+  }
 
   // ── 적 기지 ──
   // 컨테이너 색(빨강 · 파랑 · 청록 · 녹슨 주황) – 회색 골함석 텍스처에 색을 입힌다
@@ -288,7 +304,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   const collider = (x: number, y: number, z: number, w: number, h: number, d: number, kind: Box['kind']) =>
     boxes.push({ min: new THREE.Vector3(x - w / 2, y, z - d / 2), max: new THREE.Vector3(x + w / 2, y + h, z + d / 2), kind });
   // 기지 마당: 콘크리트 바닥
-  const yard = new THREE.Mesh(worldUvPlane(124, 104, 6), mat('concrete', 0xe8e2d8));
+  const yard = new THREE.Mesh(worldUvPlane(124, 104, 5), mat('concrete', 0xf0ebe2));
   disposables.push(yard.geometry);
   yard.position.set(0, 0.012, -74);
   yard.receiveShadow = shadows;
@@ -311,11 +327,20 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   if (bagFit) group.add(instancedModel('sandbags', bagSpots, undefined, shadows));
   // 콘크리트 방호벽(낮은 엄폐)
   const barrier = mat('concrete', 0xd9d3c8);
+  const barrierSpots: THREE.Matrix4[] = [];
   for (const [x, z, w] of [[-34, -24, 6], [36, -24, 6], [-52, -50, 4], [20, -112, 5]] as const) {
-    block(x, 0, z, w, 0.85, 0.7, barrier, 2, { collide: 'low' });
-    block(x, 0.85, z, w, 0.15, 0.35, barrier, 2, { collide: false });
+    if (getModel('barrier')) {
+      // 실사 콘크리트 방호벽(Poly Haven)을 약 1.6m씩 이어 놓는다
+      collider(x, 0, z, w, 0.9, 0.7, 'low');
+      const n = Math.max(1, Math.round(w / 1.6));
+      for (let i = 0; i < n; i++) barrierSpots.push(new THREE.Matrix4().makeTranslation(x - w / 2 + ((i + 0.5) * w) / n, 0, z).multiply(fitTransform('barrier', w / n - 0.04, 0.9, 0.7)));
+    } else {
+      block(x, 0, z, w, 0.85, 0.7, barrier, 2, { collide: 'low' });
+      block(x, 0.85, z, w, 0.15, 0.35, barrier, 2, { collide: false });
+    }
     coverBehind(x, z, w, 0.7, 1.0);
   }
+  if (barrierSpots.length) group.add(instancedModel('barrier', barrierSpots, undefined, shadows));
   // 컨테이너(높은 엄폐) + 문짝 쪽 테두리
   const frame = plain(0x2b2a28, 0.7, 0.4);
   // 3D 모델이 있으면 사실적인 컨테이너(색만 입힘)를 한 번에 그리고, 없으면 상자 + 철골 모서리
@@ -390,10 +415,11 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     collider(cx, 0, cz, 1.4, 0.95, 1.4, 'low');
   }
   // 창고 2동: 골함석 벽 · 박공지붕 · 빨간 셔터 · 높은 창
-  const roofMetal = mat('metalg', 0x9c9890);
+  const roofMetal = mat('roofmetal');
   const shed = mat('metalg', 0xf4f2ec);
   const shutter = mat('metalg', 0xe0745c);
   const darkWin = plain(0x20262a, 0.3, 0.4);
+  const shutterSpots: THREE.Matrix4[] = [];
   const warehouse = (x: number, z: number, w: number, h: number, d: number, doors: number[]) => {
     block(x, 0, z, w, h, d, shed, 4);
     const rise = d * 0.22;
@@ -413,14 +439,18 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
       group.add(end);
     }
     for (const dx of doors) {
-      block(x + dx, 0, z + d / 2 + 0.06, 4.2, 4.6, 0.12, shutter, 2, { collide: false });
-      block(x + dx, 4.6, z + d / 2 + 0.1, 4.6, 0.3, 0.2, frame, 1, { collide: false });
+      if (getModel('shutter')) shutterSpots.push(new THREE.Matrix4().makeTranslation(x + dx, 0, z + d / 2 + 0.2).multiply(fitTransform('shutter', 4.4, 5.0, 0.4)));
+      else {
+        block(x + dx, 0, z + d / 2 + 0.06, 4.2, 4.6, 0.12, shutter, 2, { collide: false });
+        block(x + dx, 4.6, z + d / 2 + 0.1, 4.6, 0.3, 0.2, frame, 1, { collide: false });
+      }
     }
     for (let wx = -w / 2 + 2; wx <= w / 2 - 2; wx += 3.2) block(x + wx, h - 2.2, z + d / 2 + 0.05, 1.4, 0.9, 0.1, darkWin, 1, { collide: false });
     coverBehind(x, z, w, d, h);
   };
   warehouse(-32, -86, 20, 8, 14, [-4.5, 4.5]);
   warehouse(32, -96, 24, 9, 16, [-4, 5]);
+  if (shutterSpots.length) group.add(instancedModel('shutter', shutterSpots, undefined, shadows));
   // 철골 창고(벽 없는 빨간 철골 + 지붕)
   {
     const rust = plain(0x8e3b24, 0.6, 0.55);
@@ -430,7 +460,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     for (const ox of [-sw / 2, 0, sw / 2]) block(sx0 + ox, sh - 0.4, sz0, 0.3, 0.4, sd, rust, 1, { collide: false });
     const roofGeo = gableRoofGeometry(sw, sd, 1.6, 0.5, 3);
     disposables.push(roofGeo);
-    const roof = new THREE.Mesh(roofGeo, mat('metalg', 0x8a7f74));
+    const roof = new THREE.Mesh(roofGeo, mat('roofmetal', 0xc0b0a0));
     roof.position.set(sx0, sh, sz0);
     roof.castShadow = shadows;
     group.add(roof);
@@ -493,8 +523,14 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   // ── 먼 배경: 도시 · 야자수 · 바위산 · 구름 ──
   addCity(sctx);
   const palmSpots: [number, number][] = [];
-  for (let z = -26; z >= -122; z -= 13) palmSpots.push([-70 - ((z * 7) & 3), z], [71 + ((z * 5) & 3), z - 5]);
-  for (const p of [[-16, 9], [17, 7], [-30, -14], [30, -12], [-58, -110], [56, -22], [-58, -18]] as [number, number][]) palmSpots.push(p);
+  // 기지 가장자리 나무: 실사 사막 나무(Poly Haven 퀴버트리)가 있으면 그것, 없으면 야자수
+  const nearTrees: [number, number][] = [];
+  for (let z = -26; z >= -122; z -= 13) nearTrees.push([-70 - ((z * 7) & 3), z], [71 + ((z * 5) & 3), z - 5]);
+  for (const p of [[-16, 9], [17, 7], [-30, -14], [30, -12], [-58, -110], [56, -22], [-58, -18]] as [number, number][]) nearTrees.push(p);
+  if (getModel('quiver')) {
+    group.add(instancedModel('quiver', nearTrees.map(([x, z], i) => new THREE.Matrix4().makeTranslation(x, 0, z).multiply(new THREE.Matrix4().makeRotationY(i * 2.4)).multiply(fitTransform('quiver', 0, 4.5 + (i % 4) * 0.8, 0, true))), undefined, shadows));
+    for (const [x, z] of nearTrees) collider(x, 0, z, 0.6, 4, 0.6, 'solid');
+  } else palmSpots.push(...nearTrees);
   for (let k = 0; k < 46; k++) {
     const t = Math.PI + 0.2 + (k / 46) * (Math.PI - 0.4);
     const r = 120 + ((k * 37) % 90);
@@ -503,10 +539,24 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   addPalms(sctx, palmSpots);
   for (const [x, z] of palmSpots) if (Math.abs(x) < 80 && z > -130) collider(x, 0, z, 0.5, 6, 0.5, 'solid');
   addMountains(sctx);
-  addClouds(sctx, SUN_DIR);
+  // 바위 언덕(Poly Haven 절벽 바위): 도시 너머 · 기지 양옆에 크게
+  if (getModel('cliffA') && getModel('cliffB')) {
+    const rocks: Record<'cliffA' | 'cliffB', THREE.Matrix4[]> = { cliffA: [], cliffB: [] };
+    let seed = 41;
+    const rr = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let k = 0; k < 26; k++) {
+      const t = Math.PI * 0.9 + rr() * Math.PI * 1.2; // 앞(북) · 양옆
+      const rad = 300 + rr() * 110;
+      const x = Math.cos(t) * rad, z = -60 + Math.sin(t) * rad;
+      const s = 3 + rr() * 3.5;
+      const id = k % 2 ? 'cliffA' : 'cliffB';
+      rocks[id].push(new THREE.Matrix4().makeTranslation(x, -1.5, z).multiply(new THREE.Matrix4().makeRotationY(-t + Math.PI / 2 + (rr() - 0.5) * 0.6)).multiply(new THREE.Matrix4().makeScale(s, s * (0.8 + rr() * 0.6), s)));
+    }
+    for (const id of ['cliffA', 'cliffB'] as const) group.add(instancedModel(id, rocks[id].map((m) => m.multiply(fitTransform(id, 0, 7, 0, true))), undefined, false));
+  }
 
   // ── 조명: 해 질 녘(해는 앞쪽 왼편 낮게 – 그림자가 플레이어 쪽으로 길게) ──
-  const hemi = new THREE.HemisphereLight(0xbcd6ea, 0xb48c64, 1.25);
+  const hemi = new THREE.HemisphereLight(0xbcd6ea, 0xb48c64, 0.55); // 나머지 주변광은 하늘 사진(환경맵)이 준다
   group.add(hemi);
   const sun = new THREE.DirectionalLight(0xffb878, 2.7);
   sun.target.position.set(0, 0, -55);

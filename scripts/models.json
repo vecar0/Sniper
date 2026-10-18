@@ -6,7 +6,8 @@
   },
   "container": {
     "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_122148_9c3ca5e9-8c57-454e-90f0-212b72b5ec32.glb",
-    "tex": 1024
+    "tex": 1024,
+    "simplify": 0.5
   },
   "soldier": {
     "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_122145_e01389d6-d607-4cab-a6c0-692372e36a13.glb",
@@ -15,7 +16,8 @@
   },
   "sandbags": {
     "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_122150_f9c106b3-6023-48ec-b293-4a2f77e4f3e1.glb",
-    "tex": 1024
+    "tex": 1024,
+    "simplify": 0.35
   },
   "crate": {
     "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_122536_d2e30f1e-115e-46bd-a9dd-69999eae3ef1.glb",
@@ -68,5 +70,40 @@
     "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_123044_60e8c820-03d3-452f-8ac1-a79a59230f12.glb",
     "animOnly": true,
     "_note": "Higgsfield(Meshy) 리깅 결과의 걸으며 사격 동작 – 뼈 방향만 병사에게 옮겨 쓴다"
+  },
+  "barrier": {
+    "polyhaven": "concrete_road_barrier",
+    "tex": 512,
+    "_note": "Poly Haven CC0",
+    "simplify": 0.025
+  },
+  "aircon": {
+    "polyhaven": "exterior_aircon_unit",
+    "tex": 512,
+    "_note": "Poly Haven CC0",
+    "simplify": 0.3
+  },
+  "shutter": {
+    "polyhaven": "rollershutter_door",
+    "tex": 512,
+    "_note": "Poly Haven CC0"
+  },
+  "cliffA": {
+    "polyhaven": "namaqualand_cliff_01",
+    "tex": 512,
+    "_note": "Poly Haven CC0",
+    "simplify": 0.04
+  },
+  "cliffB": {
+    "polyhaven": "namaqualand_cliff_02",
+    "tex": 512,
+    "_note": "Poly Haven CC0",
+    "simplify": 0.03
+  },
+  "quiver": {
+    "polyhaven": "quiver_tree_01",
+    "tex": 512,
+    "_note": "Poly Haven CC0",
+    "simplify": 0.025
   }
 }

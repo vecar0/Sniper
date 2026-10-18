@@ -7,10 +7,24 @@
  */
 import * as THREE from 'three';
 
-export type SurfaceId = 'ground' | 'concrete' | 'plaster' | 'metal' | 'asphalt' | 'metalg';
+export type SurfaceId = 'ground' | 'concrete' | 'plaster' | 'metal' | 'asphalt' | 'metalg' | 'roofmetal' | 'facade' | 'rock';
 
 /** 실제 이미지가 들어 있는 텍스처(파일을 추가하면 여기에 등록) */
 export const AVAILABLE: SurfaceId[] = ['ground', 'concrete', 'plaster', 'metal', 'asphalt', 'metalg'];
+
+/**
+ * 실사 PBR 텍스처(Poly Haven, CC0): 색 + 노멀(요철) + 거칠기. public/textures/pbr/<이름>_{d,n,r}.jpg
+ * 있으면 이것을 쓰고, 없으면 위의 이미지 · 캔버스 텍스처.
+ */
+const PBR: Partial<Record<SurfaceId, string>> = {
+  ground: 'dry_ground_rocks',
+  concrete: 'brushed_concrete',
+  plaster: 'sandstone_blocks_04',
+  metalg: 'worn_corrugated_iron',
+  roofmetal: 'rusty_corrugated_iron',
+  asphalt: 'asphalt_02',
+  rock: 'rock_face_03',
+};
 
 /** 이미지가 없을 때의 기본 색과 잔무늬 */
 const FALLBACK: Record<SurfaceId, { base: string; dark: string; light: string; grain: number; streaks?: 'v' | 'h' }> = {
@@ -20,6 +34,9 @@ const FALLBACK: Record<SurfaceId, { base: string; dark: string; light: string; g
   metal: { base: '#4f7a72', dark: '#3a5c56', light: '#6c968e', grain: 0.2, streaks: 'v' },
   asphalt: { base: '#45474a', dark: '#33353a', light: '#5a5c60', grain: 0.6 },
   metalg: { base: '#b0b0ac', dark: '#8c8c88', light: '#cfcfca', grain: 0.2, streaks: 'v' },
+  roofmetal: { base: '#8a5a3c', dark: '#6a4028', light: '#a87050', grain: 0.3, streaks: 'v' },
+  facade: { base: '#b9a58a', dark: '#5a5048', light: '#d8c8b0', grain: 0.2, streaks: 'h' },
+  rock: { base: '#b08a6a', dark: '#8a6a50', light: '#c8a888', grain: 0.6 },
 };
 
 const cache = new Map<SurfaceId, THREE.Texture>();
@@ -79,7 +96,35 @@ function baseTexture(id: SurfaceId): THREE.Texture {
  * 반복 타일 재질.
  * @param tileSize 타일 하나가 덮는 월드 크기(m) – UV가 월드 좌표 기준일 때 repeat = 1 / tileSize
  */
+/** 무늬가 큰 텍스처는 덜 반복되게 크게 편다(1 = 그대로) */
+const PBR_SCALE: Partial<Record<SurfaceId, number>> = { plaster: 0.6, ground: 0.8 };
+const pbrCache = new Map<string, THREE.Texture>();
+function pbrTexture(file: string, color: boolean, scale = 1): THREE.Texture {
+  let t = pbrCache.get(file);
+  if (!t) {
+    t = new THREE.TextureLoader().load(`./textures/pbr/${file}.jpg`);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.setScalar(scale);
+    t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.anisotropy = 8;
+    pbrCache.set(file, t);
+  }
+  return t;
+}
+
 export function surfaceMaterial(id: SurfaceId, opts: { tint?: number; roughness?: number; metalness?: number } = {}): THREE.MeshStandardMaterial {
+  const pbr = PBR[id];
+  if (pbr) {
+    const metal = id === 'metalg' || id === 'roofmetal';
+    return new THREE.MeshStandardMaterial({
+      map: pbrTexture(`${pbr}_d`, true, PBR_SCALE[id]),
+      normalMap: pbrTexture(`${pbr}_n`, false, PBR_SCALE[id]),
+      roughnessMap: pbrTexture(`${pbr}_r`, false, PBR_SCALE[id]),
+      color: opts.tint ?? 0xffffff,
+      roughness: opts.roughness ?? 1,
+      metalness: opts.metalness ?? (metal ? 0.35 : 0),
+    });
+  }
   const map = baseTexture(id).clone();
   map.needsUpdate = true;
   return new THREE.MeshStandardMaterial({
