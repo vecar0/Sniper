@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#090d0f" />
-    <meta name="description" content="LONG SHOT – 바람과 거리를 읽고 한 발로 끝내는 전술 저격 암살 게임 (3D 브라우저 게임)" />
+    <meta name="description" content="LONG SHOT – 옥상에서 몰려오는 적을 저격총 한 방으로 쓰러뜨리는 3D 아케이드 총게임" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icon-180.png" />
@@ -13,7 +13,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="LONG SHOT" />
-    <title>LONG SHOT – 고스트 프로토콜</title>
+    <title>LONG SHOT – 옥상 저격전</title>
     <style>
       /* JS가 실행되기 전에도 빈 화면이 보이지 않도록 로딩 화면 스타일은 인라인 */
       html, body { margin: 0; height: 100%; background: #090d0f; color: #e8eef2; font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
@@ -35,7 +35,7 @@
     </div>
     <div id="loading" role="progressbar" aria-label="불러오는 중">
       <div class="loading-title">LONG<span>·</span>SHOT</div>
-      <div class="loading-sub">GHOST PROTOCOL</div>
+      <div class="loading-sub">ROOFTOP DEFENSE</div>
       <div class="loading-bar"><i></i></div>
       <div class="loading-text">불러오는 중…</div>
     </div>
@@ -45,6 +45,6 @@
       <button onclick="location.reload()">새로고침</button>
     </div>
     <noscript>이 게임을 실행하려면 JavaScript가 필요합니다.</noscript>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/arena/main.ts"></script>
   </body>
 </html>

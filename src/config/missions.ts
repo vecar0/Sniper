@@ -42,7 +42,7 @@ export interface WindSpec {
 export type TargetBehavior = 'static' | 'idle' | 'patrol';
 /** hvt = 핵심 표적, guard = 경비병, civilian = 민간인(사살 시 작전 실패) */
 export type Role = 'hvt' | 'guard' | 'civilian';
-export type OutfitId = 'guard' | 'guardDesert' | 'guardSnow' | 'hvtSuit' | 'hvtOfficer' | 'courier' | 'civilian' | 'civilianRed' | 'scientist';
+export type OutfitId = 'guard' | 'guardDesert' | 'guardSnow' | 'hvtSuit' | 'hvtOfficer' | 'courier' | 'civilian' | 'civilianRed' | 'scientist' | 'enemyRifle' | 'enemyRusher' | 'enemySniper' | 'enemyHeavy';
 
 export interface TargetDef {
   id: string;

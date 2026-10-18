@@ -29,6 +29,10 @@ export const OUTFITS: Record<OutfitId, OutfitSpec> = {
   courier: { top: 0x6b4426, bottom: 0x35373c, skin: 0xc49272, boots: 0x2a2420, head: 'none', headColor: 0x2a201a, backpack: 0x1c1c1c },
   civilian: { top: 0x3a6ea8, bottom: 0x3a4658, skin: 0xd4a382, boots: 0x4a3a2a, head: 'cap', headColor: 0xc8b07a },
   civilianRed: { top: 0xb03a32, bottom: 0x4a4a50, skin: 0xc49272, boots: 0x3a2e24, head: 'cap', headColor: 0xd8d0c0 },
+  enemyRifle: { top: 0x8a2c24, bottom: 0x3b2b28, skin: 0xc49272, boots: 0x1c1a18, head: 'helmet', headColor: 0x4a2c26, vest: 0x2b2522, rifle: true },
+  enemyRusher: { top: 0xb8382c, bottom: 0x2e2a2a, skin: 0xb88762, boots: 0x1c1a18, head: 'hood', headColor: 0x1a1a1c, rifle: true },
+  enemySniper: { top: 0x55553a, bottom: 0x44442e, skin: 0xc49272, boots: 0x2a2620, head: 'hood', headColor: 0x5a5a3c, vest: 0x3a3a28, rifle: true },
+  enemyHeavy: { top: 0x2c2c30, bottom: 0x242428, skin: 0xb88762, boots: 0x121212, head: 'helmet', headColor: 0x141416, vest: 0x5a1e1a, rifle: true },
   scientist: { top: 0x8aa0b8, bottom: 0x3e434a, skin: 0xe0b896, boots: 0x222222, head: 'none', headColor: 0x6a5a48, coat: 0xf4f6f8, glasses: true },
 };
 
@@ -43,6 +47,8 @@ export interface HumanRig {
   legR: THREE.Object3D;
   /** 경계 시 붉게 빛나는 부분(가슴 무전기 LED) */
   alertLight: THREE.Mesh;
+  /** 들고 있는 소총(조준 자세용) */
+  gun?: THREE.Group;
 }
 
 /** 재질 캐시: 같은 색은 하나의 재질을 공유 */
@@ -156,8 +162,9 @@ export function buildHuman(outfit: OutfitId, mats: HumanMaterials): HumanRig {
   const legR = limb(0.1, 0.84, 0.74, 0.15, o.bottom, o.boots, 0.12);
 
   // 경비병 소총(가슴 앞에 비스듬히)
+  let gun: THREE.Group | undefined;
   if (o.rifle) {
-    const gun = new THREE.Group();
+    gun = new THREE.Group();
     gun.position.set(0.02, 1.18, 0.2);
     // 총 길이(z축)를 가로로 눕힌 뒤(y) 대각선으로 기울인다(z) – 'ZYX' 순서는 x→y→z 순으로 적용
     gun.rotation.set(0, Math.PI / 2, 0.6, 'ZYX');
@@ -173,7 +180,7 @@ export function buildHuman(outfit: OutfitId, mats: HumanMaterials): HumanRig {
   shadow.position.y = 0.03;
   root.add(shadow);
 
-  return { root, body, head, armL, armR, legL, legR, alertLight };
+  return { root, body, head, armL, armR, legL, legR, alertLight, gun };
 }
 
 let _shadowMat: THREE.MeshBasicMaterial | null = null;

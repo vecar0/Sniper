@@ -23,7 +23,7 @@ export async function boot(page: Page, opts: { save?: unknown } = {}): Promise<v
       }
     }, opts.save);
   }
-  await page.goto('/?test');
+  await page.goto('/classic.html?test');
   await page.waitForSelector('.screen-menu', { timeout: 30_000 });
   await page.waitForFunction(() => !document.getElementById('loading'));
 }

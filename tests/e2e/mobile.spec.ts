@@ -53,3 +53,30 @@ test('가로 화면 터치: 버튼으로 스코프·숨·발사, 드래그로 �
   }
   expect(w.errors).toEqual([]);
 });
+
+test('옥상 저격전 터치: 조이스틱으로 이동 · 숙이기 · 스코프 · 무기 교체', async ({ page }) => {
+  await page.goto('/?test');
+  await page.waitForSelector('.a-menu', { timeout: 30_000 });
+  await page.tap('[data-act="start"]');
+  await expect(page.locator('.a-touch')).toBeVisible();
+  const before = await page.evaluate(() => (window as any).__arena.game.pos.x);
+  // 화면 왼쪽을 눌러 오른쪽으로 끌기(가상 조이스틱)
+  const cdp = await page.context().newCDPSession(page);
+  const vp = page.viewportSize()!;
+  const y = vp.height * 0.6;
+  const x0 = vp.width * 0.18;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y }] });
+  for (let i = 1; i <= 6; i++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + i * 10, y }] });
+  }
+  await expect(page.locator('.a-stick')).toBeVisible();
+  await page.waitForFunction((b) => (window as any).__arena.game.pos.x > b + 0.3, before, { timeout: 30_000 });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.tap('.a-touch .a-crouch');
+  await page.waitForFunction(() => (window as any).__arena.game.crouched === true, null, { timeout: 30_000 });
+  await page.tap('.a-touch .a-scope');
+  await page.waitForFunction(() => (window as any).__arena.game.scopeT > 0.9, null, { timeout: 30_000 });
+  await expect(page.locator('.a-touch .a-zoom')).toBeVisible();
+  await page.tap('.a-touch .a-swap');
+  await page.waitForFunction(() => (window as any).__arena.game.weapon === 'smg', null, { timeout: 30_000 });
+});
