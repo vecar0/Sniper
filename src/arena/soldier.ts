@@ -258,6 +258,88 @@ function solveIk(sh: THREE.Vector3, t: THREE.Vector3, a: number, b: number, pole
   return [sh.clone().addScaledVector(d, a * cosA).addScaledVector(p, a * sinA), sh.clone().addScaledVector(d, len)];
 }
 
+/**
+ * 힉스필드(Meshy) "걸으며 사격" 동작을 이 병사에게 옮기기.
+ * Meshy 뼈대는 팔 뼈가 비정상적으로 짧아(메시와 어긋남) 그대로는 못 쓰지만, 뼈가 "향하는 방향"은 정상이다.
+ * 그래서 숨은 Meshy 뼈대를 따로 재생하고, 매 프레임 각 뼈의 방향(몸 기준)을 우리 뼈에 그대로 준다.
+ */
+const MESHY_MAP: [string, string, string, string][] = [
+  // [우리 뼈, 우리 자식, Meshy 뼈, Meshy 자식]
+  ['spine', 'chest', 'Spine02', 'Spine'],
+  ['chest', 'head', 'Spine', 'Head'],
+  ['upperlegl', 'lowerlegl', 'LeftUpLeg', 'LeftLeg'],
+  ['lowerlegl', 'footl', 'LeftLeg', 'LeftFoot'],
+  ['upperlegr', 'lowerlegr', 'RightUpLeg', 'RightLeg'],
+  ['lowerlegr', 'footr', 'RightLeg', 'RightFoot'],
+  ['upperarml', 'lowerarml', 'LeftArm', 'LeftForeArm'],
+  ['lowerarml', 'wristl', 'LeftForeArm', 'LeftHand'],
+  ['upperarmr', 'lowerarmr', 'RightArm', 'RightForeArm'],
+  ['lowerarmr', 'wristr', 'RightForeArm', 'RightHand'],
+];
+
+class MeshyMotion {
+  private readonly mixer: THREE.AnimationMixer;
+  private readonly action: THREE.AnimationAction;
+  private readonly b = new Map<string, THREE.Object3D>();
+  private readonly root: THREE.Object3D;
+  /** Meshy 몸 기준 축(왼쪽 · 위 · 앞) – 처음 한 번 잰다 */
+  private readonly left = new THREE.Vector3();
+  private readonly up = new THREE.Vector3(0, 1, 0);
+  private readonly fwd = new THREE.Vector3();
+  private readonly legRatio: number;
+  private readonly p1 = new THREE.Vector3();
+  private readonly p2 = new THREE.Vector3();
+
+  constructor(src: { scene: THREE.Object3D; animations: THREE.AnimationClip[] }, ourLeg: number) {
+    this.root = src.scene.clone(true);
+    this.root.traverse((o) => this.b.set(o.name, o));
+    this.mixer = new THREE.AnimationMixer(this.root);
+    // 엉덩이의 앞뒤 이동은 지운다(위치는 게임이 정한다)
+    const clip = src.animations[0].clone();
+    for (const t of clip.tracks) {
+      if (!/^Hips\.position$/.test(t.name)) continue;
+      const v = t.values;
+      for (let i = 0; i < v.length; i += 3) {
+        v[i] = v[0];
+        v[i + 2] = v[2];
+      }
+    }
+    this.action = this.mixer.clipAction(clip);
+    this.action.play();
+    this.mixer.update(0);
+    this.root.updateMatrixWorld(true);
+    this.left.copy(this.pos('LeftUpLeg')).sub(this.pos('RightUpLeg', this.p2));
+    this.left.y = 0;
+    this.left.normalize();
+    this.fwd.crossVectors(this.left, this.up);
+    const leg = this.pos('LeftUpLeg').distanceTo(this.pos('LeftLeg', this.p2)) + this.pos('LeftLeg').distanceTo(this.pos('LeftFoot', this.p2));
+    this.legRatio = ourLeg / Math.max(1e-3, leg);
+  }
+
+  private pos(n: string, out = this.p1): THREE.Vector3 {
+    return this.b.get(n)!.getWorldPosition(out);
+  }
+
+  /** dt만큼 재생하고 걸음 빠르기를 맞춘다 */
+  step(dt: number, timeScale: number): void {
+    this.action.timeScale = timeScale;
+    this.mixer.update(dt);
+    this.root.updateMatrixWorld(true);
+  }
+
+  /** Meshy 뼈 a→b 방향을 몸 기준(x = 왼쪽, y = 위, z = 앞)으로 */
+  dirLocal(a: string, b: string, out: THREE.Vector3): THREE.Vector3 {
+    const d = this.pos(b, this.p2).sub(this.pos(a)).normalize();
+    return out.set(d.dot(this.left), d.dot(this.up), d.dot(this.fwd));
+  }
+
+  /** 엉덩이 높이(발 위, 우리 몸 비율로) */
+  hipHeight(): number {
+    const foot = Math.min(this.pos('LeftFoot').y, this.pos('RightFoot', this.p2).y);
+    return (this.pos('Hips').y - foot) * this.legRatio;
+  }
+}
+
 export interface SoldierVisual {
   root: THREE.Group;
   /** 쓰러질 때 발 기준으로 기우는 축(동작이 있으면 쓰지 않음) */
@@ -325,6 +407,13 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
   if (death) death.stop();
   const w = { idle: 1, walk: 0, run: 0, crouch: 0, aim: 1, carry: 0 };
   let dying = false;
+  // 힉스필드 "걸으며 사격": 겨눈 채 걸을 때 다리 · 몸통 · 팔 방향을 이 동작에서 가져온다
+  const shootSrc = getModel('animShoot');
+  const ourLeg = new THREE.Vector3(...J.upperlegl).distanceTo(new THREE.Vector3(...J.lowerlegl)) + new THREE.Vector3(...J.lowerlegl).distanceTo(new THREE.Vector3(...J.footl));
+  const meshy = shootSrc?.animations.length ? new MeshyMotion(shootSrc, ourLeg) : null;
+  let wMeshy = 0;
+  const ankleY = J.footl[1];
+  const dl = new THREE.Vector3(), tgt3 = new THREE.Vector3();
 
   // 손에 든 소총(저격총 모델을 1m로 줄여서)
   let gun: THREE.Object3D | null = null;
@@ -394,6 +483,21 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
         if (lower.run) lower.run.timeScale = Math.max(0.7, o.speed / 6);
       }
       mixer.update(dt);
+      // 겨눈 채 걷기 → 힉스필드 동작의 뼈 방향을 옮겨 준다(엉덩이 높이도 그 동작대로)
+      const wantMeshy = !dying && meshy && o.aiming && o.moving && !o.running && o.crouch < 0.3 ? 1 : 0;
+      wMeshy += (wantMeshy - wMeshy) * Math.min(1, dt * 6);
+      if (meshy && wMeshy > 0.01) {
+        meshy.step(dt, Math.max(0.6, o.speed / 2.6));
+        if (hipsBone) hipsBone.position.y += (meshy.hipHeight() + ankleY - hipsBone.position.y) * wMeshy;
+        inner.updateMatrixWorld(true);
+        for (const [ob, oc, mb, mc] of MESHY_MAP) {
+          const bone = bones.get(ob), child = bones.get(oc);
+          if (!bone || !child) continue;
+          meshy.dirLocal(mb, mc, dl).transformDirection(pivot.matrixWorld);
+          bone.getWorldPosition(tgt3).add(dl);
+          aimBone(bone, child, tgt3, wMeshy);
+        }
+      }
       // 두 손을 소총에: KayKit 캐릭터는 팔이 길어서 그대로 두면 손이 벌어진다 → 2관절 IK로 맞춘다
       if (!dying && arms) {
         inner.updateMatrixWorld(true);

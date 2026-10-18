@@ -63,5 +63,10 @@
       "Death_B",
       "Hit_A"
     ]
+  },
+  "animShoot": {
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3JapKqiFl3bD4aJ6KDAHkR3xQow/hf_20261018_123044_60e8c820-03d3-452f-8ac1-a79a59230f12.glb",
+    "animOnly": true,
+    "_note": "Higgsfield(Meshy) 리깅 결과의 걸으며 사격 동작 – 뼈 방향만 병사에게 옮겨 쓴다"
   }
 }
