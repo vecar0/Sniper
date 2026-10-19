@@ -15,6 +15,7 @@ import { Enemy, rayEnemy, SPECS, type EnemyKind, type PlayerTarget } from './ene
 import type { ArenaInput } from './input';
 import { groundAt, moveWithCollision } from './building';
 import { getModel } from './models';
+import { MEDKIT, Medkits } from './pickups';
 import { buildMap, clearLine, rayBoxes, ROOF_Y, SKY, SUN_DIR, WORLD, type ArenaMap, type CoverPoint } from './map';
 
 export const TUNING = {
@@ -23,11 +24,14 @@ export const TUNING = {
   crouchEye: 0.92,
   /** 숙인 채 스코프를 열면 이 높이까지 고개를 내민다(머리만 보임) */
   peekEye: 1.32,
-  walk: 3.4,
-  crouchWalk: 1.7,
+  walk: 5.0,
+  crouchWalk: 2.5,
+  /** 달리기(Shift · 조이스틱 끝까지 앞으로) – 스코프 · 숙이기 중엔 못 달린다 */
+  sprint: 7.4,
   hp: 100,
-  regenDelay: 4.5,
-  regenRate: 14,
+  /** 체력은 저절로 차지 않는다 – 구급상자(pickups.ts)로만 회복 */
+  /** 포격: 같은 자리(반경 area m)에 campTime초 넘게 머물면 그 자리에 포탄이 떨어진다(옥상은 roofMul배 빨리) */
+  strike: { area: 7, campTime: 24, roofMul: 1.7, warn: 2.8, radius: 5.5, damage: 80 },
   /** 점프 속도(m/s) · 중력 – 0.66m 뜀: 모래주머니 · 창턱(0.95m)은 올라서고 옥상 난간(1.05m)은 못 넘는다 */
   jump: 5.4,
   gravity: 22,
@@ -97,6 +101,10 @@ export interface ArenaHud {
   breakT: number;
   kills: number;
   playTime: number;
+  /** 같은 자리에 오래 머문 정도(0~1, 1이면 포격) */
+  campRisk: number;
+  /** 포격 경고 중이면 남은 초, 아니면 -1 */
+  strikeT: number;
   sway: { x: number; y: number };
 }
 
@@ -149,6 +157,7 @@ export class ArenaGame {
   private shake = 0;
 
   // 무기
+  sprinting = false;
   weapon: 'sniper' | 'pistol' = 'sniper';
   sniperMag: number = TUNING.sniper.mag;
   private boltT = 0;
@@ -172,6 +181,11 @@ export class ArenaGame {
   stats = { shots: 0, hits: 0, kills: 0, headshots: 0, longest: 0 };
   /** 이번 판 진행 시간(초, 일시정지 제외) */
   playTime = 0;
+  medkits!: Medkits;
+  private campAnchor = new THREE.Vector3();
+  private campT = 0;
+  private strike: { pos: THREE.Vector3; t: number; ring: THREE.Group } | null = null;
+  private ringProto!: THREE.Group;
   private timeScale = 1;
   private hitStop = 0;
   // 불릿캠(웨이브 마지막 처치)
@@ -223,6 +237,9 @@ export class ArenaGame {
     });
     this.map = buildMap(quality);
     this.scene.add(this.map.group);
+    this.medkits = new Medkits(this.map.nav);
+    this.scene.add(this.medkits.group);
+    this.ringProto = makeStrikeRing(TUNING.strike.radius);
     this.fx = new Effects((x, z) => this.map.floorAt(x, z, this.pos.y + 0.5), 0xb59a72);
     this.scene.add(this.fx.group);
     this.fx.tracers.setScale(this.renderer.getPixelRatio());
@@ -323,6 +340,10 @@ export class ArenaGame {
     this.cam = null;
     this.timeScale = 1;
     this.playTime = 0;
+    this.medkits.reset(3);
+    this.campAnchor.copy(this.pos);
+    this.campT = 0;
+    this.clearStrike();
     this.over = false;
     this.paused = false;
     this.running = true;
@@ -347,6 +368,7 @@ export class ArenaGame {
       [list[i], list[j]] = [list[j], list[i]];
     }
     this.toSpawn = [...head, ...list];
+    this.medkits.fill(n === 1 ? 3 : 2 + Math.min(2, Math.floor(n / 2)));
     this.spawnT = 1.2;
     this.breakT = 0;
   }
@@ -512,7 +534,8 @@ export class ArenaGame {
     void ex;
     // ── 이동(옥상 · 건물 안 · 밖 어디든 – 벽에 막히고 계단으로 오르내림) ──
     const scopedNow = this.scopeT > 0.5 || this.pistol.ads > 0.5;
-    const speed = (this.crouched ? TUNING.crouchWalk : TUNING.walk) * (scopedNow ? 0.45 : 1);
+    this.sprinting = inp.sprint && !this.crouched && !scopedNow && inp.moveY > 0.5;
+    const speed = this.sprinting ? TUNING.sprint : (this.crouched ? TUNING.crouchWalk : TUNING.walk) * (scopedNow ? 0.45 : 1);
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
     const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
     let mx = fx * inp.moveY + rx * inp.moveX;
@@ -556,7 +579,14 @@ export class ArenaGame {
     }
     const moving = len > 0.1;
     this.moveAmt += ((moving ? 1 : 0) - this.moveAmt) * Math.min(1, dt * 8);
-    this.bob += dt * (this.crouched ? 6 : 9) * this.moveAmt;
+    this.bob += dt * (this.crouched ? 6 : this.sprinting ? 12.5 : 10) * this.moveAmt;
+    // ── 구급상자 · 포격 ──
+    if (this.medkits.update(dt, this.pos, this.hp < TUNING.hp - 1)) {
+      this.hp = Math.min(TUNING.hp, this.hp + MEDKIT.heal);
+      this.audio.play('pickup', { volume: 0.8 });
+      this.hooks?.onToast(`구급상자 +${MEDKIT.heal}`);
+    }
+    this.updateStrike(dt);
     // ── 사격 ──
     this.updateWeapons(dt, moving);
     // ── 적 ──
@@ -594,7 +624,6 @@ export class ArenaGame {
     } else if (alive === 0 && this.breakT <= 0 && !this.cam) {
       const bonus = 300 * this.wave;
       this.score += bonus;
-      this.hp = Math.min(TUNING.hp, this.hp + 35);
       this.pistol.reserve = this.pistol.stats.reserve;
       this.breakT = 4;
       this.audio.play('success', { volume: 0.6 });
@@ -609,7 +638,6 @@ export class ArenaGame {
     this.hurtFlash = Math.max(0, this.hurtFlash - dt * 1.6);
     for (const h of this.hurtDirs) h.t -= dt;
     this.hurtDirs = this.hurtDirs.filter((h) => h.t > 0);
-    if (this.hurtT > TUNING.regenDelay) this.hp = Math.min(TUNING.hp, this.hp + TUNING.regenRate * dt);
     if (this.comboT > 0) {
       this.comboT -= dt;
       if (this.comboT <= 0) this.combo = 0;
@@ -618,6 +646,66 @@ export class ArenaGame {
     this.recoil *= Math.exp(-dt * 10);
     this.swayT += dt;
     this.fx.update(dt);
+  }
+
+  /** 포격까지 머물 수 있는 시간(초): 첫 웨이브는 넉넉히 */
+  private campLimit(): number {
+    return TUNING.strike.campTime * (this.wave <= 1 ? 1.4 : 1);
+  }
+
+  /**
+   * 한자리 버티기 방지: 같은 곳(반경 7m)에 오래 있으면 적이 포격을 요청한다.
+   * 경고 원이 깔리고 2.8초 뒤 터진다 – 다른 엄폐물로 옮기면 피할 수 있다.
+   */
+  private updateStrike(dt: number): void {
+    const S = TUNING.strike;
+    const fighting = this.breakT <= 0 && !this.cam;
+    if (this.pos.distanceTo(this.campAnchor) > S.area) {
+      this.campAnchor.copy(this.pos);
+      this.campT = Math.max(0, this.campT - 8);
+    } else if (fighting && !this.strike) this.campT += dt * (this.pos.y > ROOF_Y - 0.5 ? S.roofMul : 1);
+    if (!this.strike && this.campT >= this.campLimit()) {
+      const ring = this.ringProto.clone();
+      const at = this.pos.clone();
+      ring.position.copy(at).setY(at.y + 0.06);
+      this.scene.add(ring);
+      this.strike = { pos: at, t: S.warn, ring };
+      this.audio.play('whistle', { volume: 0.9 });
+      this.hooks?.onToast('포격 경고! 지금 자리를 벗어나세요');
+    }
+    const st = this.strike;
+    if (!st) return;
+    st.t -= dt;
+    const pulse = 0.5 + 0.5 * Math.sin(st.t * 14);
+    st.ring.scale.setScalar(1 + (1 - st.t / S.warn) * 0.04);
+    for (const m of st.ring.children) ((m as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = m.userData.base * (0.6 + pulse * 0.4);
+    if (st.t > 0) return;
+    // 폭발
+    this.fx.explosion(st.pos.clone().setY(st.pos.y + 0.2));
+    this.audio.play('boom', { volume: 1 });
+    const d = Math.hypot(this.pos.x - st.pos.x, this.pos.z - st.pos.z);
+    const sameLevel = Math.abs(this.pos.y - st.pos.y) < 2;
+    this.shake = Math.min(1, this.shake + Math.max(0.25, 1 - d / 25));
+    if (sameLevel && d < S.radius) {
+      this.hp -= S.damage * (1 - d / S.radius) * (this.crouched ? 0.8 : 1) + 8;
+      this.hurtT = 0;
+      this.hurtFlash = 1;
+      if (this.hp <= 0) this.gameOver();
+    }
+    // 근처 적도 다친다
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const de = Math.hypot(e.pos.x - st.pos.x, e.pos.z - st.pos.z);
+      if (de < S.radius && Math.abs(e.pos.y - st.pos.y) < 2) e.damage(200 * (1 - de / S.radius), new THREE.Vector3(e.pos.x - st.pos.x, 0, e.pos.z - st.pos.z).normalize(), false);
+    }
+    this.clearStrike();
+    this.campT = 0;
+    this.campAnchor.copy(this.pos);
+  }
+
+  private clearStrike(): void {
+    this.strike?.ring.removeFromParent();
+    this.strike = null;
   }
 
   private swapWeapon(): void {
@@ -1090,6 +1178,8 @@ export class ArenaGame {
       breakT: this.breakT,
       kills: this.stats.kills,
       playTime: this.playTime,
+      campRisk: Math.min(1, this.campT / this.campLimit()),
+      strikeT: this.strike ? this.strike.t : -1,
       sway: { x: (Math.sin(this.swayT * 0.9) * swayAmp) / (fovRad / 2), y: (Math.sin(this.swayT * 1.37) * swayAmp * 0.7) / (fovRad / 2) },
     };
   }
@@ -1150,4 +1240,19 @@ function glowTexture(color: string): THREE.Texture {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 64, 64);
   return new THREE.CanvasTexture(c);
+}
+
+/** 포격 경고 원(바닥에 깔리는 빨간 원) */
+function makeStrikeRing(r: number): THREE.Group {
+  const g = new THREE.Group();
+  const mk = (geo: THREE.BufferGeometry, opacity: number) => {
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide, fog: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -16 }));
+    m.rotation.x = -Math.PI / 2;
+    m.userData.base = opacity;
+    g.add(m);
+  };
+  mk(new THREE.RingGeometry(r - 0.3, r, 64), 0.9);
+  mk(new THREE.CircleGeometry(r - 0.3, 64), 0.18);
+  mk(new THREE.RingGeometry(0.5, 0.8, 32), 0.8);
+  return g;
 }

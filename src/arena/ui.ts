@@ -99,7 +99,7 @@ export class ArenaUI {
     game.hooks = {
       onKill: (k) => this.onKill(k),
       onHitMarker: (head, kill) => this.onHitMarker(head, kill),
-      onWave: (n, bonus) => this.banner(`웨이브 ${n - 1} 클리어!`, `+${bonus}점 · 체력 회복 · 다음 웨이브 곧 시작`),
+      onWave: (n, bonus) => this.banner(`웨이브 ${n - 1} 클리어!`, `+${bonus}점 · 구급상자 보충 · 다음 웨이브 곧 시작`),
       onGameOver: (r) => this.showResult(r),
       onToast: (t) => this.banner(t, ''),
     };
@@ -164,9 +164,11 @@ export class ArenaUI {
       </div>
       <details class="a-how"><summary>조작법</summary>
         ${touch
-          ? '<p><b>왼손</b> 화면 왼쪽 아무 데나 눌러 끌기 = 이동</p><p><b>오른손</b> 화면을 끌어 조준 · [발사]를 누른 채 끌어도 조준</p><p>[스코프] 켜고 끄기 · [숙이기] 난간 뒤에 숨기 · [점프] 모래주머니 · 상자 · 창턱 넘기 · [무기] 저격총↔권총</p>'
-          : '<p><b>WASD</b> 이동 · <b>마우스</b> 조준 · <b>좌클릭</b> 발사 · <b>우클릭(누르고 있기)</b> 스코프</p><p><b>Space</b> 점프 · <b>C</b> 숙이기 · <b>R</b> 재장전 · <b>Q</b> 무기 교체 · <b>휠/E</b> 배율 · <b>Esc</b> 일시정지</p>'}
+          ? '<p><b>왼손</b> 화면 왼쪽 아무 데나 눌러 끌기 = 이동</p><p><b>오른손</b> 화면을 끌어 조준 · [발사]를 누른 채 끌어도 조준</p><p>[스코프] 켜고 끄기 · [숙이기] 난간 뒤에 숨기 · [점프] 모래주머니 · 상자 · 창턱 넘기 · [무기] 저격총↔권총 · 조이스틱을 끝까지 앞으로 밀면 달리기</p>'
+          : '<p><b>WASD</b> 이동 · <b>마우스</b> 조준 · <b>좌클릭</b> 발사 · <b>우클릭(누르고 있기)</b> 스코프</p><p><b>Shift</b> 달리기 · <b>Space</b> 점프 · <b>C</b> 숙이기 · <b>R</b> 재장전 · <b>Q</b> 무기 교체 · <b>휠/E</b> 배율 · <b>Esc</b> 일시정지</p>'}
         <p><b>건물</b> 옥상 계단실 문으로 들어가면 3층 · 2층 · 1층으로 내려갈 수 있고, 1층 정문으로 밖에도 나갈 수 있습니다. 2·3층 창가는 숙였다 일어나 쏘기 좋은 자리. <b>돌격병</b>은 정문으로 들어와 계단을 타고 끝까지 쫓아옵니다.</p>
+        <p><b>회복</b> 체력은 저절로 차지 않습니다. 땅 위 엄폐물 뒤의 <b>구급상자</b>(초록 빛기둥 · 미니맵 초록 십자)를 주우면 +40.</p>
+        <p><b>포격</b> 한자리(특히 옥상)에서 오래 버티면 적이 포격합니다. 바닥에 빨간 원이 뜨면 바로 다른 엄폐물로 옮기세요.</p>
         <p><b>요령</b> 숙이면 난간 · 창턱이 몸을 가려 총에 안 맞습니다. 스코프를 열면 고개만 살짝 내밉니다. 빨간 레이저가 보이면 <b>적 저격수</b> – 먼저 쏘거나 숙이세요.</p>
       </details>
       <a class="a-classic" href="./classic.html">클래식 정밀 저격 작전 모드 →</a>
@@ -277,7 +279,7 @@ export class ArenaUI {
   private tip(r: ArenaResult): string {
     if (r.accuracy < 0.35) return '스코프를 다 연 뒤(화면이 확대된 뒤) 쏘면 탄이 정확히 가운데로 갑니다.';
     if (r.headshots < r.kills * 0.3) return '머리를 맞히면 점수 1.5배 + 중장갑도 한 방입니다.';
-    if (r.wave < 4) return '숙이고 있으면 총에 맞지 않습니다. 재장전·체력 회복은 숙인 채로 하세요.';
+    if (r.wave < 4) return '숙이고 있으면 총에 맞지 않습니다. 체력이 낮으면 엄폐물 뒤 구급상자를 주우러 내려가세요.';
     return '빨간 레이저(적 저격수)는 다른 적보다 먼저 처리하세요.';
   }
 
@@ -354,8 +356,16 @@ export class ArenaUI {
     q('.a-wstate').textContent = h.reloading >= 0 ? '재장전 중…' : h.bolting ? '장전' : h.inMag === 0 ? '탄 없음 – 재장전' : '';
     // 노출 표시
     const ex = q('.a-expose');
-    ex.textContent = h.exposed === 'hidden' ? '숨음 · 안전' : h.exposed === 'peek' ? '고개만 내밈' : '노출됨';
-    ex.className = `a-expose ${h.exposed}`;
+    if (h.strikeT >= 0) {
+      ex.textContent = '포격! 빨간 원 밖으로';
+      ex.className = 'a-expose open warn';
+    } else if (h.campRisk > 0.6) {
+      ex.textContent = '한자리 오래 머묾 – 곧 포격';
+      ex.className = 'a-expose peek warn';
+    } else {
+      ex.textContent = h.exposed === 'hidden' ? '숨음 · 안전' : h.exposed === 'peek' ? '고개만 내밈' : '노출됨';
+      ex.className = `a-expose ${h.exposed}`;
+    }
     // 십자선 · 스코프
     const scoped = h.scopeT > 0.85;
     this.scopeEl.style.display = scoped ? 'block' : 'none';
@@ -424,6 +434,13 @@ export class ArenaUI {
     for (const b of g.map.boxes) {
       if (b.max.y - b.min.y < 0.7) continue;
       ctx.fillRect(b.min.x, b.min.z, b.max.x - b.min.x, b.max.z - b.min.z);
+    }
+    // 구급상자(초록 십자) – 회전된 좌표에서 그리되 크기는 m 단위
+    ctx.fillStyle = '#5dff7e';
+    for (const kt of g.medkits.kits) {
+      const u = 18 / k;
+      ctx.fillRect(kt.pos.x - u / 2, kt.pos.z - u / 6, u, u / 3);
+      ctx.fillRect(kt.pos.x - u / 6, kt.pos.z - u / 2, u / 3, u);
     }
     ctx.restore();
     // 거리 눈금

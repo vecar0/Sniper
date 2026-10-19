@@ -150,6 +150,7 @@ button { font: inherit; color: inherit; }
 .a-expose.hidden { color: var(--a-good); }
 .a-expose.peek { color: var(--a-accent-2); }
 .a-expose.open { color: #ff7a6a; }
+.a-expose.warn { font-size: 14px; font-weight: 800; animation: a-blink 0.5s steps(1) infinite; }
 .a-hurt { inset: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 10, 0.6) 100%); opacity: 0; }
 .a-hurtdirs { inset: 0; }
 .a-hurtdirs i { position: absolute; left: 50%; top: 50%; width: 240px; height: 240px; }

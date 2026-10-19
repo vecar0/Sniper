@@ -126,6 +126,12 @@ export class ArenaInput {
     this.pressed.add(b);
   }
 
+  /** 달리기: Shift, 휴대폰은 조이스틱을 끝까지 앞으로 */
+  get sprint(): boolean {
+    if (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) return true;
+    return this.isTouch && !this.keys.size && this.moveY > 0.9;
+  }
+
   consume(b: ButtonId): boolean {
     const had = this.pressed.has(b);
     this.pressed.delete(b);

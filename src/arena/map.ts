@@ -315,7 +315,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   const bags = new SandbagStacks();
   const bagFit = getModel('sandbags') ? fitTransform('sandbags', 2.3, 0.95, 1.0) : null;
   const bagSpots: THREE.Matrix4[] = [];
-  for (const [x, z, w] of [[-12, -28, 9], [11, -30, 10], [-30, -46, 7], [2, -50, 8], [34, -62, 7], [-14, -78, 8], [12, -92, 8], [-46, -32, 6], [44, -36, 6], [-2, -100, 8], [-24, -60, 5]] as const) {
+  for (const [x, z, w] of [[-12, -28, 9], [11, -30, 10], [-30, -46, 7], [2, -50, 8], [34, -62, 7], [-14, -78, 8], [12, -92, 8], [-46, -32, 6], [44, -36, 6], [-2, -100, 8], [-24, -60, 5], [-6, -12, 5], [16, -10, 5]] as const) {
     collider(x, 0, z, w, 0.95, 1.1, 'low');
     if (bagFit) {
       // 3D 모래주머니 벽 조각(약 2.3m)을 이어 붙인다
@@ -330,7 +330,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   // 콘크리트 방호벽(낮은 엄폐)
   const barrier = mat('concrete', 0xd9d3c8);
   const barrierSpots: THREE.Matrix4[] = [];
-  for (const [x, z, w] of [[-34, -24, 6], [36, -24, 6], [-52, -50, 4], [20, -112, 5]] as const) {
+  for (const [x, z, w] of [[-34, -24, 6], [36, -24, 6], [-52, -50, 4], [20, -112, 5], [-22, -14, 4], [26, -18, 4]] as const) {
     if (getModel('barrier')) {
       // 실사 콘크리트 방호벽(Poly Haven)을 약 1.6m씩 이어 놓는다
       collider(x, 0, z, w, 0.9, 0.7, 'low');

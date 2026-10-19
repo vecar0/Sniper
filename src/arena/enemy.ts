@@ -84,6 +84,14 @@ export class Enemy {
   /** 실제 움직인 속도(m/s) – 걷기 동작을 실제 이동에 맞춘다(옆걸음 포함) */
   private vel = 0;
   private readonly prevPos = new THREE.Vector3();
+  /** 지금 이동 속력(m/s) – 출발할 때 서서히 빨라지고 도착할 때 서서히 멈춘다 */
+  private spd = 0;
+  /** 플레이어 머리 위치(윗몸을 그쪽으로 돌린다) */
+  private readonly look = new THREE.Vector3();
+  /** 윗몸 비틀기(라디안) · 제자리 회전 속도 */
+  private twist = 0;
+  private prevYaw = Math.PI;
+  private turnRate = 0;
   private lastPos = new THREE.Vector3();
   cover: CoverPoint | null = null;
   private timer = 0;
@@ -159,6 +167,7 @@ export class Enemy {
     if (this.state === 'gone') return null;
     let shot: EnemyShot | null = null;
     this.fireT -= dt;
+    this.look.copy(player.head);
     switch (this.state) {
       case 'move': {
         const g = this.goal;
@@ -171,12 +180,13 @@ export class Enemy {
         }
         this.settle(map, dt);
         // 이동하면서도 가끔 쏜다(압박): 플레이어가 보이면 정확도 절반으로 한 발
+        // (몸을 돌려 겨눌 수 있는 방향일 때만 – 등 뒤로는 쏘지 않는다)
         if ((this.kind === 'rifle' || this.kind === 'heavy') && this.fireT <= 0) {
           this.fireT = this.spec.interval * (0.8 + Math.random() * 0.6);
-          if (clearLine(map.boxes, this.eye(), player.head)) shot = this.shoot(player, map.boxes, accMul * 0.5);
+          if (Math.abs(this.angleTo(player.head)) < 1.45 && clearLine(map.boxes, this.eye(), player.head)) shot = this.shoot(player, map.boxes, accMul * 0.5);
         }
         // 막혀서 못 움직이면 경로를 다시 찾는다
-        if (this.pos.distanceToSquared(this.lastPos) < 0.0004) {
+        if (this.pos.distanceTo(this.lastPos) < Math.max(0.002, this.spd * dt * 0.3)) {
           this.stuckT += dt;
           if (this.stuckT > 0.8) {
             this.route = map.nav.path(this.pos, g);
@@ -264,7 +274,7 @@ export class Enemy {
             // 건물 안에서는 조금 천천히(좁은 곳에서 부딪히지 않게)
             if (this.walk(next, dt, map.boxes, insideBuilding(this.pos) ? 0.7 : 1)) this.route.shift();
           } else this.idle(dt);
-          if (this.pos.distanceToSquared(this.lastPos) < 0.0004 && next) {
+          if (this.pos.distanceTo(this.lastPos) < Math.max(0.002, this.spd * dt * 0.3) && next) {
             this.stuckT += dt;
             if (this.stuckT > 0.8) {
               this.route = [];
@@ -321,13 +331,25 @@ export class Enemy {
     this.pos.y = f < this.pos.y ? Math.max(f, this.pos.y - 12 * dt) : f;
   }
 
+  /** 내 정면 기준으로 p가 있는 방향(라디안, 왼쪽 -, 오른쪽 +) */
+  private angleTo(p: THREE.Vector3): number {
+    const d = Math.atan2(p.x - this.pos.x, p.z - this.pos.z) - this.yaw;
+    return Math.atan2(Math.sin(d), Math.cos(d));
+  }
+
   private walk(goal: THREE.Vector3, dt: number, boxes: Box[], speedMul = 1): boolean {
     const dx = goal.x - this.pos.x, dz = goal.z - this.pos.z;
     const d = Math.hypot(dx, dz);
-    const step = this.spec.speed * speedMul * dt;
-    if (d <= step + 0.02) {
-      this.pos.x = goal.x;
-      this.pos.z = goal.z;
+    // 마지막 지점이면 가까워질수록 느려지고, 중간 경유점은 모서리를 살짝 질러간다
+    const last = this.route.length <= 1;
+    const top = this.spec.speed * speedMul * (last ? THREE.MathUtils.clamp(d / 2.2, 0.35, 1) : 1);
+    this.spd += (top - this.spd) * Math.min(1, dt * (top > this.spd ? 3 : 6));
+    const step = this.spd * dt;
+    if (d <= (last ? step + 0.02 : Math.max(step + 0.02, 0.8))) {
+      if (last) {
+        this.pos.x = goal.x;
+        this.pos.z = goal.z;
+      }
       return true;
     }
     const nx = this.pos.x + (dx / d) * step, nz = this.pos.z + (dz / d) * step;
@@ -363,6 +385,7 @@ export class Enemy {
 
   private idle(dt: number): void {
     this.swing += (0 - this.swing) * Math.min(1, dt * 6);
+    this.spd *= Math.exp(-dt * 8);
   }
 
   private face(p: THREE.Vector3, dt: number): void {
@@ -468,15 +491,28 @@ export class Enemy {
     this.prevPos.copy(this.pos);
     this.aimHold = Math.max(0, this.aimHold - dt);
     const aiming = this.state === 'peek' || this.state === 'aim' || this.state === 'hide' || (this.state === 'chase' && this.aiming);
+    // 제자리에서 몸을 돌리면 발을 떼며 돈다(미끄러지듯 돌지 않게)
+    if (dt > 0) {
+      let dy = this.yaw - this.prevYaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      this.turnRate += (Math.abs(dy) / dt - this.turnRate) * Math.min(1, dt * 8);
+    }
+    this.prevYaw = this.yaw;
+    const moving = this.vel > 0.35;
+    // 걸으며 겨눌 때: 다리는 가는 쪽, 윗몸만 플레이어 쪽으로 비튼다
+    const wantTwist = moving && (this.aimHold > 0 || (this.state === 'chase' && this.aiming)) ? THREE.MathUtils.clamp(this.angleTo(this.look), -1.3, 1.3) : 0;
+    this.twist += (wantTwist - this.twist) * Math.min(1, dt * 6);
     if (this.visual) {
       this.visual.pivot.rotation.x = 0;
+      const turning = !moving && this.turnRate > 1.4 && c < 0.3;
       this.visual.update(dt, {
-        moving: this.vel > 0.35,
-        running: this.kind === 'rusher',
+        moving: moving || turning,
+        running: this.kind === 'rusher' || this.vel > 3.4,
         aiming: aiming || this.aimHold > 0,
-        speed: Math.max(0.6, this.vel),
+        speed: turning ? Math.max(1.1, this.turnRate * 0.55) : Math.max(0.6, this.vel),
         crouch: c,
         fall: 0,
+        twist: this.twist,
       });
     }
     r.legL.rotation.x = s - c * 1.4;

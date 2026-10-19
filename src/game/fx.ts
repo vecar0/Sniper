@@ -316,6 +316,24 @@ export class Effects {
     }
   }
 
+  /** 포탄 폭발: 불꽃 + 큰 흙먼지 + 파편 */
+  explosion(p: THREE.Vector3): void {
+    const v = new THREE.Vector3();
+    for (let i = 0; i < 24; i++) {
+      v.set((Math.random() - 0.5) * 14, 3 + Math.random() * 9, (Math.random() - 0.5) * 14);
+      this.sparks.spawn(p, v, 0.3 + Math.random() * 0.4, 2.2, -1, 9, i % 3 ? 0xffb347 : 0xfff0a0);
+    }
+    for (let i = 0; i < 30; i++) {
+      v.set((Math.random() - 0.5) * 7, 1 + Math.random() * 6, (Math.random() - 0.5) * 7);
+      const c = this.dustColor.clone().offsetHSL(0, 0, (Math.random() - 0.5) * 0.12 - 0.08);
+      this.dust.spawn(p, v, 1.4 + Math.random() * 1.2, 0.5, 1.6, 1.2, c);
+    }
+    for (let i = 0; i < 12; i++) {
+      v.set((Math.random() - 0.5) * 10, 4 + Math.random() * 6, (Math.random() - 0.5) * 10);
+      this.frags.spawn(p, v, 1.5, 0.08, 0, 14, 0x4a4238, true);
+    }
+  }
+
   /** 사람 무력화: 피격 지점의 작은 먼지 + 쓰러진 자리의 흙먼지(유혈 표현 없음) */
   personDown(hit: THREE.Vector3, feet: THREE.Vector3, dir: THREE.Vector3, distance: number): void {
     const scale = 0.5 + distance * 0.0008;

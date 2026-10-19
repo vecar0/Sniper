@@ -375,7 +375,7 @@ export interface SoldierVisual {
   fire(): void;
   /** 맞았을 때(움찔) */
   hit(): void;
-  update(dt: number, o: { moving: boolean; running: boolean; aiming: boolean; speed: number; crouch: number; fall: number }): void;
+  update(dt: number, o: { moving: boolean; running: boolean; aiming: boolean; speed: number; crouch: number; fall: number; twist?: number }): void;
 }
 
 export function createSoldier(look: SoldierLook): SoldierVisual | null {
@@ -555,6 +555,12 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
           aimBone(bone, child, tgt3, wMeshy);
         }
       }
+      // 윗몸 비틀기(걸으며 옆 · 뒤쪽을 겨눌 때): 허리 40% · 가슴 60%
+      const tw = dying ? 0 : (o.twist ?? 0);
+      if (Math.abs(tw) > 0.01) {
+        bones.get('spine')?.rotateY(tw * 0.4);
+        bones.get('chest')?.rotateY(tw * 0.6);
+      }
       // 발 붙이기: KayKit 몸 비율 때문에 엉덩이가 높게(또는 낮게) 오면 발이 뜨거나 묻힌다 → 낮은 발이 땅에 닿게 엉덩이를 맞춘다
       if (!dying && hipsBone && footL && footR) {
         inner.updateMatrixWorld(true);
@@ -572,9 +578,11 @@ export function createSoldier(look: SoldierLook): SoldierVisual | null {
           const goal = t3.copy(GRIP.aim[side]).multiplyScalar(w.aim).addScaledVector(GRIP.carry[side], w.carry);
           if (w.aim + w.carry > 0.01) goal.divideScalar(w.aim + w.carry);
           goal.y += inner.position.y + (w.crouch > 0.01 ? (hipsY() - J.hips[1]) * w.crouch : 0);
+          // 비튼 만큼 손 위치(총)도 같이 돈다
+          if (Math.abs(tw) > 0.01) goal.applyAxisAngle(upv, tw);
           const gw = goal.clone().applyMatrix4(pivot.matrixWorld);
           const sh = A.up.getWorldPosition(new THREE.Vector3());
-          const pole = POLE[side].clone().transformDirection(pivot.matrixWorld);
+          const pole = POLE[side].clone().applyAxisAngle(upv, tw).transformDirection(pivot.matrixWorld);
           const [el, wr] = solveIk(sh, gw, A.lenUp, A.lenFore, pole);
           aimBone(A.up, A.fore, el, ikW);
           aimBone(A.fore, A.wrist, wr, ikW);
