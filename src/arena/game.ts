@@ -198,7 +198,8 @@ export class ArenaGame {
     this.renderer.shadowMap.enabled = quality !== 'low';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
-    this.camera = new THREE.PerspectiveCamera(TUNING.fov, 1, 0.08, 1500);
+    // near를 너무 작게 하면 먼 곳의 깊이 정밀도가 떨어져 바닥이 깜빡인다(총은 따로 그리므로 0.15m면 충분)
+    this.camera = new THREE.PerspectiveCamera(TUNING.fov, 1, 0.15, 1500);
     this.vmCamera = new THREE.PerspectiveCamera(TUNING.fov, 1, 0.01, 10);
     this.scene.fog = new THREE.Fog(0xcfc3b1, 160, 900);
     // 하늘: 실사 사진을 배경으로, 같은 사진으로 주변광(환경맵)도 만든다. 사진을 못 불러오면 그라데이션 하늘
@@ -983,7 +984,8 @@ export class ArenaGame {
     if (!this.running) {
       // 메뉴: 옥상에서 기지를 천천히 둘러본다
       const t = this.menuT * 0.05;
-      cam.position.set(Math.sin(t) * 3, ROOF_Y + 1.7, 0);
+      // 난간 위로 조금 높이 – 기지가 화면 가운데 오게
+      cam.position.set(Math.sin(t) * 3, ROOF_Y + 3.2, -3.5);
       cam.fov = 55;
       cam.lookAt(Math.sin(t * 0.7) * 30, 2, -70);
       cam.updateProjectionMatrix();

@@ -112,7 +112,8 @@ export function buildBuilding(
   slab(6, minusHole(inner, holeB));
   slab(9, minusHole({ x0: -W, x1: W, z0: -D, z1: D }, holeA));
   // 1층 바닥(밖의 땅과 같은 높이 – 콘크리트로 덮기만)
-  block(0, -0.04, 0, 2 * W - 2 * T, 0.05, 2 * D - 2 * T, mats.floor, 3, { collide: false });
+  // 땅보다 4cm 높게(멀리서 겹쳐 깜빡이지 않게) – 걷는 높이는 floorAt이 0으로 본다
+  block(0, -0.02, 0, 2 * W - 2 * T, 0.06, 2 * D - 2 * T, mats.floor, 3, { collide: false });
 
   // ── 계단: 경사로(밟는 면) + 계단 모양(보이기만) ──
   const ramp = (lane: { x0: number; x1: number }, zFrom: number, zTo: number, yFrom: number, yTo: number) => {

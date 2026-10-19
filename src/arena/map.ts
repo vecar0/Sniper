@@ -272,7 +272,8 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   group.add(ground);
   const road = new THREE.Mesh(worldUvPlane(260, 7, 7), mat('asphalt'));
   disposables.push(road.geometry);
-  road.position.set(0, 0.02, -17);
+  road.position.set(0, 0.05, -17);
+  layerOnTop(road.material as THREE.Material, 2);
   road.receiveShadow = shadows;
   group.add(road);
 
@@ -306,7 +307,8 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   // 기지 마당: 콘크리트 바닥
   const yard = new THREE.Mesh(worldUvPlane(124, 104, 5), mat('concrete', 0xf0ebe2));
   disposables.push(yard.geometry);
-  yard.position.set(0, 0.012, -74);
+  yard.position.set(0, 0.03, -74);
+  layerOnTop(yard.material as THREE.Material, 1);
   yard.receiveShadow = shadows;
   group.add(yard);
   // 모래주머니 줄(낮은 엄폐) – 둥근 자루를 벽돌처럼 쌓은 모양
@@ -607,6 +609,16 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
       group.removeFromParent();
     },
   };
+}
+
+/**
+ * 바닥 위에 겹쳐 까는 면(마당 · 도로 · 1층 바닥)이 멀리서 땅과 깊이를 다투며 깜빡이지 않게,
+ * 깊이 값을 조금 앞으로 당겨 항상 위에 그려지게 한다(층이 높을수록 더 많이).
+ */
+function layerOnTop(m: THREE.Material, level: number): void {
+  m.polygonOffset = true;
+  m.polygonOffsetFactor = -level;
+  m.polygonOffsetUnits = -4 * level;
 }
 
 /** 건물 안(벽 안쪽)인가 */

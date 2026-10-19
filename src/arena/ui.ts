@@ -65,7 +65,7 @@ export class ArenaUI {
     this.hudEl = document.createElement('div');
     this.hudEl.className = 'a-hud';
     this.hudEl.innerHTML = `
-      <div class="a-tl"><div class="a-score">0</div><div class="a-wave">웨이브 1</div><div class="a-left"></div></div>
+      <div class="a-tl a-glass"><div class="a-tl-row"><span class="a-tag">WAVE</span><b class="a-wave">1</b><i class="a-sep"></i><span class="a-tag">남은 적</span><b class="a-left">0</b></div><div class="a-score">0</div></div>
       <div class="a-combo"></div>
       <div class="a-feed"></div>
       <div class="a-markers"></div>
@@ -76,8 +76,8 @@ export class ArenaUI {
       <div class="a-expose"></div>
       <div class="a-hurt"></div>
       <div class="a-hurtdirs"></div>
-      <div class="a-hp"><span>체력</span><i><b></b></i><em></em></div>
-      <div class="a-weapon"><b class="a-wname"></b><div class="a-ammo"></div><div class="a-wstate"></div></div>
+      <div class="a-hp a-glass"><svg class="a-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 1h4v5h5v4h-5v5H6v-5H1V6h5z"/></svg><i><b></b></i><em></em></div>
+      <div class="a-weapon a-glass"><div class="a-wtop"><b class="a-wname"></b><span class="a-wkey"></span></div><div class="a-ammo"></div><div class="a-wstate"></div></div>
       <div class="a-banner"></div>
       <div class="a-cam"></div>`;
     root.appendChild(this.hudEl);
@@ -312,8 +312,8 @@ export class ArenaUI {
     const h = g.hud();
     const q = <T extends HTMLElement>(s: string) => this.hudEl.querySelector<T>(s)!;
     q('.a-score').textContent = h.score.toLocaleString();
-    q('.a-wave').textContent = `웨이브 ${h.wave}`;
-    q('.a-left').textContent = h.breakT > 0 ? '다음 웨이브 준비' : `남은 적 ${h.enemiesLeft}`;
+    q('.a-wave').textContent = String(h.wave);
+    q('.a-left').textContent = h.breakT > 0 ? '준비' : String(h.enemiesLeft);
     const combo = q('.a-combo');
     combo.textContent = h.combo > 1 ? `×${h.combo} 연속` : '';
     combo.style.opacity = h.combo > 1 ? String(Math.min(1, h.comboT * 2)) : '0';
@@ -325,12 +325,13 @@ export class ArenaUI {
     q('.a-hurtdirs').innerHTML = h.hurtDirs.map((d) => `<i style="transform:translate(-50%,-50%) rotate(${d.toFixed(0)}deg)"></i>`).join('');
     // 무기
     q('.a-wname').textContent = h.weaponName;
+    q('.a-wkey').textContent = this.input.isTouch ? '' : h.weapon === 'sniper' ? 'Q · 권총' : 'Q · 저격총';
     const ammo = q('.a-ammo');
-    ammo.innerHTML = h.weapon === 'sniper' ? Array.from({ length: 5 }, (_, i) => `<i class="${i < h.inMag ? 'on' : ''}"></i>`).join('') : `<b>${h.inMag}</b> / ${h.reserve}`;
+    ammo.innerHTML = h.weapon === 'sniper' ? Array.from({ length: 5 }, (_, i) => `<i class="${i < h.inMag ? 'on' : ''}"></i>`).join('') : `<b>${h.inMag}</b><small>/ ${h.reserve}</small>`;
     q('.a-wstate').textContent = h.reloading >= 0 ? '재장전 중…' : h.bolting ? '장전' : h.inMag === 0 ? '탄 없음 – 재장전' : '';
     // 노출 표시
     const ex = q('.a-expose');
-    ex.textContent = h.exposed === 'hidden' ? '숨음 – 안전' : h.exposed === 'peek' ? '고개만 내밈' : '노출됨';
+    ex.textContent = h.exposed === 'hidden' ? '숨음 · 안전' : h.exposed === 'peek' ? '고개만 내밈' : '노출됨';
     ex.className = `a-expose ${h.exposed}`;
     // 십자선 · 스코프
     const scoped = h.scopeT > 0.85;
@@ -367,7 +368,7 @@ export class ArenaUI {
       f.el.style.opacity = String(Math.min(1, f.t));
     }
     q('.a-cam').style.display = h.bulletCam ? 'block' : 'none';
-    this.touch?.setState({ scoped: h.scopeT > 0.5, crouched: h.crouched, zoomLabel: `${h.zoom}×`, weapon: h.weapon === 'sniper' ? '기관총' : '저격총' });
+    this.touch?.setState({ scoped: h.scopeT > 0.5, crouched: h.crouched, zoomLabel: `${h.zoom}×`, weapon: h.weapon === 'sniper' ? '권총' : '저격총' });
     if (this.input.consume('pause') && now - this.pausedAt > 350) {
       if (g.paused) this.resume();
       else if (!g.over) this.pause();

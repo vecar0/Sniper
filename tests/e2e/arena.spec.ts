@@ -17,14 +17,15 @@ test.describe('옥상 저격전(메인 모드)', () => {
   });
 
   test('출격 → 웨이브 시작 → 적을 저격해 처치 · 점수', async ({ page }) => {
-    test.setTimeout(240_000);
+    // 소프트웨어 렌더링(GPU 없음)에서는 게임 시간이 느리게 흐른다 – 적이 엄폐물에 자리 잡을 때까지 넉넉히
+    test.setTimeout(420_000);
     const w = watch(page);
     await bootArena(page);
     await page.click('[data-act="start"]');
     await expect(page.locator('.a-hud')).toBeVisible();
     expect(await page.evaluate(() => (window as any).__arena.game.wave)).toBe(1);
     // 엄폐 지점에 자리 잡은(보이는) 적이 생길 때까지
-    await page.waitForFunction(() => (window as any).__arena.game.enemies.some((e: any) => e.alive && (e.state === 'peek' || e.state === 'hide') && e.pos.z > -100), null, { timeout: 180_000 });
+    await page.waitForFunction(() => (window as any).__arena.game.enemies.some((e: any) => e.alive && (e.state === 'peek' || e.state === 'hide') && e.pos.z > -100), null, { timeout: 300_000 });
     // 정확히 겨눠 스코프 → 발사(가상 입력)
     await page.evaluate(() => {
       const { game: g, input } = (window as any).__arena;
