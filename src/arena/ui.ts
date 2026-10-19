@@ -34,6 +34,15 @@ const GUN_SVG = {
   pistol: '<svg viewBox="0 0 120 30" aria-hidden="true"><path d="M30 5h52v9H74v2l4 13h-11l-4-11h-6c-1 3-3 5-7 5h-4v-2h4c2 0 3-1 3-3H34v-4h-4z"/></svg>',
 };
 
+/** 시작 화면 아이콘 */
+const svg = (b: string) => `<svg viewBox="0 0 24 24" aria-hidden="true">${b}</svg>`;
+const UI_ICON = {
+  gear: svg('<path d="M10.3 2.5h3.4l.5 2.4 1.8.8 2.1-1.4 2.4 2.4-1.4 2.1.8 1.8 2.4.5v3.4l-2.4.5-.8 1.8 1.4 2.1-2.4 2.4-2.1-1.4-1.8.8-.5 2.4h-3.4l-.5-2.4-1.8-.8-2.1 1.4-2.4-2.4 1.4-2.1-.8-1.8-2.4-.5v-3.4l2.4-.5.8-1.8-1.4-2.1 2.4-2.4 2.1 1.4 1.8-.8z"/><circle cx="12" cy="12" r="3"/>'),
+  help: svg('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 1 1 3.6 2.4c-.7.3-1.1.9-1.1 1.6v.7"/><circle class="f" cx="12" cy="17" r="1"/>'),
+  close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  arrow: svg('<path d="M5 12h13M13 6l6 6-6 6"/>'),
+};
+
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 export class ArenaUI {
@@ -152,49 +161,80 @@ export class ArenaUI {
     this.hudEl.style.display = 'none';
     this.touch?.setVisible(false);
     const p = this.prefs;
-    const touch = this.input.isTouch;
-    this.show(`<div class="a-panel a-menu">
-      <div class="a-brand"><h1>LONG<span>·</span>SHOT</h1><p>옥상 저격전</p></div>
-      <p class="a-lead">건물을 지켜라. 옥상 · 창가 · 1층 어디서든 – 몰려오는 적을 <b>저격총 한 방</b>으로.</p>
-      <button class="a-btn-main" data-act="start">출격</button>
-      <div class="a-best">최고 점수 <b>${this.best().toLocaleString()}</b></div>
-      <div class="a-opts">
-        <div class="a-opt"><span>난이도</span><div class="a-seg">${(['easy', 'normal', 'hard'] as Difficulty[]).map((d) => `<button data-diff="${d}" class="${p.difficulty === d ? 'on' : ''}">${{ easy: '쉬움', normal: '보통', hard: '어려움' }[d]}</button>`).join('')}</div></div>
-        <div class="a-opt"><span>조준 보조</span><div class="a-seg"><button data-assist="1" class="${p.aimAssist ? 'on' : ''}">켜기</button><button data-assist="0" class="${!p.aimAssist ? 'on' : ''}">끄기</button></div></div>
-        <div class="a-opt"><span>감도 <output>${p.sens.toFixed(1)}</output></span><input type="range" min="0.3" max="3" step="0.1" value="${p.sens}" data-sens></div>
+    const diffName = { easy: '쉬움', normal: '보통', hard: '어려움' }[p.difficulty];
+    this.show(`<div class="a-lobby a-menu">
+      <div class="a-lobby-top">
+        <button class="a-icon-btn" data-sheet="how" aria-label="조작법">${UI_ICON.help}</button>
+        <button class="a-icon-btn" data-sheet="settings" aria-label="설정">${UI_ICON.gear}</button>
       </div>
-      <details class="a-how"><summary>조작법</summary>
-        ${touch
-          ? '<p><b>왼손</b> 화면 왼쪽 아무 데나 눌러 끌기 = 이동</p><p><b>오른손</b> 화면을 끌어 조준 · [발사]를 누른 채 끌어도 조준</p><p>[스코프] 켜고 끄기 · [숙이기] 난간 뒤에 숨기 · [점프] 모래주머니 · 상자 · 창턱 넘기 · [무기] 저격총↔권총 · [방패] 엄폐 · 조이스틱을 끝까지 앞으로 밀면 달리기</p>'
-          : '<p><b>WASD</b> 이동 · <b>마우스</b> 조준 · <b>좌클릭</b> 발사 · <b>우클릭(누르고 있기)</b> 스코프</p><p><b>Shift</b> 달리기 · <b>V</b> 엄폐 · <b>Space</b> 점프 · <b>C</b> 숙이기 · <b>R</b> 재장전 · <b>Q</b> 무기 교체 · <b>휠/E</b> 배율 · <b>Esc</b> 일시정지</p>'}
-        <p><b>건물</b> 옥상 계단실 문으로 들어가면 3층 · 2층 · 1층으로 내려갈 수 있고, 1층 정문으로 밖에도 나갈 수 있습니다. 2·3층 창가는 숙였다 일어나 쏘기 좋은 자리. <b>돌격병</b>은 정문으로 들어와 계단을 타고 끝까지 쫓아옵니다.</p>
-        <p><b>엄폐</b> 화면에 뜨는 <b>방패 표시</b>가 가장 가까운 엄폐 자리입니다. 엄폐 버튼(V)을 누르면 그리로 달려가 숨고, 한 번 더 누르면 보는 쪽의 다음 엄폐물로 옮깁니다. 낮은 엄폐물은 숙여서 숨고 스코프를 열면 고개만 내밀며, 컨테이너 같은 높은 엄폐물은 스코프를 열면 옆으로 몸을 내밉니다.</p>
-        <p><b>회복</b> 체력은 저절로 차지 않습니다. 땅 위 엄폐물 뒤의 <b>구급상자</b>(초록 빛기둥 · 미니맵 초록 십자)를 주우면 +40.</p>
-        <p><b>요령</b> 숙이면 난간 · 창턱이 몸을 가려 총에 안 맞습니다. 스코프를 열면 고개만 살짝 내밉니다. 빨간 레이저가 보이면 <b>적 저격수</b> – 먼저 쏘거나 숙이세요.</p>
-      </details>
-      <a class="a-classic" href="./classic.html">클래식 정밀 저격 작전 모드 →</a>
+      <div class="a-brand">
+        <span class="a-kicker">TACTICAL SNIPER</span>
+        <h1>LONG<span>·</span>SHOT</h1>
+        <p>옥상 저격전</p>
+      </div>
+      <div class="a-lobby-bottom">
+        <div class="a-lobby-info">
+          <div class="a-best"><span>최고 점수</span><b>${this.best().toLocaleString()}</b></div>
+          <div class="a-chips"><span>난이도 ${diffName}</span><span>조준 보조 ${p.aimAssist ? '켬' : '끔'}</span><span>감도 ${p.sens.toFixed(1)}</span></div>
+          <a class="a-classic" href="./classic.html">클래식 정밀 저격 작전 →</a>
+        </div>
+        <button class="a-play" data-act="start"><span>출격</span>${UI_ICON.arrow}</button>
+      </div>
     </div>`);
     this.bind('[data-act="start"]', () => this.start());
-    this.screen.querySelectorAll<HTMLElement>('[data-diff]').forEach((b) =>
-      b.addEventListener('click', () => {
-        this.prefs.difficulty = b.dataset.diff as Difficulty;
-        this.applyPrefs();
-        this.showMenu();
-      }),
-    );
-    this.screen.querySelectorAll<HTMLElement>('[data-assist]').forEach((b) =>
-      b.addEventListener('click', () => {
-        this.prefs.aimAssist = b.dataset.assist === '1';
-        this.applyPrefs();
-        this.showMenu();
-      }),
-    );
-    const sens = this.screen.querySelector<HTMLInputElement>('[data-sens]');
+    this.screen.querySelectorAll<HTMLElement>('[data-sheet]').forEach((b) => b.addEventListener('click', () => this.openSheet(b.dataset.sheet as 'how' | 'settings')));
+  }
+
+  /** 시작 화면 위에 오른쪽에서 열리는 설정 · 조작법 창 */
+  private openSheet(kind: 'how' | 'settings'): void {
+    this.audio.play('uiClick');
+    const p = this.prefs;
+    const touch = this.input.isTouch;
+    const seg = (key: string, items: [string, string][], on: string) => `<div class="a-seg">${items.map(([v, t]) => `<button data-${key}="${v}" class="${v === on ? 'on' : ''}">${t}</button>`).join('')}</div>`;
+    const body =
+      kind === 'settings'
+        ? `<div class="a-opts">
+            <div class="a-opt"><span>난이도</span>${seg('diff', [['easy', '쉬움'], ['normal', '보통'], ['hard', '어려움']], p.difficulty)}</div>
+            <div class="a-opt"><span>조준 보조</span>${seg('assist', [['1', '켜기'], ['0', '끄기']], p.aimAssist ? '1' : '0')}</div>
+            <div class="a-opt"><span>감도 <output>${p.sens.toFixed(1)}</output></span><input type="range" min="0.3" max="3" step="0.1" value="${p.sens}" data-sens></div>
+          </div>`
+        : `<div class="a-how">
+            <h3>조작</h3>
+            ${touch
+              ? '<p><b>왼쪽 화면</b> 눌러 끌기 = 이동 (끝까지 밀면 달리기)</p><p><b>오른쪽 화면</b> 끌어서 조준 · 발사 버튼을 누른 채 끌어도 조준</p><p>버튼: 발사 · 스코프 · 숙이기 · 엄폐(방패) · 점프 · 재장전 · 무기 교체</p>'
+              : '<div class="a-keys"><span><kbd>WASD</kbd>이동</span><span><kbd>Shift</kbd>달리기</span><span><kbd>마우스</kbd>조준</span><span><kbd>좌클릭</kbd>발사</span><span><kbd>우클릭</kbd>스코프</span><span><kbd>V</kbd>엄폐</span><span><kbd>C</kbd>숙이기</span><span><kbd>Space</kbd>점프</span><span><kbd>R</kbd>재장전</span><span><kbd>Q · 1 · 2</kbd>무기</span><span><kbd>휠 · E</kbd>배율</span><span><kbd>Esc</kbd>일시정지</span></div>'}
+            <h3>요령</h3>
+            <p><b>엄폐</b> 화면의 방패 표시가 가장 가까운 엄폐 자리. 엄폐 버튼을 누르면 달려가 숨고, 다시 누르면 다음 엄폐물로. 높은 엄폐물(컨테이너)은 스코프를 열면 옆으로 몸을 내밉니다.</p>
+            <p><b>숙이기</b> 난간 · 창턱 · 모래주머니 뒤에서 숙이면 총에 안 맞고, 스코프를 열면 고개만 내밉니다.</p>
+            <p><b>회복</b> 체력은 저절로 차지 않습니다. 땅 위 엄폐물 뒤 구급상자(초록 빛기둥)를 주우세요.</p>
+            <p><b>적</b> 빨간 레이저는 적 저격수 – 먼저 쏘거나 숨으세요. 돌격병은 건물 안 계단까지 쫓아옵니다.</p>
+          </div>`;
+    const sheet = document.createElement('div');
+    sheet.className = 'a-sheet-wrap';
+    sheet.innerHTML = `<div class="a-sheet"><div class="a-sheet-head"><h2>${kind === 'settings' ? '설정' : '조작법'}</h2><button class="a-icon-btn" data-close aria-label="닫기">${UI_ICON.close}</button></div>${body}</div>`;
+    this.screen.appendChild(sheet);
+    const close = () => {
+      sheet.remove();
+      this.showMenu();
+    };
+    sheet.addEventListener('click', (e) => e.target === sheet && close());
+    sheet.querySelector('[data-close]')!.addEventListener('click', close);
+    const pick = (attr: string, fn: (v: string) => void) =>
+      sheet.querySelectorAll<HTMLElement>(`[data-${attr}]`).forEach((b) =>
+        b.addEventListener('click', () => {
+          this.audio.play('uiClick');
+          fn(b.dataset[attr]!);
+          this.applyPrefs();
+          b.parentElement!.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+        }),
+      );
+    pick('diff', (v) => (this.prefs.difficulty = v as Difficulty));
+    pick('assist', (v) => (this.prefs.aimAssist = v === '1'));
+    const sens = sheet.querySelector<HTMLInputElement>('[data-sens]');
     sens?.addEventListener('input', () => {
       this.prefs.sens = Number(sens.value);
       this.applyPrefs();
-      const o = this.screen.querySelector('output');
-      if (o) o.textContent = this.prefs.sens.toFixed(1);
+      sheet.querySelector('output')!.textContent = this.prefs.sens.toFixed(1);
     });
   }
 
@@ -232,10 +272,11 @@ export class ArenaUI {
     this.input.consume('pause');
     this.game.setPaused(true);
     this.touch?.setVisible(false);
-    this.show(`<div class="a-panel a-pause"><h2>일시정지</h2>
+    const h = this.game.hud();
+    this.show(`<div class="a-panel a-pause"><span class="a-kicker">PAUSED</span><h2>일시정지</h2>
+      <div class="a-pause-stats"><div><b>${h.wave}</b><span>웨이브</span></div><div><b>${h.kills}</b><span>처치</span></div><div><b>${h.score.toLocaleString()}</b><span>점수</span></div></div>
       <button class="a-btn-main" data-act="resume">계속하기</button>
-      <button class="a-btn" data-act="restart">다시 시작</button>
-      <button class="a-btn" data-act="quit">메뉴로</button></div>`);
+      <div class="a-row"><button class="a-btn" data-act="restart">다시 시작</button><button class="a-btn" data-act="quit">메뉴로</button></div></div>`);
     this.bind('[data-act="resume"]', () => this.resume());
     this.bind('[data-act="restart"]', () => this.start());
     this.bind('[data-act="quit"]', () => {
@@ -255,7 +296,7 @@ export class ArenaUI {
     this.touch?.setVisible(false);
     window.setTimeout(() => {
       this.hudEl.style.display = 'none';
-      this.show(`<div class="a-panel a-result"><h2>작전 종료</h2>
+      this.show(`<div class="a-panel a-result"><span class="a-kicker">MISSION OVER</span><h2>작전 종료</h2>
         <div class="a-final">${r.score.toLocaleString()}<small>점</small></div>
         ${r.newBest ? '<div class="a-newbest">최고 기록!</div>' : `<div class="a-best">최고 ${r.best.toLocaleString()}</div>`}
         <div class="a-stats">
@@ -266,8 +307,7 @@ export class ArenaUI {
           <div><b>${Math.round(r.longest)}m</b><span>최장 처치</span></div>
         </div>
         <p class="a-tip">${esc(this.tip(r))}</p>
-        <button class="a-btn-main" data-act="again">다시 출격</button>
-        <button class="a-btn" data-act="menu">메뉴로</button></div>`);
+        <div class="a-row"><button class="a-btn" data-act="menu">메뉴로</button><button class="a-btn-main" data-act="again">다시 출격</button></div></div>`);
       this.bind('[data-act="again"]', () => this.start());
       this.bind('[data-act="menu"]', () => {
         this.game.quit();
@@ -357,16 +397,15 @@ export class ArenaUI {
     q('.a-wstate').textContent = h.reloading >= 0 ? '재장전 중…' : h.bolting ? '장전' : h.inMag === 0 ? '탄 없음 – 재장전' : '';
     // 노출 표시
     const ex = q('.a-expose');
-    const state = h.exposed === 'hidden' ? '숨음 · 안전' : h.exposed === 'peek' ? '고개만 내밈' : '노출됨';
-    ex.textContent = h.inCover ? `엄폐 중 · ${state}${h.inCover === 'high' && h.scopeT < 0.3 ? ' (스코프 = 옆으로 내밀기)' : ''}` : state;
-    ex.className = `a-expose ${h.exposed}`;
+    ex.textContent = h.exposed === 'hidden' ? '숨음' : h.exposed === 'peek' ? '머리 노출' : '노출';
+    ex.className = `a-expose ${h.exposed}${h.inCover ? ' cover' : ''}`;
     // 엄폐 버튼이 갈 자리(방패 표시)
     const cm = q('.a-covermark');
     if (h.coverMark) {
       cm.style.display = 'block';
       cm.style.transform = `translate(${h.coverMark.x.toFixed(0)}px, ${h.coverMark.y.toFixed(0)}px)`;
       cm.classList.toggle('run', h.coverMark.run);
-      cm.querySelector('span')!.textContent = h.coverMark.run ? '' : `${this.input.isTouch ? '' : 'V '}엄폐 ${Math.round(h.coverMark.d)}m`;
+      cm.querySelector('span')!.textContent = h.coverMark.run || this.input.isTouch ? '' : 'V';
     } else cm.style.display = 'none';
     // 십자선 · 스코프
     const scoped = h.scopeT > 0.85;
