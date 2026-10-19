@@ -95,6 +95,8 @@ export interface ArenaHud {
   spreadPx: number;
   bulletCam: boolean;
   breakT: number;
+  kills: number;
+  playTime: number;
   sway: { x: number; y: number };
 }
 
@@ -168,6 +170,8 @@ export class ArenaGame {
   private combo = 0;
   private comboT = 0;
   stats = { shots: 0, hits: 0, kills: 0, headshots: 0, longest: 0 };
+  /** 이번 판 진행 시간(초, 일시정지 제외) */
+  playTime = 0;
   private timeScale = 1;
   private hitStop = 0;
   // 불릿캠(웨이브 마지막 처치)
@@ -318,6 +322,7 @@ export class ArenaGame {
     this.stats = { shots: 0, hits: 0, kills: 0, headshots: 0, longest: 0 };
     this.cam = null;
     this.timeScale = 1;
+    this.playTime = 0;
     this.over = false;
     this.paused = false;
     this.running = true;
@@ -398,6 +403,7 @@ export class ArenaGame {
   // ─────────── 루프 ───────────
   private frame(real: number): void {
     if (this.running && !this.paused && !this.over) {
+      this.playTime += real;
       this.handleLook(real);
       if (this.hitStop > 0) this.hitStop -= real;
       else {
@@ -477,7 +483,8 @@ export class ArenaGame {
   private update(dt: number): void {
     const inp = this.input;
     // ── 무기 교체 ──
-    if (inp.consume('swap') && this.swapT >= 1) this.swapWeapon();
+    const pick = inp.consume('slot1') ? 'sniper' : inp.consume('slot2') ? 'pistol' : null;
+    if ((inp.consume('swap') || (pick && pick !== this.weapon)) && this.swapT >= 1) this.swapWeapon();
     this.swapT = Math.min(1, this.swapT + dt / 0.4);
     // ── 숙이기 ──
     if (inp.consume('crouch')) {
@@ -1081,6 +1088,8 @@ export class ArenaGame {
       spreadPx,
       bulletCam: !!this.cam,
       breakT: this.breakT,
+      kills: this.stats.kills,
+      playTime: this.playTime,
       sway: { x: (Math.sin(this.swayT * 0.9) * swayAmp) / (fovRad / 2), y: (Math.sin(this.swayT * 1.37) * swayAmp * 0.7) / (fovRad / 2) },
     };
   }

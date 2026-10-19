@@ -28,6 +28,12 @@ function loadPrefs(touch: boolean): Prefs {
   }
 }
 
+/** 무기 실루엣(왼쪽이 총구) – 점수판 무기 칸 · 무기 목록 */
+const GUN_SVG = {
+  sniper: '<svg viewBox="0 0 120 30" aria-hidden="true"><path d="M2 13h46v-2h4V7h-2V4h28v3h-2v4h4v-1h14l4 1h20v3l-4 1v8h-6l-12-6h-6v4l3 7h-6l-3-7h-4v4h-6v-4h-4l-2 2h-6v-2H52v-1H2z"/></svg>',
+  pistol: '<svg viewBox="0 0 120 30" aria-hidden="true"><path d="M30 5h52v9H74v2l4 13h-11l-4-11h-6c-1 3-3 5-7 5h-4v-2h4c2 0 3-1 3-3H34v-4h-4z"/></svg>',
+};
+
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 export class ArenaUI {
@@ -43,6 +49,8 @@ export class ArenaUI {
   private hitT = 0;
   private killTextT = 0;
   private bannerT = 0;
+  private radarT = 0;
+  private hudCache = '';
 
   constructor(root: HTMLElement, game: ArenaGame, input: ArenaInput, audio: AudioEngine, touch: TouchPad | null) {
     this.game = game;
@@ -65,7 +73,8 @@ export class ArenaUI {
     this.hudEl = document.createElement('div');
     this.hudEl.className = 'a-hud';
     this.hudEl.innerHTML = `
-      <div class="a-tl a-glass"><div class="a-tl-row"><span class="a-tag">WAVE</span><b class="a-wave">1</b><i class="a-sep"></i><span class="a-tag">남은 적</span><b class="a-left">0</b></div><div class="a-score">0</div></div>
+      <div class="a-sb"><div class="a-sb-t"><b class="a-kills">0</b><small>처치</small></div><div class="a-sb-mid"><b class="a-time">00:00</b><span class="a-wave">WAVE 1</span></div><div class="a-sb-ct"><b class="a-left">0</b><small>남은 적</small></div></div>
+      <div class="a-radar"><canvas width="300" height="300"></canvas><div class="a-score"><span>★</span><b>0</b></div></div>
       <div class="a-combo"></div>
       <div class="a-feed"></div>
       <div class="a-markers"></div>
@@ -76,8 +85,9 @@ export class ArenaUI {
       <div class="a-expose"></div>
       <div class="a-hurt"></div>
       <div class="a-hurtdirs"></div>
-      <div class="a-hp a-glass"><svg class="a-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 1h4v5h5v4h-5v5H6v-5H1V6h5z"/></svg><i><b></b></i><em></em></div>
-      <div class="a-weapon a-glass"><div class="a-wtop"><b class="a-wname"></b><span class="a-wkey"></span></div><div class="a-ammo"></div><div class="a-wstate"></div></div>
+      <div class="a-hp"><svg class="a-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 1h4v5h5v4h-5v5H6v-5H1V6h5z"/></svg><b class="a-hpn">100</b><i><b></b></i></div>
+      <div class="a-weapon"><div class="a-ammo"></div><div class="a-wrow"><span class="a-wname"></span>${GUN_SVG.sniper.replace('<svg', '<svg class="a-gun"')}</div><div class="a-wstate"></div></div>
+      <div class="a-slots"><div class="a-slot" data-w="sniper"><span>1</span>${GUN_SVG.sniper}</div><div class="a-slot" data-w="pistol"><span>2</span>${GUN_SVG.pistol}</div><em>Q 교체</em></div>
       <div class="a-banner"></div>
       <div class="a-cam"></div>`;
     root.appendChild(this.hudEl);
@@ -311,23 +321,36 @@ export class ArenaUI {
     }
     const h = g.hud();
     const q = <T extends HTMLElement>(s: string) => this.hudEl.querySelector<T>(s)!;
-    q('.a-score').textContent = h.score.toLocaleString();
-    q('.a-wave').textContent = String(h.wave);
-    q('.a-left').textContent = h.breakT > 0 ? '준비' : String(h.enemiesLeft);
+    q('.a-score b').textContent = h.score.toLocaleString();
+    q('.a-kills').textContent = String(h.kills);
+    const t = Math.floor(h.playTime);
+    q('.a-time').textContent = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+    q('.a-wave').textContent = h.breakT > 0 ? `WAVE ${h.wave + 1} 준비` : `WAVE ${h.wave}`;
+    q('.a-left').textContent = h.breakT > 0 ? '–' : String(h.enemiesLeft);
     const combo = q('.a-combo');
     combo.textContent = h.combo > 1 ? `×${h.combo} 연속` : '';
     combo.style.opacity = h.combo > 1 ? String(Math.min(1, h.comboT * 2)) : '0';
+    // 레이더(초당 약 20번 다시 그림)
+    this.radarT -= dt;
+    if (this.radarT <= 0) {
+      this.radarT = 0.05;
+      this.drawRadar();
+    }
     // 체력
-    q('.a-hp b').style.transform = `scaleX(${Math.max(0, h.hp / 100).toFixed(3)})`;
-    q('.a-hp em').textContent = String(Math.ceil(h.hp));
+    q('.a-hp i b').style.transform = `scaleX(${Math.max(0, h.hp / 100).toFixed(3)})`;
+    q('.a-hpn').textContent = String(Math.ceil(h.hp));
     q('.a-hp').classList.toggle('low', h.hp < 35);
     q('.a-hurt').style.opacity = String(Math.min(1, h.hurt * 0.85 + (h.hp < 35 ? 0.3 : 0)));
     q('.a-hurtdirs').innerHTML = h.hurtDirs.map((d) => `<i style="transform:translate(-50%,-50%) rotate(${d.toFixed(0)}deg)"></i>`).join('');
-    // 무기
-    q('.a-wname').textContent = h.weaponName;
-    q('.a-wkey').textContent = this.input.isTouch ? '' : h.weapon === 'sniper' ? 'Q · 권총' : 'Q · 저격총';
-    const ammo = q('.a-ammo');
-    ammo.innerHTML = h.weapon === 'sniper' ? Array.from({ length: 5 }, (_, i) => `<i class="${i < h.inMag ? 'on' : ''}"></i>`).join('') : `<b>${h.inMag}</b><small>/ ${h.reserve}</small>`;
+    // 무기: 큰 숫자 탄약 + 실루엣 (바뀔 때만 다시 그림)
+    const key = `${h.weapon}|${h.inMag}|${h.reserve}`;
+    if (key !== this.hudCache) {
+      this.hudCache = key;
+      q('.a-wname').textContent = h.weaponName;
+      q('.a-ammo').innerHTML = `<b class="${h.inMag === 0 ? 'empty' : ''}">${h.inMag}</b><small>/ ${h.reserve ?? '∞'}</small>`;
+      q('.a-gun').outerHTML = GUN_SVG[h.weapon].replace('<svg', '<svg class="a-gun"');
+      this.hudEl.querySelectorAll<HTMLElement>('.a-slot').forEach((el) => el.classList.toggle('on', el.dataset.w === h.weapon));
+    }
     q('.a-wstate').textContent = h.reloading >= 0 ? '재장전 중…' : h.bolting ? '장전' : h.inMag === 0 ? '탄 없음 – 재장전' : '';
     // 노출 표시
     const ex = q('.a-expose');
@@ -368,10 +391,95 @@ export class ArenaUI {
       f.el.style.opacity = String(Math.min(1, f.t));
     }
     q('.a-cam').style.display = h.bulletCam ? 'block' : 'none';
-    this.touch?.setState({ scoped: h.scopeT > 0.5, crouched: h.crouched, zoomLabel: `${h.zoom}×`, weapon: h.weapon === 'sniper' ? '권총' : '저격총' });
+    this.touch?.setState({ scoped: h.scopeT > 0.5, crouched: h.crouched, zoomLabel: `${h.zoom}×`, weapon: h.weapon === 'sniper' ? '권총으로 교체' : '저격총으로 교체' });
     if (this.input.consume('pause') && now - this.pausedAt > 350) {
       if (g.paused) this.resume();
       else if (!g.over) this.pause();
     }
+  }
+
+  /** 왼쪽 위 원형 레이더: 내가 보는 방향이 위, 건물 · 엄폐물은 회색, 적은 빨간 점 */
+  private drawRadar(): void {
+    const cv = this.hudEl.querySelector<HTMLCanvasElement>('.a-radar canvas')!;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+    const g = this.game;
+    const S = cv.width, C = S / 2;
+    const RANGE = 70; // 레이더 반지름 = 70 m
+    const k = (C - 4) / RANGE;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, S, S);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(C, C, C - 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(16, 20, 22, 0.62)';
+    ctx.fill();
+    ctx.clip();
+    // 세계 좌표 (x, z)를 캔버스 (x, y)로 – 돌려서 내 시선이 항상 위쪽
+    ctx.translate(C, C);
+    ctx.rotate(g.yaw);
+    ctx.scale(k, k);
+    ctx.translate(-g.pos.x, -g.pos.z);
+    ctx.fillStyle = 'rgba(215, 210, 195, 0.4)';
+    for (const b of g.map.boxes) {
+      if (b.max.y - b.min.y < 0.7) continue;
+      ctx.fillRect(b.min.x, b.min.z, b.max.x - b.min.x, b.max.z - b.min.z);
+    }
+    ctx.restore();
+    // 거리 눈금
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(C, C, (C - 4) / 2, 0, Math.PI * 2);
+    ctx.stroke();
+    // 시야 부채꼴
+    const half = Math.atan(Math.tan((g.camera.fov * Math.PI) / 360) * g.camera.aspect);
+    const grad = ctx.createRadialGradient(C, C, 0, C, C, C);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(C, C);
+    ctx.arc(C, C, C, -Math.PI / 2 - half, -Math.PI / 2 + half);
+    ctx.fill();
+    // 적
+    const c = Math.cos(g.yaw), s = Math.sin(g.yaw);
+    for (const e of g.enemies) {
+      if (!e.alive || !e.rig.root.visible) continue;
+      const dx = e.pos.x - g.pos.x, dz = e.pos.z - g.pos.z;
+      let x = (c * dx - s * dz) * k, y = (s * dx + c * dz) * k;
+      const d = Math.hypot(x, y);
+      const edge = d > C - 12;
+      if (edge) {
+        x *= (C - 12) / d;
+        y *= (C - 12) / d;
+      }
+      ctx.globalAlpha = edge ? 0.55 : 1;
+      ctx.fillStyle = e.kind === 'sniper' ? '#ff2a2a' : e.kind === 'heavy' ? '#ff9a3c' : '#ff5545';
+      ctx.beginPath();
+      ctx.arc(C + x, C + y, e.kind === 'heavy' ? 9 : 7, 0, Math.PI * 2);
+      ctx.fill();
+      if (e.kind === 'sniper') {
+        ctx.strokeStyle = '#ffd0c8';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+    // 나(가운데 흰 화살표)
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(C, C - 13);
+    ctx.lineTo(C + 9, C + 9);
+    ctx.lineTo(C, C + 4);
+    ctx.lineTo(C - 9, C + 9);
+    ctx.closePath();
+    ctx.fill();
+    // 테두리
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(C, C, C - 2, 0, Math.PI * 2);
+    ctx.stroke();
   }
 }

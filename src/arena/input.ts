@@ -4,7 +4,7 @@
  * 발사 버튼을 누른 채 끌어도 조준이 움직인다(쏘면서 따라가기).
  */
 
-export type ButtonId = 'fire' | 'scope' | 'crouch' | 'jump' | 'reload' | 'swap' | 'zoom' | 'pause';
+export type ButtonId = 'fire' | 'scope' | 'crouch' | 'jump' | 'reload' | 'swap' | 'slot1' | 'slot2' | 'zoom' | 'pause';
 
 export class ArenaInput {
   readonly isTouch: boolean;
@@ -84,7 +84,9 @@ export class ArenaInput {
       if (c === 'KeyC' || c === 'ControlLeft') this.press('crouch');
       if (c === 'Space') this.press('jump');
       if (c === 'KeyR') this.press('reload');
-      if (c === 'KeyQ' || c === 'Digit1' || c === 'Digit2' || c === 'Tab') this.press('swap');
+      if (c === 'KeyQ' || c === 'Tab') this.press('swap');
+      if (c === 'Digit1') this.press('slot1');
+      if (c === 'Digit2') this.press('slot2');
       if (c === 'KeyE' || c === 'KeyZ') this.press('zoom');
       if (c === 'Escape' || c === 'KeyP') this.press('pause');
       if (c === 'KeyF') this.press('scope');
@@ -150,6 +152,18 @@ export class ArenaInput {
   }
 }
 
+/** 터치 버튼 아이콘(선 굵기는 CSS) */
+const ico = (body: string) => `<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
+const ICON = {
+  fire: ico('<circle cx="12" cy="12" r="7"/><path d="M12 1.5v5M12 17.5v5M1.5 12h5M17.5 12h5"/><circle class="f" cx="12" cy="12" r="1.6"/>'),
+  scope: ico('<rect x="2" y="9" width="20" height="6" rx="1.5"/><path d="M6 9V6.5h3V9M15 9V6.5h3V9"/><circle class="f" cx="12" cy="12" r="1.3"/>'),
+  crouch: ico('<path d="M6 7l6 5 6-5M6 13l6 5 6-5"/>'),
+  jump: ico('<path d="M6 17l6-5 6 5M6 11l6-5 6 5"/>'),
+  reload: ico('<path d="M19 12a7 7 0 1 1-2.05-4.95"/><path d="M19.5 3.5v4.5H15"/>'),
+  swap: ico('<path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4"/>'),
+  pause: ico('<path d="M8.5 5v14M15.5 5v14"/>'),
+};
+
 /**
  * 휴대폰 터치 조작 화면.
  * - 화면 왼쪽 40% 어디든: 누른 자리에 조이스틱이 생긴다(손가락 위치를 맞출 필요 없음)
@@ -173,15 +187,15 @@ export class TouchPad {
     this.el.innerHTML = `
       <div class="a-stick-zone"></div>
       <div class="a-look-zone"></div>
-      <div class="a-stick" aria-hidden="true"><div class="a-knob"></div></div>
-      <button class="a-btn a-fire" data-b="fire" aria-label="발사">발사</button>
-      <button class="a-btn a-scope" data-b="scope" aria-label="스코프">스코프</button>
-      <button class="a-btn a-crouch" data-b="crouch" aria-label="숙이기">숙이기</button>
-      <button class="a-btn a-jump" data-b="jump" aria-label="점프">점프</button>
-      <button class="a-btn a-reload" data-b="reload" aria-label="재장전">장전</button>
-      <button class="a-btn a-swap" data-b="swap" aria-label="무기 교체">무기</button>
+      <div class="a-stick idle" aria-hidden="true"><div class="a-knob"></div></div>
+      <button class="a-btn a-fire" data-b="fire" aria-label="발사">${ICON.fire}</button>
+      <button class="a-btn a-scope" data-b="scope" aria-label="스코프">${ICON.scope}</button>
+      <button class="a-btn a-crouch" data-b="crouch" aria-label="숙이기">${ICON.crouch}</button>
+      <button class="a-btn a-jump" data-b="jump" aria-label="점프">${ICON.jump}</button>
+      <button class="a-btn a-reload" data-b="reload" aria-label="재장전">${ICON.reload}</button>
+      <button class="a-btn a-swap" data-b="swap" aria-label="무기 교체">${ICON.swap}</button>
       <button class="a-btn a-zoom" data-b="zoom" aria-label="배율">4×</button>
-      <button class="a-btn a-pause" data-b="pause" aria-label="일시정지">II</button>`;
+      <button class="a-btn a-pause" data-b="pause" aria-label="일시정지">${ICON.pause}</button>`;
     parent.appendChild(this.el);
     this.base = this.el.querySelector('.a-stick')!;
     this.knob = this.el.querySelector('.a-knob')!;
@@ -248,7 +262,7 @@ export class TouchPad {
     const t = e.changedTouches[0];
     this.stickId = t.identifier;
     this.stickOrigin = { x: t.clientX, y: t.clientY };
-    this.base.style.display = 'block';
+    this.base.classList.remove('idle');
     this.base.style.transform = `translate(${t.clientX - 60}px, ${t.clientY - 60}px)`;
     this.knob.style.transform = 'translate(0px, 0px)';
   }
@@ -286,8 +300,15 @@ export class TouchPad {
       if (t.identifier !== this.stickId) continue;
       this.stickId = null;
       this.input.moveX = this.input.moveY = 0;
-      this.base.style.display = 'none';
+      this.restStick();
     }
+  }
+
+  /** 손을 떼면 조이스틱은 기본 자리(왼쪽 아래)에 희미하게 남는다 */
+  private restStick(): void {
+    this.base.classList.add('idle');
+    this.base.style.transform = '';
+    this.knob.style.transform = 'translate(0px, 0px)';
   }
 
   private lookStart(e: TouchEvent): void {
@@ -320,7 +341,7 @@ export class TouchPad {
     const z = this.el.querySelector<HTMLElement>('.a-zoom');
     if (z && z.textContent !== o.zoomLabel) z.textContent = o.zoomLabel;
     const w = this.el.querySelector<HTMLElement>('.a-swap');
-    if (w && w.textContent !== o.weapon) w.textContent = o.weapon;
+    if (w && w.getAttribute('aria-label') !== o.weapon) w.setAttribute('aria-label', o.weapon);
   }
 
   setVisible(v: boolean): void {
@@ -328,7 +349,7 @@ export class TouchPad {
     if (!v) {
       this.lookTouches.clear();
       this.stickId = null;
-      this.base.style.display = 'none';
+      this.restStick();
       this.input.moveX = this.input.moveY = 0;
       this.input.fireDown = false;
     }
