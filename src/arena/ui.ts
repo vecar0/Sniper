@@ -78,6 +78,7 @@ export class ArenaUI {
       <div class="a-combo"></div>
       <div class="a-feed"></div>
       <div class="a-markers"></div>
+      <div class="a-covermark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10v-6z"/></svg><span></span></div>
       <div class="a-snipers"></div>
       <div class="a-cross"><i></i><i></i><i></i><i></i><b></b></div>
       <div class="a-hit"><i></i><i></i></div>
@@ -164,11 +165,11 @@ export class ArenaUI {
       </div>
       <details class="a-how"><summary>조작법</summary>
         ${touch
-          ? '<p><b>왼손</b> 화면 왼쪽 아무 데나 눌러 끌기 = 이동</p><p><b>오른손</b> 화면을 끌어 조준 · [발사]를 누른 채 끌어도 조준</p><p>[스코프] 켜고 끄기 · [숙이기] 난간 뒤에 숨기 · [점프] 모래주머니 · 상자 · 창턱 넘기 · [무기] 저격총↔권총 · 조이스틱을 끝까지 앞으로 밀면 달리기</p>'
-          : '<p><b>WASD</b> 이동 · <b>마우스</b> 조준 · <b>좌클릭</b> 발사 · <b>우클릭(누르고 있기)</b> 스코프</p><p><b>Shift</b> 달리기 · <b>Space</b> 점프 · <b>C</b> 숙이기 · <b>R</b> 재장전 · <b>Q</b> 무기 교체 · <b>휠/E</b> 배율 · <b>Esc</b> 일시정지</p>'}
+          ? '<p><b>왼손</b> 화면 왼쪽 아무 데나 눌러 끌기 = 이동</p><p><b>오른손</b> 화면을 끌어 조준 · [발사]를 누른 채 끌어도 조준</p><p>[스코프] 켜고 끄기 · [숙이기] 난간 뒤에 숨기 · [점프] 모래주머니 · 상자 · 창턱 넘기 · [무기] 저격총↔권총 · [방패] 엄폐 · 조이스틱을 끝까지 앞으로 밀면 달리기</p>'
+          : '<p><b>WASD</b> 이동 · <b>마우스</b> 조준 · <b>좌클릭</b> 발사 · <b>우클릭(누르고 있기)</b> 스코프</p><p><b>Shift</b> 달리기 · <b>V</b> 엄폐 · <b>Space</b> 점프 · <b>C</b> 숙이기 · <b>R</b> 재장전 · <b>Q</b> 무기 교체 · <b>휠/E</b> 배율 · <b>Esc</b> 일시정지</p>'}
         <p><b>건물</b> 옥상 계단실 문으로 들어가면 3층 · 2층 · 1층으로 내려갈 수 있고, 1층 정문으로 밖에도 나갈 수 있습니다. 2·3층 창가는 숙였다 일어나 쏘기 좋은 자리. <b>돌격병</b>은 정문으로 들어와 계단을 타고 끝까지 쫓아옵니다.</p>
+        <p><b>엄폐</b> 화면에 뜨는 <b>방패 표시</b>가 가장 가까운 엄폐 자리입니다. 엄폐 버튼(V)을 누르면 그리로 달려가 숨고, 한 번 더 누르면 보는 쪽의 다음 엄폐물로 옮깁니다. 낮은 엄폐물은 숙여서 숨고 스코프를 열면 고개만 내밀며, 컨테이너 같은 높은 엄폐물은 스코프를 열면 옆으로 몸을 내밉니다.</p>
         <p><b>회복</b> 체력은 저절로 차지 않습니다. 땅 위 엄폐물 뒤의 <b>구급상자</b>(초록 빛기둥 · 미니맵 초록 십자)를 주우면 +40.</p>
-        <p><b>포격</b> 한자리(특히 옥상)에서 오래 버티면 적이 포격합니다. 바닥에 빨간 원이 뜨면 바로 다른 엄폐물로 옮기세요.</p>
         <p><b>요령</b> 숙이면 난간 · 창턱이 몸을 가려 총에 안 맞습니다. 스코프를 열면 고개만 살짝 내밉니다. 빨간 레이저가 보이면 <b>적 저격수</b> – 먼저 쏘거나 숙이세요.</p>
       </details>
       <a class="a-classic" href="./classic.html">클래식 정밀 저격 작전 모드 →</a>
@@ -356,16 +357,17 @@ export class ArenaUI {
     q('.a-wstate').textContent = h.reloading >= 0 ? '재장전 중…' : h.bolting ? '장전' : h.inMag === 0 ? '탄 없음 – 재장전' : '';
     // 노출 표시
     const ex = q('.a-expose');
-    if (h.strikeT >= 0) {
-      ex.textContent = '포격! 빨간 원 밖으로';
-      ex.className = 'a-expose open warn';
-    } else if (h.campRisk > 0.6) {
-      ex.textContent = '한자리 오래 머묾 – 곧 포격';
-      ex.className = 'a-expose peek warn';
-    } else {
-      ex.textContent = h.exposed === 'hidden' ? '숨음 · 안전' : h.exposed === 'peek' ? '고개만 내밈' : '노출됨';
-      ex.className = `a-expose ${h.exposed}`;
-    }
+    const state = h.exposed === 'hidden' ? '숨음 · 안전' : h.exposed === 'peek' ? '고개만 내밈' : '노출됨';
+    ex.textContent = h.inCover ? `엄폐 중 · ${state}${h.inCover === 'high' && h.scopeT < 0.3 ? ' (스코프 = 옆으로 내밀기)' : ''}` : state;
+    ex.className = `a-expose ${h.exposed}`;
+    // 엄폐 버튼이 갈 자리(방패 표시)
+    const cm = q('.a-covermark');
+    if (h.coverMark) {
+      cm.style.display = 'block';
+      cm.style.transform = `translate(${h.coverMark.x.toFixed(0)}px, ${h.coverMark.y.toFixed(0)}px)`;
+      cm.classList.toggle('run', h.coverMark.run);
+      cm.querySelector('span')!.textContent = h.coverMark.run ? '' : `${this.input.isTouch ? '' : 'V '}엄폐 ${Math.round(h.coverMark.d)}m`;
+    } else cm.style.display = 'none';
     // 십자선 · 스코프
     const scoped = h.scopeT > 0.85;
     this.scopeEl.style.display = scoped ? 'block' : 'none';

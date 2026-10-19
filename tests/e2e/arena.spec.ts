@@ -24,10 +24,10 @@ test.describe('옥상 저격전(메인 모드)', () => {
     await page.click('[data-act="start"]');
     await expect(page.locator('.a-hud')).toBeVisible();
     expect(await page.evaluate(() => (window as any).__arena.game.wave)).toBe(1);
-    // 이 테스트는 처치만 본다: 느린 소프트웨어 렌더링에서 오래 버티다 쓰러지거나 포격당하지 않게(체력 자동 회복이 없다)
+    // 이 테스트는 처치만 본다: 느린 소프트웨어 렌더링에서 오래 버티다 쓰러지지 않게(체력 자동 회복이 없다)
     await page.evaluate(() => {
       const g = (window as any).__arena.game;
-      setInterval(() => ((g.hp = 100), (g.campT = 0)), 200);
+      setInterval(() => (g.hp = 100), 200);
     });
     // 엄폐 지점에 자리 잡은(보이는) 적이 생길 때까지
     await page.waitForFunction(() => (window as any).__arena.game.enemies.some((e: any) => e.alive && (e.state === 'peek' || e.state === 'hide') && e.pos.z > -100), null, { timeout: 300_000 });

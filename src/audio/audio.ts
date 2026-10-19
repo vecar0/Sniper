@@ -5,8 +5,6 @@
  * - 마스터/효과음/음악 볼륨 분리, 탭 전환 시 일시정지.
  */
 export type SoundName =
-  | 'whistle'
-  | 'boom'
   | 'pickup'
   | 'shot'
   | 'shotSub'
@@ -341,19 +339,6 @@ export class AudioEngine {
       case 'dry':
         this.burst(t, 0.02, 'bandpass', 3000, 4, 0.3 * vol, out);
         break;
-      case 'whistle':
-        // 포탄이 떨어지는 휘파람 소리(높은음 → 낮은음)
-        this.tone('sine', 1800, t, 0.3, 2.6, 0.07 * vol, out, 520);
-        break;
-      case 'boom': {
-        const bus = ctx.createGain();
-        bus.gain.value = vol;
-        bus.connect(out);
-        bus.connect(this.reverbSend);
-        this.burst(t, 1.4, 'lowpass', 2200, 0.7, 1.0, bus, 120);
-        this.tone('sine', 60, t, 0.005, 1.1, 1.0, bus, 28);
-        break;
-      }
       case 'pickup':
         this.tone('triangle', 660, t, 0.005, 0.12, 0.18 * vol, out);
         this.tone('triangle', 990, t + 0.09, 0.005, 0.25, 0.18 * vol, out);

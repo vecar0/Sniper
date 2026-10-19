@@ -4,7 +4,7 @@
  * 발사 버튼을 누른 채 끌어도 조준이 움직인다(쏘면서 따라가기).
  */
 
-export type ButtonId = 'fire' | 'scope' | 'crouch' | 'jump' | 'reload' | 'swap' | 'slot1' | 'slot2' | 'zoom' | 'pause';
+export type ButtonId = 'fire' | 'scope' | 'crouch' | 'jump' | 'reload' | 'swap' | 'slot1' | 'slot2' | 'cover' | 'zoom' | 'pause';
 
 export class ArenaInput {
   readonly isTouch: boolean;
@@ -83,6 +83,7 @@ export class ArenaInput {
     if (down) {
       if (c === 'KeyC' || c === 'ControlLeft') this.press('crouch');
       if (c === 'Space') this.press('jump');
+      if (c === 'KeyV') this.press('cover');
       if (c === 'KeyR') this.press('reload');
       if (c === 'KeyQ' || c === 'Tab') this.press('swap');
       if (c === 'Digit1') this.press('slot1');
@@ -167,6 +168,7 @@ const ICON = {
   jump: ico('<path d="M6 17l6-5 6 5M6 11l6-5 6 5"/>'),
   reload: ico('<path d="M19 12a7 7 0 1 1-2.05-4.95"/><path d="M19.5 3.5v4.5H15"/>'),
   swap: ico('<path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4"/>'),
+  cover: ico('<path d="M12 2.5l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10v-6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>'),
   pause: ico('<path d="M8.5 5v14M15.5 5v14"/>'),
 };
 
@@ -199,6 +201,7 @@ export class TouchPad {
       <button class="a-btn a-crouch" data-b="crouch" aria-label="숙이기">${ICON.crouch}</button>
       <button class="a-btn a-jump" data-b="jump" aria-label="점프">${ICON.jump}</button>
       <button class="a-btn a-reload" data-b="reload" aria-label="재장전">${ICON.reload}</button>
+      <button class="a-btn a-cover" data-b="cover" aria-label="엄폐">${ICON.cover}</button>
       <button class="a-btn a-swap" data-b="swap" aria-label="무기 교체">${ICON.swap}</button>
       <button class="a-btn a-zoom" data-b="zoom" aria-label="배율">4×</button>
       <button class="a-btn a-pause" data-b="pause" aria-label="일시정지">${ICON.pause}</button>`;

@@ -46,10 +46,22 @@ export interface CoverPoint {
   taken: boolean;
 }
 
+/** 플레이어가 쓸 엄폐 자리(엄폐물의 플레이어 쪽 = 남쪽 면 바로 뒤) */
+export interface PlayerCover {
+  pos: THREE.Vector3;
+  /** 낮은 엄폐물(숙여서 숨음) / 높은 엄폐물(옆으로 나와서 쏨) */
+  low: boolean;
+  /** 높은 엄폐물에서 몸을 내밀 방향(x축 ±1) */
+  side: number;
+  /** 어느 엄폐물(boxes 번호)의 자리인지 – "다음 엄폐물"은 다른 물체로 */
+  box: number;
+}
+
 export interface ArenaMap {
   group: THREE.Group;
   boxes: Box[];
   covers: CoverPoint[];
+  playerCovers: PlayerCover[];
   spawns: THREE.Vector3[];
   perches: THREE.Vector3[];
   /** 건물 1층 정문 바깥 · 안쪽, 옥상 계단실 문 앞 */
@@ -315,7 +327,9 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   const bags = new SandbagStacks();
   const bagFit = getModel('sandbags') ? fitTransform('sandbags', 2.3, 0.95, 1.0) : null;
   const bagSpots: THREE.Matrix4[] = [];
-  for (const [x, z, w] of [[-12, -28, 9], [11, -30, 10], [-30, -46, 7], [2, -50, 8], [34, -62, 7], [-14, -78, 8], [12, -92, 8], [-46, -32, 6], [44, -36, 6], [-2, -100, 8], [-24, -60, 5], [-6, -12, 5], [16, -10, 5]] as const) {
+  for (const [x, z, w] of [[-12, -28, 9], [11, -30, 10], [-30, -46, 7], [2, -50, 8], [34, -62, 7], [-14, -78, 8], [12, -92, 8], [-46, -32, 6], [44, -36, 6], [-2, -100, 8], [-24, -60, 5], [-6, -12, 5], [16, -10, 5],
+    // 건물 앞 ~ 중간: 엄폐물을 징검다리처럼(달려서 2~3초 간격)
+    [-17, -8, 4], [25, -7, 4], [-31, -10, 5], [37, -12, 5], [4, -22, 5], [-41, -42, 5], [41, -46, 5], [-9, -46, 6], [19, -51, 5]] as const) {
     collider(x, 0, z, w, 0.95, 1.1, 'low');
     if (bagFit) {
       // 3D 모래주머니 벽 조각(약 2.3m)을 이어 붙인다
@@ -330,7 +344,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   // 콘크리트 방호벽(낮은 엄폐)
   const barrier = mat('concrete', 0xd9d3c8);
   const barrierSpots: THREE.Matrix4[] = [];
-  for (const [x, z, w] of [[-34, -24, 6], [36, -24, 6], [-52, -50, 4], [20, -112, 5], [-22, -14, 4], [26, -18, 4]] as const) {
+  for (const [x, z, w] of [[-34, -24, 6], [36, -24, 6], [-52, -50, 4], [20, -112, 5], [-22, -14, 4], [26, -18, 4], [-1, -30, 4], [-46, -18, 4], [46, -20, 4], [18, -34, 4]] as const) {
     if (getModel('barrier')) {
       // 실사 콘크리트 방호벽(Poly Haven)을 약 1.6m씩 이어 놓는다
       collider(x, 0, z, w, 0.9, 0.7, 'low');
@@ -369,6 +383,8 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
   };
   const containers: [number, number, number, number][] = [
     [-24, -38, 0, 0], [24, -40, Math.PI / 2, 1], [-6, -62, 0, 2], [30, -48, 0, 3], [-40, -66, Math.PI / 2, 0], [10, -74, 0, 1],
+    // 가까운 쪽 높은 엄폐(옆으로 나와 쏘기)
+    [-44, -26, Math.PI / 2, 3], [40, -30, 0, 2], [-18, -20, 0, 1],
   ];
   for (const [x, z, rot, t] of containers) {
     const rotated = container(x, 0, z, rot, t);
@@ -390,7 +406,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
       crateSpots.push(new THREE.Matrix4().makeTranslation(x, y, z).multiply(new THREE.Matrix4().makeRotationY(yaw)).multiply(fitTransform('crate', sz, h, sz)));
     } else block(x, y, z, sz, h, sz, crate, 1.3, { collide: kind });
   };
-  for (const [x, z, stack] of [[-18, -55, 1], [20, -58, 0], [-2, -36, 1], [40, -80, 1], [-50, -78, 0], [8, -40, 0], [-36, -56, 1]] as const) {
+  for (const [x, z, stack] of [[-18, -55, 1], [20, -58, 0], [-2, -36, 1], [40, -80, 1], [-50, -78, 0], [8, -40, 0], [-36, -56, 1], [-28, -17, 0], [31, -30, 1], [-36, -32, 0], [-14, -40, 1]] as const) {
     crateBox(x, 0, z, 1.3, 1.2, 'low');
     crateBox(x + 1.35, 0, z + 0.1, 1.1, 1.0, 'low', Math.PI / 2);
     if (stack) crateBox(x + 0.1, 1.2, z, 1.1, 1.0, 'solid', 0.2);
@@ -591,6 +607,7 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
     group,
     boxes,
     covers,
+    playerCovers: findPlayerCovers(boxes),
     // 정문 앞은 먼 건물이 막고 있으므로 건물 양옆 · 기지 양쪽 끝에서 들어온다
     spawns: [new THREE.Vector3(-20, 0, -123), new THREE.Vector3(22, 0, -123), new THREE.Vector3(-60, 0, -112), new THREE.Vector3(60, 0, -114)],
     perches: [new THREE.Vector3(towerX, 12.25, towerZ + 1.9), new THREE.Vector3(-8, 4.1, -111.6), new THREE.Vector3(4, 8.6, -111.6), new THREE.Vector3(10, 4.1, -111.6)],
@@ -609,6 +626,42 @@ export function buildMap(quality: 'high' | 'medium' | 'low'): ArenaMap {
       group.removeFromParent();
     },
   };
+}
+
+/**
+ * 플레이어 엄폐 자리: 땅(또는 옥상 · 층 바닥) 위에 선, 폭 1m 이상인 엄폐물의 남쪽 면 바로 뒤.
+ * 적은 북쪽(-z)에서 오므로 이 자리에 숙이면(낮은 엄폐) / 서 있으면(높은 엄폐) 가려진다.
+ */
+export function findPlayerCovers(boxes: Box[]): PlayerCover[] {
+  const out: PlayerCover[] = [];
+  const add = (x: number, y: number, z: number, low: boolean, side: number, box: number) => {
+    const inB = x > BUILDING.minX && x < BUILDING.maxX && z > BUILDING.minZ && z < BUILDING.maxZ;
+    const lvl = FLOOR_Y.findIndex((f) => Math.abs(f - y) < 0.1);
+    if (lvl < 0 || (!inB && lvl !== 0) || x < WORLD.minX || x > WORLD.maxX || z > WORLD.maxZ) return;
+    // 서 있을 자리에 다른 상자가 없어야 한다(플레이어 반지름 0.3m)
+    for (const o of boxes) {
+      if (o.min.y > y + 1.5 || o.max.y < y + 0.1) continue;
+      if (x + 0.3 > o.min.x && x - 0.3 < o.max.x && z + 0.3 > o.min.z && z - 0.3 < o.max.z) return;
+    }
+    if (out.some((c) => Math.abs(c.pos.y - y) < 0.5 && Math.hypot(c.pos.x - x, c.pos.z - z) < 1.4)) return;
+    out.push({ pos: new THREE.Vector3(x, y, z), low, side, box });
+  };
+  boxes.forEach((b, bi) => {
+    const h = b.max.y - b.min.y, w = b.max.x - b.min.x;
+    if (h < 0.8 || h > 3.2 || w < 1) return;
+    const z = b.max.z + 0.55;
+    const inB = b.min.x >= BUILDING.minX - 0.1 && b.max.x <= BUILDING.maxX + 0.1 && b.min.z >= BUILDING.minZ - 0.1 && b.max.z <= BUILDING.maxZ + 0.1;
+    // 건물 안은 북쪽 벽(창턱 · 옥상 난간)만
+    if (inB && b.max.z > BUILDING.minZ + 0.6) return;
+    if (h <= 1.6) {
+      const n = Math.max(1, Math.round(w / 2.2));
+      for (let i = 0; i < n; i++) add(b.min.x + (w / n) * (i + 0.5), b.min.y, z, true, 0, bi);
+    } else if (!inB) {
+      add(b.min.x + 0.6, b.min.y, z, false, -1, bi);
+      add(b.max.x - 0.6, b.min.y, z, false, 1, bi);
+    }
+  });
+  return out;
 }
 
 /**
