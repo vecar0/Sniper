@@ -7,6 +7,7 @@ export class Geometry {
   constructor(boxes) {
     this.boxes = boxes;
     this.solid = boxes.filter((b) => b.kind !== 'decor');
+    this.opaque = this.solid.filter((b) => b.kind !== 'rail'); // 난간은 몸은 막지만 총알·시야는 통과
     this.cell = 0.5;
     this.n = Math.round((ROOF * 2) / this.cell);
     this.buildNav();
@@ -20,7 +21,7 @@ export class Geometry {
   // 선분/광선 vs 상자 + 옥상 바닥. 가장 가까운 충돌 {t, nx, ny, nz, box} 또는 null
   raycast(ox, oy, oz, dx, dy, dz, maxT) {
     let best = maxT, hit = null;
-    for (const b of this.solid) {
+    for (const b of this.opaque) {
       const r = rayBox(ox, oy, oz, dx, dy, dz, b, best);
       if (r) { best = r.t; hit = r; hit.box = b; }
     }

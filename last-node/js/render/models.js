@@ -90,6 +90,8 @@ if (dz < uDissolve) discard;`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = vMat.z;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 totalEmissiveRadiance += vColor.rgb * vMat.x * uGlow;
+float rimK = pow(1.0 - saturate(dot(normal, normalize(-vViewPosition))), 3.0);
+totalEmissiveRadiance += vec3(0.25, 0.5, 0.75) * rimK * 0.35;
 totalEmissiveRadiance += vec3(1.0, 0.85, 0.75) * uFlash * 0.9;
 float zap = step(0.6, fract(sin(dot(floor(vObj * 14.0), vec3(12.9, 78.2, 37.7)) + floor(uTime * 24.0)) * 43758.5));
 totalEmissiveRadiance += vec3(0.25, 0.65, 1.6) * uStun * (0.25 + zap * 1.5);

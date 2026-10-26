@@ -137,6 +137,7 @@ export class Level {
         { const fan = new THREE.CylinderGeometry(1.15, 1.15, 0.06, 28); fan.translate((x0 + x1) / 2, y1 + 0.03, (z0 + z1) / 2); B.add(m.metal, fan); }
         break;
       case 'core': break; // 코어는 따로
+      case 'rail': break; // 난간은 buildRailings에서 파이프로
       case 'ring':
         B.add(m.concrete, boxGeo(x0, y0, z0, x1, y1, z1, 2));
         { const w = 0.03, xm = (x0 + x1) / 2, zm = (z0 + z1) / 2, alongX = x1 - x0 > z1 - z0;
@@ -348,7 +349,7 @@ void main(){ float row = floor(vUv.y * 40.0); float gl = step(0.93, fract(sin(ro
   float scan = 0.78 + 0.22 * sin(vUv.y * 600.0 - uTime * 10.0);
   float edge = smoothstep(0.0, 0.02, vUv.x) * smoothstep(0.0, 0.02, 1.0 - vUv.x) * smoothstep(0.0, 0.03, vUv.y) * smoothstep(0.0, 0.03, 1.0 - vUv.y);
   float flick = 0.92 + 0.08 * sin(uTime * 37.0);
-  gl_FragColor = vec4(c * scan * flick * edge * 1.9, 1.0); }`,
+  gl_FragColor = vec4(c * scan * flick * edge * 1.25, 1.0); }`,
     }));
     board.position.set((B.x0 + B.x1) / 2, (B.y0 + B.y1) / 2, B.z + 0.05);
     this.root.add(board); // 평면 앞면(+z)이 옥상 안쪽(남쪽)을 본다
@@ -428,10 +429,10 @@ void main(){ float row = floor(vUv.y * 40.0); float gl = step(0.93, fract(sin(ro
   buildLights() {
     const add = (color, intensity, dist, x, y, z, decay = 1.6) => { const l = new THREE.PointLight(color, intensity, dist, decay); l.position.set(x, y, z); this.root.add(l); this.lights.push(l); return l; };
     this.coreLight = add(0x30e0ff, 60, 26, 0, 5, 0);
-    this.boardLight = add(0xff2bd6, 30, 24, -15, 9, -21);
+    this.boardLight = add(0xff2bd6, 22, 20, -15, 9, -21);
     add(0x27e8ff, 26, 16, 19, 6.5, -5);       // 헬리패드
     add(0xffa040, 22, 12, -20.8, 3.0, -2);    // 계단실 문 나트륨등
-    add(0xff2bd6, 10, 12, -18, 7, 11);        // 냉각 구역
+    add(0xff2bd6, 6, 10, -18, 7, 11);         // 냉각 구역
     this.elevLight = add(0xff2a3a, 0, 14, 0, 4.4, -21.5);
   }
 

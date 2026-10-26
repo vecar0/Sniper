@@ -19,21 +19,22 @@ export class ViewModel {
     this.camera.add(this.root);
     // 조명: 주변(환경맵은 메인 장면 것을 공유) + 위쪽 차가운 빛 + 아래 네온 반사광
     this.scene.add(new THREE.HemisphereLight(0x6a86b0, 0x1a0a1e, 0.6));
-    const key = new THREE.DirectionalLight(0xbfd6ff, 1.4); key.position.set(-1, 2, 1); this.scene.add(key);
-    this.rim = new THREE.PointLight(0xff2bd6, 0.6, 3); this.rim.position.set(0.6, -0.3, -0.4); this.camera.add(this.rim);
-    this.coreTint = new THREE.PointLight(0x27e8ff, 0.8, 3); this.coreTint.position.set(-0.5, 0.3, -0.6); this.camera.add(this.coreTint);
+    const key = new THREE.DirectionalLight(0xbfd6ff, 0.8); key.position.set(-1, 2, 1); this.scene.add(key);
+    this.rim = new THREE.PointLight(0xff2bd6, 0.25, 3); this.rim.position.set(0.9, -0.2, -0.3); this.camera.add(this.rim);
+    this.coreTint = new THREE.PointLight(0x27e8ff, 0.18, 3); this.coreTint.position.set(-0.8, 0.5, -0.4); this.camera.add(this.coreTint);
     this.muzzleLight = new THREE.PointLight(0xffb070, 0, 4, 2); this.camera.add(this.muzzleLight);
 
     this.mats = {
-      gun: new THREE.MeshStandardMaterial({ color: 0x1c1f24, metalness: 0.9, roughness: 0.32, envMapIntensity: 1.6 }),
-      gunLight: new THREE.MeshStandardMaterial({ color: 0x4a515b, metalness: 1, roughness: 0.25, envMapIntensity: 1.8 }),
+      gun: new THREE.MeshStandardMaterial({ color: 0x1c1f24, metalness: 0.85, roughness: 0.4, envMapIntensity: 0.9 }),
+      gunLight: new THREE.MeshStandardMaterial({ color: 0x3a4048, metalness: 1, roughness: 0.3, envMapIntensity: 1.0 }),
       polymer: new THREE.MeshStandardMaterial({ color: 0x0d0e11, metalness: 0.1, roughness: 0.62, envMapIntensity: 0.8 }),
       accent: new THREE.MeshStandardMaterial({ color: 0x0a2a33, metalness: 0.6, roughness: 0.3, emissive: new THREE.Color(0x27e8ff), emissiveIntensity: 0.6 }),
       glow: new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 2.6, 3.2) }),
+      glowDim: new THREE.MeshBasicMaterial({ color: new THREE.Color(0.1, 0.8, 1.0) }),
       glowHot: new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 1.2, 0.4) }),
       glove: new THREE.MeshStandardMaterial({ color: 0x15161a, metalness: 0.2, roughness: 0.7 }),
       sleeve: new THREE.MeshStandardMaterial({ color: 0x1f2630, metalness: 0.1, roughness: 0.85 }),
-      armor: new THREE.MeshStandardMaterial({ color: 0x2a3038, metalness: 0.85, roughness: 0.35, envMapIntensity: 1.4 }),
+      armor: new THREE.MeshStandardMaterial({ color: 0x2a3038, metalness: 0.85, roughness: 0.4, envMapIntensity: 0.9 }),
       blade: new THREE.MeshStandardMaterial({ color: 0xaab4bf, metalness: 1, roughness: 0.15, envMapIntensity: 2 }),
     };
     this.ammoCanvas = document.createElement('canvas'); this.ammoCanvas.width = 128; this.ammoCanvas.height = 64;
@@ -73,7 +74,7 @@ export class ViewModel {
       add(cy(0.009, 0.03, 0, 0.035, -0.17), m.gunLight);
       add(rb(0.046, 0.006, 0.12, 0.002, 0, 0.042, -0.06), m.glow);
       add(rb(0.02, 0.022, 0.03, 0.004, 0, 0.088, -0.01), m.gun);
-      display = add(new THREE.PlaneGeometry(0.05, 0.025), this.ammoMat); display.position.set(0.0235, 0.03, 0.0); display.rotation.y = Math.PI / 2;
+      display = add(new THREE.PlaneGeometry(0.036, 0.018), this.ammoMat); display.position.set(-0.0235, 0.03, 0.0); display.rotation.y = -Math.PI / 2 + 0.35;
       mag = add(rb(0.03, 0.05, 0.035, 0.006, 0, -0.1, 0.035), m.gun);
       muzzle = new THREE.Vector3(0, 0.035, -0.19); sightY = 0.095;
       gripR = new THREE.Vector3(0, -0.03, 0.04); gripL = new THREE.Vector3(-0.02, -0.04, 0.03);
@@ -86,7 +87,7 @@ export class ViewModel {
       add(rb(0.05, 0.07, 0.22, 0.02, 0, -0.02, 0.24), m.polymer);
       add(rb(0.072, 0.012, 0.3, 0.004, 0, 0.045, -0.06), m.accent);
       for (let i = 0; i < 4; i++) add(cy(0.011, 0.06, 0.04, -0.01, -0.02 + i * 0.03, 8), m.glowHot).rotation.y = Math.PI / 2;
-      display = add(new THREE.PlaneGeometry(0.06, 0.03), this.ammoMat); display.position.set(0.0365, 0.015, 0.05); display.rotation.y = Math.PI / 2;
+      display = add(new THREE.PlaneGeometry(0.05, 0.025), this.ammoMat); display.position.set(-0.037, 0.013, 0.11); display.rotation.y = -Math.PI / 2 + 0.35;
       add(rb(0.03, 0.03, 0.05, 0.006, 0, 0.06, -0.05), m.gun);
       mag = null;
       muzzle = new THREE.Vector3(0, 0.025, -0.6); sightY = 0.08;
@@ -101,12 +102,14 @@ export class ViewModel {
       add(rb(0.05, 0.07, 0.24, 0.02, 0, -0.01, 0.27), m.polymer);
       add(rb(0.058, 0.014, 0.36, 0.004, 0, 0.052, -0.08), m.gunLight);
       // 홀로 조준경
-      add(rb(0.05, 0.05, 0.08, 0.008, 0, 0.09, -0.04), m.gun);
+      add(rb(0.05, 0.012, 0.08, 0.004, 0, 0.066, -0.04), m.gun);
+      for (const sx of [-0.022, 0.022]) add(rb(0.006, 0.05, 0.018, 0.002, sx, 0.095, -0.06), m.gun);
+      add(rb(0.05, 0.006, 0.018, 0.002, 0, 0.122, -0.06), m.gun);
       const lens = add(new THREE.PlaneGeometry(0.036, 0.03), new THREE.MeshPhysicalMaterial({ color: 0x66e8ff, transparent: true, opacity: 0.25, roughness: 0, metalness: 0, envMapIntensity: 2 }));
-      lens.position.set(0, 0.095, -0.0); lens.name = 'lens';
+      lens.position.set(0, 0.095, -0.06); lens.name = 'lens';
       mag = add(rb(0.04, 0.13, 0.07, 0.01, 0, -0.1, -0.08), m.gun);
       add(rb(0.042, 0.012, 0.072, 0.003, 0, -0.06, -0.08), m.glow);
-      display = add(new THREE.PlaneGeometry(0.07, 0.035), this.ammoMat); display.position.set(0.031, 0.02, 0.02); display.rotation.y = Math.PI / 2;
+      display = add(new THREE.PlaneGeometry(0.05, 0.025), this.ammoMat); display.position.set(-0.031, 0.025, 0.07); display.rotation.y = -Math.PI / 2 + 0.35;
       muzzle = new THREE.Vector3(0, 0.01, -0.66); sightY = 0.098;
       gripR = new THREE.Vector3(0, -0.06, 0.08); gripL = new THREE.Vector3(0, -0.035, -0.3);
     } else {
@@ -120,13 +123,13 @@ export class ViewModel {
       add(new THREE.CircleGeometry(0.026, 20), m.accent).position.set(0, 0.085, 0.001);
       mag = add(rb(0.06, 0.07, 0.09, 0.012, 0, -0.07, -0.16), m.armor);
       add(rb(0.062, 0.015, 0.06, 0.004, 0, -0.04, -0.16), m.glowHot);
-      display = add(new THREE.PlaneGeometry(0.07, 0.035), this.ammoMat); display.position.set(0.0385, 0.02, 0.05); display.rotation.y = Math.PI / 2;
+      display = add(new THREE.PlaneGeometry(0.055, 0.027), this.ammoMat); display.position.set(-0.0385, 0.021, 0.14); display.rotation.y = -Math.PI / 2 + 0.35;
       muzzle = new THREE.Vector3(0, 0, -0.82); sightY = 0.085;
       gripR = new THREE.Vector3(0, -0.07, 0.08); gripL = new THREE.Vector3(0, -0.045, -0.3);
     }
     // 조준선(조준 시만)
-    const ret = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.03), this.reticleMat);
-    ret.position.set(0, sightY, id === 'pistol' ? -0.02 : -0.02); ret.visible = false; g.add(ret);
+    const ret = new THREE.Mesh(new THREE.PlaneGeometry(0.022, 0.022), this.reticleMat);
+    ret.position.set(0, sightY, id === 'rifle' ? -0.061 : -0.05); ret.visible = false; g.add(ret);
     for (const p of parts) { p.castShadow = false; }
     return { group: g, muzzle, sightY, mag, magRest: mag ? mag.position.clone() : null, gripL, gripR, ret, coils: parts.filter((p) => p.name && p.name.startsWith('coil')), pump: parts.find((p) => p.name === 'pump') };
   }
@@ -137,7 +140,7 @@ export class ViewModel {
       const a = new THREE.Group();
       const fore = new THREE.Mesh(merge([cy(0.038, 0.32, 0, 0, 0.16, 12, 0.045)]), m.sleeve); a.add(fore);
       const pad = new THREE.Mesh(rb(0.07, 0.04, 0.14, 0.015, 0, 0.035, 0.12), m.armor); a.add(pad);
-      const strip = new THREE.Mesh(rb(0.072, 0.006, 0.08, 0.002, 0, 0.056, 0.12), m.glow); a.add(strip);
+      const strip = new THREE.Mesh(rb(0.012, 0.005, 0.08, 0.002, 0, 0.056, 0.12), this.mats.glowDim); a.add(strip);
       const hand = new THREE.Mesh(merge([rb(0.07, 0.05, 0.085, 0.02, 0, -0.005, -0.03), rb(0.02, 0.03, 0.06, 0.008, side * 0.035, 0.012, -0.05)]), m.glove);
       a.add(hand);
       group.add(a);
@@ -221,11 +224,13 @@ export class ViewModel {
     s.bobT += dt * (5 + p.speed * 0.9) * (moving > 0.1 ? 1 : 0.3);
     const bobA = (moving * 0.018 + 0.002) * (1 - ads * 0.85);
     const bx = Math.sin(s.bobT) * bobA, by = -Math.abs(Math.cos(s.bobT)) * bobA * 0.8;
-    // 반동 스프링
-    s.kickV += (-s.kick * 160 - s.kickV * 18) * dt;
-    s.kick += s.kickV * dt;
-    // 착지
-    s.landV += (-s.land * 120 - s.landV * 14) * dt; s.land += s.landV * dt;
+    // 반동·착지 스프링: 프레임이 느려도 발산하지 않게 1/240초 단위로 나눠 적분
+    for (let left = Math.min(dt, 0.1); left > 1e-6; left -= 1 / 240) {
+      const h = Math.min(left, 1 / 240);
+      s.kickV += (-s.kick * 160 - s.kickV * 18) * h; s.kick += s.kickV * h;
+      s.landV += (-s.land * 120 - s.landV * 14) * h; s.land += s.landV * h;
+    }
+    s.kick = clamp(s.kick, -0.5, 2.5); s.land = clamp(s.land, -0.2, 0.1);
     // 대시·슬라이드 기울기
     const rollT = (p.dashT > 0 ? 0.25 : 0) + (p.slideT > 0 ? 0.35 : 0);
     s.roll += (rollT - s.roll) * Math.min(1, dt * 10);
@@ -272,17 +277,17 @@ export class ViewModel {
     const toWorld = (v) => v.clone().applyEuler(rot).add(pos);
     const R = toWorld(gun.gripR), L = toWorld(gun.gripL);
     const placeArm = (a, hand, elbow) => { a.position.copy(hand); a.lookAt(elbow); };
-    placeArm(this.arms.R, R, new THREE.Vector3(0.32, -0.42, 0.25));
+    placeArm(this.arms.R, R, new THREE.Vector3(0.3, -0.52, -0.02));
     if (knifeK > 0 || throwK > 0) {
       const k = Math.max(knifeK, throwK);
       const hand = new THREE.Vector3(-0.2 + k * 0.22, -0.22 + k * 0.12, -0.35 - k * 0.2);
-      placeArm(this.arms.L, hand, new THREE.Vector3(-0.35, -0.45, 0.2));
+      placeArm(this.arms.L, hand, new THREE.Vector3(-0.32, -0.55, -0.05));
       this.knife.visible = knifeK > 0;
       this.knife.position.copy(hand); this.knife.rotation.set(-0.2, 0.9 - k * 1.6, -0.4);
       this.nade.visible = throwK > 0 && s.throwK < 0.5;
       this.nade.position.copy(hand).add(new THREE.Vector3(0, 0.03, -0.03));
     } else {
-      placeArm(this.arms.L, L, new THREE.Vector3(-0.3, -0.45, 0.15));
+      placeArm(this.arms.L, L, new THREE.Vector3(-0.22, -0.55, -0.1));
       this.knife.visible = false; this.nade.visible = false;
     }
     // 총구 섬광
@@ -291,7 +296,7 @@ export class ViewModel {
     this.flash2.lookAt(this.camera.getWorldPosition(new THREE.Vector3()));
     this.muzzleLight.intensity = fv ? 3.5 : 0;
     this.muzzleLight.position.copy(toWorld(gun.muzzle));
-    this.rim.intensity = 0.5 + Math.sin(t * 2) * 0.15;
+    this.rim.intensity = 0.22 + Math.sin(t * 2) * 0.06;
   }
 
   muzzleWorld(mainCamera) {

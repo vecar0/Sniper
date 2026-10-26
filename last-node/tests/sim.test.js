@@ -190,6 +190,14 @@ test('더블 점프로 상자 계단을 밟아 헬리패드(4m)에 오른다', (
   assert.ok(top >= 3.99, `최고 높이 ${top.toFixed(2)}`);
 });
 
+test('헬리패드 위에서 동쪽으로 달려도 난간에 막혀 떨어지지 않는다', () => {
+  const w = sandbox(30);
+  put(w, 20, -5, 4);
+  const p = w.player; p.yaw = -Math.PI / 2; // +x(동쪽)
+  run(w, 3, (ww) => { ww.input.moveZ = 1; });
+  assert.ok(p.y > 3.9 && p.x < 25, `x=${p.x.toFixed(2)} y=${p.y.toFixed(2)}`);
+});
+
 test('난간 틈으로 떨어지면 다시 나타나고 체력 −30', () => {
   const w = sandbox(14);
   put(w, 6.5, 26);

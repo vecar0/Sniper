@@ -66,7 +66,7 @@ void main(){
   col = mix(col, under * (0.6 + c2 * 0.6), cloud * 0.85);
   // 달
   float m = max(dot(d, uMoon), 0.0);
-  col += vec3(0.55, 0.65, 0.8) * (pow(m, 900.0) * 3.0 + pow(m, 24.0) * 0.12) * (1.0 - cloud * 0.7);
+  col += vec3(0.55, 0.65, 0.8) * (pow(m, 1400.0) * 2.0 + pow(m, 60.0) * 0.025) * (1.0 - cloud * 0.7);
   // 번개
   col += vec3(0.6, 0.7, 1.0) * uFlash * (0.25 + cloud * 1.6);
   // 아래(도시 쪽)는 안개색
@@ -327,8 +327,9 @@ void main(){ float t = fract(uTime * 1.6 + aOff.z * 13.0); float cyc = floor(uTi
       m.position.set(x, y, z); m.lookAt(0, 0, 0); env.add(m);
     };
     card(0x27e8ff, 6, 0, 6, -14, 3, 10);     // 코어 빛 기둥
-    card(0xff2bd6, 4, -16, 8, -10, 10, 5);   // 광고판
+    card(0xff2bd6, 1.6, -16, 8, -10, 10, 5); // 광고판
     card(0x27e8ff, 3, 18, 3, 6, 6, 1);       // 헬리패드 띠
+    card(0x27e8ff, 2.2, -10, 5, 16, 8, 2);  // 반대편 시안 간판
     card(0xffa040, 3, -18, 4, 10, 2, 4);     // 나트륨등
     card(0x8fb0ff, 1.5, 6, 30, 4, 30, 8);    // 하늘
     card(0xff5a8a, 1.2, 0, -6, 30, 60, 6);   // 아래 도시 빛

@@ -252,7 +252,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
   .broadcast { top: 92px; font-size: 12px; max-width: 240px; }
   .hud-hp { width: 180px; bottom: calc(8px + var(--safe-b)); left: calc(10px + var(--safe-l)); }
   .hud-hp .num { font-size: 26px; }
-  .hud-weapon { bottom: auto; top: 100px; right: calc(10px + var(--safe-r)); }
+  .hud-weapon { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(4px + var(--safe-b)); top: auto; text-align: center; }
+  .hud-weapon .ammo { display: inline-block; }
   .hud-weapon .ammo { font-size: 28px; } .hud-weapon .ammo small { font-size: 14px; }
   .hud-weapon .wname, .hud-weapon .emp, .hud-weapon .reload { font-size: 11px; }
   .hud-weapon .slots { display: none; }

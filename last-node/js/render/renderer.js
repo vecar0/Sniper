@@ -58,6 +58,7 @@ export class Renderer {
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(r.domElement);
     this.renderer = r;
+    r.info.autoReset = false; // 여러 패스의 그리기 호출을 합산
     this.lowSpec = detectLowSpec(r);
     setAnisotropy(r.capabilities.getMaxAnisotropy());
 
@@ -77,7 +78,7 @@ export class Renderer {
     moon.shadow.bias = -0.0004; moon.shadow.normalBias = 0.03;
     this.scene.add(moon, moon.target);
     this.moon = moon;
-    this.scene.add(new THREE.HemisphereLight(0x3a5280, 0x2a1426, 0.9));
+    this.scene.add(new THREE.HemisphereLight(0x3a5a88, 0x141c2a, 0.9));
 
     this.fx = new FX(this.scene, this.camera, null, this.quality);
     this.enemies = new EnemyViews(this.scene, this.fx);
@@ -284,7 +285,9 @@ export class Renderer {
     u.uTime.value = t; u.uHurt.value = this.hurt; u.uAberr.value = this.aberr;
     u.uLow.value = p.hp < 30 ? 1 - p.hp / 30 : 0;
     u.uDash.value = this.dash;
+    r0(this.renderer);
     this.composer.render(dt);
+    this.lastInfo = { calls: this.renderer.info.render.calls, tris: this.renderer.info.render.triangles };
 
     // 동적 해상도
     this.frameAvg += (dt * 1000 - this.frameAvg) * 0.05;
@@ -326,10 +329,12 @@ export class Renderer {
   }
 
   stats() {
-    const i = this.renderer.info;
-    return { calls: i.render.calls, tris: i.render.triangles, geos: i.memory.geometries, tex: i.memory.textures };
+    const i = this.renderer.info, l = this.lastInfo || { calls: 0, tris: 0 };
+    return { calls: l.calls, tris: l.tris, geos: i.memory.geometries, tex: i.memory.textures };
   }
 }
+
+function r0(r) { r.info.reset(); }
 
 function clampRoll(p, look) {
   // 옆으로 움직일 때 살짝 기울기

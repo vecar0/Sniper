@@ -151,9 +151,9 @@ export class FX {
     this.lineUntil = 0;
 
     // 드롭: 체력 오브(시안) · 탄약 큐브(호박색)
-    this.orbMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.13, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 3.2, 3.6) }), 80);
+    this.orbMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.085, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.25, 1.5, 1.8) }), 80);
     this.orbMesh.count = 0; this.orbMesh.frustumCulled = false; scene.add(this.orbMesh);
-    this.ammoMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.28, 0.2, 0.36), new THREE.MeshStandardMaterial({ color: 0x2a2018, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.6, 0.8, 0.15), emissiveIntensity: 1 }), 30);
+    this.ammoMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.28, 0.2, 0.36), new THREE.MeshStandardMaterial({ color: 0x2a2018, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(0.8, 0.4, 0.06), emissiveIntensity: 1 }), 30);
     this.ammoMesh.count = 0; this.ammoMesh.frustumCulled = false; scene.add(this.ammoMesh);
     // EMP 수류탄
     this.nadeMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.11, 12, 8), new THREE.MeshStandardMaterial({ color: 0x15181d, metalness: 0.8, roughness: 0.3, emissive: new THREE.Color(0.2, 1.6, 2.5) }), 6);
