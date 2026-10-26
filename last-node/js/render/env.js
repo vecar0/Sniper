@@ -94,13 +94,13 @@ void main(){
     while (i < count && tries < count * 20) {
       tries++;
       const near = i < 40;
-      const r = near ? 105 + rnd() * 110 : 130 + Math.pow(rnd(), 0.7) * 620;
+      const r = near ? 170 + rnd() * 120 : 210 + Math.pow(rnd(), 0.7) * 560;
       const a = rnd() * Math.PI * 2;
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
       const w = (near ? 22 : 14) + rnd() * (near ? 34 : 40), d = w * (0.6 + rnd() * 0.8);
       if (placed.some((o) => Math.abs(o.x - x) < (o.w + w) * 0.55 && Math.abs(o.z - z) < (o.d + d) * 0.55)) continue;
       placed.push({ x, z, w, d });
-      const tall = rnd() < (near ? 0.35 : 0.12);
+      const tall = rnd() < (near ? 0.22 : 0.1);
       const h = tall ? 380 + rnd() * 260 : 120 + rnd() * 260;
       p.set(x, -330, z);
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.round(rnd() * 4) * (Math.PI / 2) + (rnd() - 0.5) * 0.3);
@@ -127,37 +127,38 @@ void main(){
   float side = 1.0 - abs(vN.y);
   // 면 좌표(미터)
   vec2 f = abs(vN.x) > 0.5 ? vec2(vL.z * vScale.z, vL.y * vScale.y) : vec2(vL.x * vScale.x, vL.y * vScale.y);
-  float floorH = 3.4 + vS.y * 1.2, winW = 2.2 + vS.z * 1.8;
+  float floorH = 3.2 + vS.y * 0.6, winW = 1.4 + vS.z * 0.8;
   vec2 cell = floor(vec2(f.x / winW, f.y / floorH));
   vec2 fr = fract(vec2(f.x / winW, f.y / floorH));
   float frame = step(0.14, fr.x) * step(fr.x, 0.86) * step(0.22, fr.y) * step(fr.y, 0.84);
   float r = h21(cell + vS.xy * 91.0 + floor(vN.xz * 3.0) * 17.0);
-  float lit = step(0.62 - vS.w * 0.12, r);
+  float rowOn = step(0.62, h21(vec2(cell.y * 0.37, vS.x * 53.0 + floor(vN.x * 2.0 + vN.z * 5.0))));
+  float lit = step(0.5, r) * rowOn + step(0.965, r) * (1.0 - rowOn);
   vec2 fw = fwidth(vec2(f.x / winW, f.y / floorH));
   float far = smoothstep(0.25, 0.7, max(fw.x, fw.y));
   // 가끔 깜빡이는 창
   lit *= 1.0 - step(0.985, r) * step(0.5, fract(uTime * 0.3 + r * 9.0));
-  vec3 warm = vec3(1.0, 0.72, 0.42), cool = vec3(0.55, 0.8, 1.0), pink = vec3(1.0, 0.35, 0.8);
-  vec3 wc = r > 0.93 ? pink : (fract(r * 13.0) > 0.5 ? warm : cool);
-  vec3 winC = wc * lit * frame * (0.55 + fract(r * 7.3) * 1.1);
-  vec3 avgC = vec3(0.85, 0.75, 0.7) * (0.38 + vS.w * 0.12) * 0.38 * 1.1;
+  vec3 warm = vec3(1.0, 0.7, 0.42), cool = vec3(0.6, 0.78, 1.0);
+  vec3 wc = fract(r * 13.0) > 0.8 ? cool : warm;
+  vec3 winC = wc * lit * frame * (0.34 + fract(r * 7.3) * 0.4);
+  vec3 avgC = vec3(0.9, 0.72, 0.55) * 0.045;
   col += mix(winC, avgC, far) * side;
   // 세로 네온 띠(일부 빌딩 모서리)
-  if (vS.z > 0.72) {
+  if (vS.z > 0.92) {
     float edge = abs(vN.x) > 0.5 ? abs(vL.z) : abs(vL.x);
     float strip = smoothstep(0.47, 0.5, edge) * side;
     vec3 nc = vS.x > 0.5 ? vec3(0.15, 0.9, 1.0) : vec3(1.0, 0.18, 0.85);
-    col += nc * strip * 2.2;
+    col += nc * strip * 0.9;
   }
   // 옥상 가장자리 띠 + 항공 경고등
   float top = vL.y * vScale.y;
-  col += vec3(1.0, 0.1, 0.1) * step(vScale.y - 1.5, top) * side * step(0.5, fract(uTime * 0.5 + vS.x)) * 3.0 * vS.w;
+  col += vec3(1.0, 0.1, 0.1) * step(vScale.y - 0.6, top) * side * step(0.5, fract(uTime * 0.5 + vS.x)) * 1.4 * vS.w * step(0.3, abs(vL.x) + abs(vL.z));
   // 아래로 갈수록 거리 불빛 반사로 붉은 안개
   float hgt = vW.y;
   float dist = length(vW - cameraPosition);
-  float fog = 1.0 - exp(-pow(dist * 0.0032, 1.25));
+  float fog = 1.0 - exp(-pow(dist * 0.0046, 1.15));
   vec3 fogC = mix(uHorizon * 0.95 + uGlow * 0.12, uFog, smoothstep(-200.0, 120.0, hgt));
-  col = mix(col, fogC, clamp(fog, 0.0, 0.94));
+  col = mix(col, fogC * 0.85, clamp(fog, 0.0, 0.97));
   col += vec3(0.4, 0.5, 0.8) * uFlash * 0.06;
   gl_FragColor = vec4(col, 1.0);
 }`,
@@ -182,9 +183,9 @@ void main(){ float idx = floor(mod(vAd.x * 4.0 + floor(uTime / 7.0 + vAd.y * 4.0
   float glitch = step(0.985, fract(sin(floor(uTime * 8.0) + vAd.z * 77.0) * 4375.5));
   c *= scan * flick * (1.0 - glitch * 0.7);
   float fog = exp(-pow(vDist * 0.0021, 1.4));
-  gl_FragColor = vec4(c * 0.75 * fog, 1.0); }`,
+  gl_FragColor = vec4(c * 0.45 * fog, 1.0); }`,
     });
-    const ads = placed.slice(40, 140).filter((_, k) => k % 6 === 0).slice(0, 14);
+    const ads = placed.slice(40, 140).filter((_, k) => k % 11 === 0).slice(0, 5);
     const adGeo = new THREE.PlaneGeometry(1, 1);
     const adMesh = new THREE.InstancedMesh(adGeo, adMat, ads.length);
     const adAttr = new Float32Array(ads.length * 4);
@@ -247,7 +248,7 @@ void main(){ vec3 c = vFront > 0.0 ? vec3(1.6, 1.5, 1.3) : vec3(2.4, 0.15, 0.2);
       fragmentShader: `uniform vec3 uColor; varying float vY; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(abs(dot(vN, vV)), 2.0); gl_FragColor = vec4(uColor * f * (1.0 - vY) * 0.13, 1.0); }`,
     });
     this.beams = [];
-    const spots = [[-180, -120, -260], [230, -150, -320], [-320, -200, 180], [150, -100, 280]];
+    const spots = [[230, -150, -320], [-320, -200, 180]];
     for (const [x, y, z] of spots) {
       const b = new THREE.Mesh(geo, mat);
       b.position.set(x, y, z);
