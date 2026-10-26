@@ -29,6 +29,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # LAST NODE(빌드 도구 없는 정적 게임)는 폴더째 복사 → /Sniper/last-node/
+      - run: mkdir -p dist/last-node && cp -r last-node/index.html last-node/css last-node/js last-node/vendor last-node/fonts last-node/textures dist/last-node/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

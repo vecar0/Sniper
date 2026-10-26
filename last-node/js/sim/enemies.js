@@ -24,7 +24,7 @@ const turn = (a, b, max) => {
 
 export function updateEnemy(world, e, dt) {
   e.px = e.x; e.py = e.y; e.pz = e.z;
-  e.flash = Math.max(0, e.flash - dt * 6);
+  e.flash = Math.max(0, e.flash - dt * 12);
   e.anim += dt;
   if (e.stun > 0) {
     e.stun -= dt;

@@ -1,3 +1,5 @@
+> **새 게임: [LAST NODE – 신서울 옥상 방어전](last-node/README.md)** — 비 내리는 사이버펑크 옥상에서 코어를 지키는 웨이브 생존 FPS · 플레이: https://vecar0.github.io/Sniper/last-node/
+
 # LONG SHOT – 옥상 저격전
 
 옥상을 지키며 몰려오는 적을 **저격총 한 방**으로 쓰러뜨리는 3D 아케이드 총게임(브라우저 · PC/휴대폰).

@@ -66,7 +66,7 @@ void main(){
   col = mix(col, under * (0.6 + c2 * 0.6), cloud * 0.85);
   // 달
   float m = max(dot(d, uMoon), 0.0);
-  col += vec3(0.55, 0.65, 0.8) * (pow(m, 1400.0) * 2.0 + pow(m, 60.0) * 0.025) * (1.0 - cloud * 0.7);
+  col += vec3(0.55, 0.65, 0.8) * (pow(m, 5000.0) * 2.0 + pow(m, 120.0) * 0.02) * (1.0 - cloud * 0.7);
   // 번개
   col += vec3(0.6, 0.7, 1.0) * uFlash * (0.25 + cloud * 1.6);
   // 아래(도시 쪽)는 안개색

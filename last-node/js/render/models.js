@@ -90,9 +90,9 @@ if (dz < uDissolve) discard;`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = vMat.z;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 totalEmissiveRadiance += vColor.rgb * vMat.x * uGlow;
-float rimK = pow(1.0 - saturate(dot(normal, normalize(-vViewPosition))), 3.0);
+float rimK = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 3.0);
 totalEmissiveRadiance += vec3(0.25, 0.5, 0.75) * rimK * 0.35;
-totalEmissiveRadiance += vec3(1.0, 0.85, 0.75) * uFlash * 0.9;
+totalEmissiveRadiance += vec3(1.0, 0.55, 0.3) * uFlash * uFlash * 0.45;
 float zap = step(0.6, fract(sin(dot(floor(vObj * 14.0), vec3(12.9, 78.2, 37.7)) + floor(uTime * 24.0)) * 43758.5));
 totalEmissiveRadiance += vec3(0.25, 0.65, 1.6) * uStun * (0.25 + zap * 1.5);
 float edge = smoothstep(uDissolve + 0.07, uDissolve, dz) * step(0.001, uDissolve);
@@ -308,7 +308,7 @@ float hex(vec2 p){ p.x *= 1.1547; p.y += mod(floor(p.x), 2.0) * 0.5; p = abs(fra
 void main(){ vec2 uv = vUv * vec2(9.0, 7.0); float e = smoothstep(0.14, 0.0, hex(uv));
   float edge = smoothstep(0.06, 0.0, min(vUv.x, 1.0 - vUv.x)) + smoothstep(0.06, 0.0, min(vUv.y, 1.0 - vUv.y));
   float flick = 0.85 + 0.15 * sin(uTime * 30.0);
-  float a = (0.12 + e * 0.7 + edge * 0.8) * flick * uOn + uHit * (0.4 + e);
+  float a = (0.05 + e * 0.5 + edge * 0.7) * flick * uOn + uHit * (0.4 + e);
   gl_FragColor = vec4(vec3(1.0, 0.18, 0.12) * a * 1.6, 1.0); }`,
   }));
   m.rotation.y = Math.PI; // 정면(−z)을 덮는다
@@ -390,7 +390,7 @@ export class EnemyViews {
     const root = new THREE.Group();
     root.add(rig.mesh);
     const v = { type, root, rig, mats: [rig.mat] };
-    if (type === 'mech') { const s = mechShield(); rig.bones[5].add(s.mesh); s.mesh.position.set(0.55, -0.45, -0.85); s.mesh.rotation.set(0, Math.PI, 0); v.shield = s; }
+    if (type === 'mech') { const s = mechShield(); root.add(s.mesh); s.mesh.position.set(0.15, 2.0, 0.15); v.shield = s; } // 몸 앞 1.1m에 호 모양 방패
     return v;
   }
 

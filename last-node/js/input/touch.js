@@ -17,7 +17,7 @@ export class Touch {
       <button class="tbtn" data-a="ads">조준</button>
       <button class="tbtn" data-a="jump">점프</button>
       <button class="tbtn" data-a="dash">대시</button>
-      <button class="tbtn small" data-a="crouch">숙이기</button>
+      <button class="tbtn small" data-a="crouch">앉기</button>
       <button class="tbtn small" data-a="reload">장전</button>
       <button class="tbtn small" data-a="melee">근접</button>
       <button class="tbtn small" data-a="emp">EMP</button>
@@ -42,7 +42,7 @@ export class Touch {
     pos('fire', 96, 92); pos('ads', 196, 150); pos('jump', 16, 24); pos('dash', 16, 108);
     pos('crouch', 196, 70); pos('reload', 112, 22); pos('melee', 270, 106); pos('emp', 270, 40);
     pos('cycle', 16, 190);
-    const p = this.btn.pause; p.style.left = '50%'; p.style.top = `${74 * s}px`; p.style.marginLeft = '-25px'; p.style.transform = `scale(${s})`;
+    const p = this.btn.pause; p.style.left = `calc(${118 * s}px + env(safe-area-inset-left, 0px))`; p.style.top = `${8 * s}px`; p.style.transform = `scale(${s})`; p.style.transformOrigin = 'top left';
     for (const a of ['interact', 'ready']) { const b = this.btn[a]; b.style.left = '50%'; b.style.transform = `translateX(-50%) scale(${s})`; }
     this.btn.interact.style.bottom = `${150 * s}px`; this.btn.ready.style.bottom = `${96 * s}px`;
     void W;

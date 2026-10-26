@@ -336,6 +336,7 @@ export class World {
       if (s > 0 && c.hurtT > 0.12) this.events.push({ t: 'shieldHit', kind, fx: src ? src.x : 0, fz: src ? src.z : 0 });
     }
     if (dmg <= 0) return;
+    dmg = Math.min(dmg, c.hp);
     c.hp -= dmg;
     this.waveCoreDamage += dmg;
     this.stats.coreDamage += dmg;
