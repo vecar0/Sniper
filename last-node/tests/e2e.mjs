@@ -109,7 +109,6 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     await page.waitForSelector('.shop', { timeout: 5000 });
     await page.click('.card[data-id=rifle]');
     await sleep(200);
-    await page.click('.tabs button[data-t=core]');
     await page.click('.card[data-id=turret]');
     await sleep(200);
     const r = await W(page, () => ({ owned: !!__ln.world.player.owned.rifle, turret: __ln.world.turrets.some((t) => t.built), cr: __ln.world.credits }));

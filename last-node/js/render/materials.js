@@ -160,7 +160,7 @@ export function neonSign(text, color, opts = {}) {
   const w = opts.w || 512, h = opts.h || 128;
   const c = canvas(w, h), g = c.getContext('2d');
   g.clearRect(0, 0, w, h);
-  g.font = `${opts.weight || 700} ${opts.size || 80}px ${opts.font || "'Rajdhani', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif"}`;
+  g.font = `${opts.weight || 400} ${opts.size || 80}px ${opts.font || "'Black Han Sans', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif"}`;
   g.textAlign = 'center'; g.textBaseline = 'middle';
   if (opts.vertical) {
     const chars = [...text];

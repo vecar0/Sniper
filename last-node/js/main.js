@@ -25,6 +25,8 @@ async function boot() {
   progress(0.15, '렌더러 준비 중…');
   const data = load();
   const coarse = matchMedia('(pointer: coarse)').matches;
+  // 캔버스(간판·광고·총의 탄수 표시)에 그리기 전에 폰트를 받아 둔다(늦게 오면 기본 글꼴로 그려진다)
+  try { await Promise.race([Promise.all(["400 40px 'Black Han Sans'", "400 16px 'Plex KR'", "600 16px 'Plex KR'"].map((f) => document.fonts.load(f, '가A1'))), new Promise((r) => setTimeout(r, 2500))]); } catch { /* 폰트 실패 = 기본 글꼴 */ }
   const { Renderer } = await import('./render/renderer.js');
   progress(0.4, '옥상과 도시를 짓는 중…');
   await new Promise((r) => setTimeout(r, 30));
@@ -102,7 +104,6 @@ class App {
       if (e.code === 'Enter') { this.world.input.ready = true; this.closeShop(); return true; }
       const m = /^Digit(\d)$/.exec(e.code);
       if (m) { this.menus.buyIndex(this.world, parseInt(m[1], 10) - 1); return true; }
-      if (e.code === 'Tab') { e.preventDefault(); const tabs = ['weapon', 'gear', 'core']; this.menus.shopTab = tabs[(tabs.indexOf(this.menus.shopTab) + 1) % 3]; this.menus.renderShop(this.world); return true; }
       return true;
     }
     if (this.state === 'pause' && e.code === 'Escape') { this.resume(); return true; }
@@ -122,7 +123,7 @@ class App {
     this.hud.show(true);
     if (this.touch) this.touch.show(true);
     if (!this.coarse) this.input.lock();
-    this.hud.banner('작전 개시', '정비 단말에서 준비하거나 Enter로 바로 시작');
+    this.hud.banner('작전 개시', this.coarse ? '상점에서 준비하거나 준비 완료로 바로 시작하세요' : '상점에서 준비하거나 Enter로 바로 시작하세요');
     this.data.runs++;
     save(this.data);
   }
@@ -176,7 +177,7 @@ class App {
     this.audio.gatling(false);
     const newBest = recordRun(this.data, this.world.score, this.world.wave);
     save(this.data);
-    this.hud.banner(this.world.overReason === 'core' ? '코어 함락' : '러너 사망', `웨이브 ${this.world.wave} · 점수 ${this.world.score.toLocaleString()}`, true);
+    this.hud.banner(this.world.overReason === 'core' ? '코어 함락' : '러너 사망', `${this.world.wave}웨이브에서 ${this.world.score.toLocaleString()}점`, true);
     setTimeout(() => {
       if (this.state !== 'over') return;
       this.input.unlock();
@@ -260,14 +261,14 @@ class App {
         case 'buy': break;
         case 'elevator': A.elevator(); break;
         case 'broadcast': H.broadcast(ev.text); break;
-        case 'waveStart': A.waveStart(ev.boss); H.banner(ev.boss ? `웨이브 ${ev.wave} · 보스` : `웨이브 ${ev.wave}`, ev.boss ? '무장 수송기 카론 접근 중' : `적 ${ev.total}기 접근`, ev.boss); break;
-        case 'waveClear': A.waveClear(); H.banner('웨이브 정리', `보너스 ₵${ev.bonus}${ev.perfect ? ` · 코어 무피해 +₵${ev.perfectBonus}` : ''} · 코어 +150 수리`); break;
+        case 'waveStart': A.waveStart(ev.boss); H.banner(`${ev.wave}웨이브`, ev.boss ? '무장 수송기 카론이 접근합니다' : `적 ${ev.total}기가 올라옵니다`, ev.boss); break;
+        case 'waveClear': A.waveClear(); H.banner('웨이브 정리', `보너스 ₵${ev.bonus}${ev.perfect ? `, 코어 무피해 ₵${ev.perfectBonus} 추가` : ''}. 코어를 150 수리했습니다`); break;
         case 'shop': if (ev.open) this.openShop(); else this.menus.clear(); break;
-        case 'fall': H.banner('추락', `체력 −${PLAYER.fallDamage}`, true); break;
-        case 'engineDown': H.banner('엔진 파괴', w.boss && w.boss.engines.every((x) => x <= 0) ? '조종석 노출 — 피해 ×3' : '하나 더!'); break;
+        case 'fall': H.banner('추락', `체력이 ${PLAYER.fallDamage} 줄었습니다`, true); break;
+        case 'engineDown': H.banner('엔진 파괴', w.boss && w.boss.engines.every((x) => x <= 0) ? '조종석이 드러났습니다. 피해 3배' : '엔진이 하나 남았습니다'); break;
         case 'gameOver': this.gameOver(); break;
       }
-      if (ev.t === 'kill' && ev.type === 'boss') { A.gatling(false); H.banner('카론 격추', `₵${ev.credits}`); }
+      if (ev.t === 'kill' && ev.type === 'boss') { A.gatling(false); H.banner('카론 격추', `₵${ev.credits.toLocaleString()} 획득`); }
     }
     if (!w.boss || !w.boss.alive || !w.boss.firing) A.gatling(false);
   }

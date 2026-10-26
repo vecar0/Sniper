@@ -367,31 +367,31 @@ export function mulberry(seed) {
 function adAtlas() {
   const S = 512, c = document.createElement('canvas'); c.width = c.height = S * 2;
   const g = c.getContext('2d');
-  const font = "'Rajdhani', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
+  const font = "'Black Han Sans', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
   const panel = (ix, iy, draw) => { g.save(); g.translate(ix * S, iy * S); g.beginPath(); g.rect(0, 0, S, S); g.clip(); draw(); g.restore(); };
   panel(0, 0, () => {
     const gr = g.createLinearGradient(0, 0, 0, S); gr.addColorStop(0, '#300a40'); gr.addColorStop(1, '#ff2bd6'); g.fillStyle = gr; g.fillRect(0, 0, S, S);
     g.strokeStyle = '#fff'; g.lineWidth = 14; g.beginPath();
     for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + Math.PI / 6; g.lineTo(S / 2 + Math.cos(a) * 110, 200 + Math.sin(a) * 110); }
     g.closePath(); g.stroke();
-    g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = `700 92px ${font}`; g.fillText('HELIX', S / 2, 400);
-    g.font = `600 34px ${font}`; g.fillText('내일을 소유하라', S / 2, 455);
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = `400 92px ${font}`; g.fillText('HELIX', S / 2, 400);
+    g.font = `400 34px ${font}`; g.fillText('내일을 소유하라', S / 2, 455);
   });
   panel(1, 0, () => {
     g.fillStyle = '#04141c'; g.fillRect(0, 0, S, S);
-    g.fillStyle = '#27e8ff'; g.textAlign = 'center'; g.font = `700 150px ${font}`; g.fillText('라멘', S / 2, 230);
-    g.font = `700 64px ${font}`; g.fillStyle = '#ffa040'; g.fillText('NEO 24H', S / 2, 330);
+    g.fillStyle = '#27e8ff'; g.textAlign = 'center'; g.font = `400 150px ${font}`; g.fillText('라멘', S / 2, 230);
+    g.font = `400 64px ${font}`; g.fillStyle = '#ffa040'; g.fillText('NEO 24H', S / 2, 330);
     g.strokeStyle = '#ffa040'; g.lineWidth = 6; g.strokeRect(40, 40, S - 80, S - 80);
   });
   panel(0, 1, () => {
     const gr = g.createLinearGradient(0, 0, S, S); gr.addColorStop(0, '#081a40'); gr.addColorStop(1, '#27e8ff'); g.fillStyle = gr; g.fillRect(0, 0, S, S);
-    g.fillStyle = 'rgba(255,255,255,0.9)'; g.textAlign = 'center'; g.font = `700 80px ${font}`; g.fillText('SYNTH', S / 2, 210); g.fillText('//WAVE', S / 2, 300);
+    g.fillStyle = 'rgba(255,255,255,0.9)'; g.textAlign = 'center'; g.font = `400 80px ${font}`; g.fillText('SYNTH', S / 2, 210); g.fillText('//WAVE', S / 2, 300);
     for (let i = 0; i < 12; i++) { g.fillStyle = `rgba(255,255,255,${0.1 + i * 0.05})`; g.fillRect(60 + i * 34, 420 - i * 8, 20, i * 8 + 10); }
   });
   panel(1, 1, () => {
     g.fillStyle = '#1a0005'; g.fillRect(0, 0, S, S);
-    g.fillStyle = '#ff2a3a'; g.textAlign = 'center'; g.font = `700 70px ${font}`; g.fillText('헬릭스 보안', S / 2, 200);
-    g.font = `600 40px ${font}`; g.fillStyle = '#ffd0d0'; g.fillText('당신의 안전은 우리의 자산', S / 2, 280);
+    g.fillStyle = '#ff2a3a'; g.textAlign = 'center'; g.font = `400 70px ${font}`; g.fillText('헬릭스 보안', S / 2, 200);
+    g.font = `400 40px ${font}`; g.fillStyle = '#ffd0d0'; g.fillText('당신의 안전은 우리의 자산', S / 2, 280);
     g.strokeStyle = '#ff2a3a'; g.lineWidth = 10; g.beginPath(); g.arc(S / 2, 390, 50, 0, Math.PI * 2); g.stroke();
   });
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;

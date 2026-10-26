@@ -55,5 +55,5 @@ node tests/e2e.mjs            # 실제 브라우저 12개: PC·모바일 터치�
 
 ## 크레딧
 - 기획·개발: vecar0 with Claude Code
-- Three.js(MIT), Rajdhani · Share Tech Mono 글꼴(SIL OFL)
+- Three.js(MIT), Black Han Sans · IBM Plex Sans KR 글꼴(SIL OFL, 쓰는 글자만 잘라 넣음: `scripts/fonts.py`)
 - 텍스처·컨셉 아트: Higgsfield 생성 이미지. 모델·사운드·음악은 모두 코드로 생성.

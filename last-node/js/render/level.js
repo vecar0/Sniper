@@ -536,7 +536,7 @@ function streakTexture() {
 // 홀로그램 광고 2쪽(위/아래)
 function holoAd() {
   const W = 1024, H = 1024, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
-  const font = "'Rajdhani', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
+  const font = "'Black Han Sans', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
   // 페이지 1 (아래 절반 = uv.y 0~0.5)
   const page = (y0, draw) => { g.save(); g.translate(0, y0); g.beginPath(); g.rect(0, 0, W, H / 2); g.clip(); draw(); g.restore(); };
   page(H / 2, () => {
@@ -545,14 +545,14 @@ function holoAd() {
     g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 12; g.beginPath();
     for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + Math.PI / 6; g.lineTo(200 + Math.cos(a) * 120, 256 + Math.sin(a) * 120); }
     g.closePath(); g.stroke();
-    g.fillStyle = '#fff'; g.font = `700 170px ${font}`; g.textAlign = 'left'; g.fillText('HELIX', 370, 270);
-    g.font = `600 56px ${font}`; g.fillText('DYNAMICS · 내일을 소유하라', 370, 360);
+    g.fillStyle = '#fff'; g.font = `400 170px ${font}`; g.textAlign = 'left'; g.fillText('HELIX', 370, 270);
+    g.font = `400 56px ${font}`; g.fillText('DYNAMICS · 내일을 소유하라', 370, 360);
   });
   page(0, () => {
     const gr = g.createLinearGradient(0, 0, 0, H / 2); gr.addColorStop(0, 'rgba(10,40,90,0.7)'); gr.addColorStop(1, 'rgba(39,232,255,0.8)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H / 2);
-    g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = `700 120px ${font}`; g.fillText('신서울 2089', W / 2, 230);
-    g.font = `600 54px ${font}`; g.fillText('하늘 위의 도시, 헬릭스가 지킵니다', W / 2, 330);
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = `400 120px ${font}`; g.fillText('신서울 2089', W / 2, 230);
+    g.font = `400 54px ${font}`; g.fillText('하늘 위의 도시, 헬릭스가 지킵니다', W / 2, 330);
   });
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }

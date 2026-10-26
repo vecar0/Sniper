@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>총 모델 확인</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}</style>
+<script type="importmap">{ "imports": { "three": "../vendor/three/three.module.js" } }</script>
+</head>
+<body>
+<script type="module">
+// 개발용: ?gun=rifle&yaw=0.6&pitch=0.2&dist=1.1 — 총 하나를 어두운 배경에서 돌려 본다(손·재질·윤곽 검수)
+import * as THREE from 'three';
+import { gunMaterials, viewmodelEnvironment, buildGun } from '../js/render/guns.js';
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ antialias: true });
+r.setSize(innerWidth, innerHeight); r.setPixelRatio(1);
+r.toneMapping = THREE.ACESFilmicToneMapping; r.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x101318);
+const env = viewmodelEnvironment(r);
+scene.environment = env;
+scene.add(new THREE.HemisphereLight(0x55688a, 0x120a12, 0.35));
+const key = new THREE.DirectionalLight(0xc8d8ff, 0.9); key.position.set(-1, 2.2, 0.6); scene.add(key);
+const M = gunMaterials(env);
+const ammo = new THREE.MeshBasicMaterial({ color: 0x223322 });
+const gun = buildGun(q.get('gun') || 'rifle', M, { ammoMat: ammo, reticleMat: ammo, scopeMat: ammo });
+scene.add(gun.group);
+const box = new THREE.Box3().setFromObject(gun.group); const c = box.getCenter(new THREE.Vector3());
+const cam = new THREE.PerspectiveCamera(q.get('fp') ? 54 : 30, innerWidth / innerHeight, 0.01, 20);
+const yaw = +(q.get('yaw') ?? 1.2), pitch = +(q.get('pitch') ?? 0.15), dist = +(q.get('dist') ?? 1.4);
+if (q.get('fp')) { // 플레이어 눈: 허리 사격 위치의 반대(fp=x,y,z)
+  const [x, y, z] = q.get('fp').split(',').map(Number);
+  cam.position.set(-x, -y, -z); cam.lookAt(-x, -y, -z - 1);
+} else {
+  cam.position.set(c.x + Math.sin(yaw) * Math.cos(pitch) * dist, c.y + Math.sin(pitch) * dist, c.z + Math.cos(yaw) * Math.cos(pitch) * dist);
+  cam.lookAt(c);
+}
+if (q.get('noarm')) gun.group.traverse((o) => { if (o.material === M.sleeve) o.visible = false; });
+r.render(scene, cam);
+window.__tris = r.info.render.triangles;
+window.__done = true;
+</script>
+</body>
+</html>

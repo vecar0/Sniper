@@ -83,7 +83,7 @@ export class Renderer {
     this.fx = new FX(this.scene, this.camera, null, this.quality);
     this.enemies = new EnemyViews(this.scene, this.fx);
     this.vm = new ViewModel(r, 16 / 9);
-    this.vm.scene.environment = this.env.envRT.texture;
+    // 뷰모델은 자기 반사 환경(어두운 방 + 밝은 조명판)을 쓴다 — viewmodel.js
 
     // 후처리
     const composer = new EffectComposer(r);
@@ -267,7 +267,7 @@ export class Renderer {
     const h = (hfov + this.fovKick) * (1 - ads * (1 - zoom));
     const vfov = (2 * Math.atan(Math.tan((h * Math.PI) / 360) * (9 / 16)) * 180) / Math.PI;
     if (Math.abs(this.camera.fov - vfov) > 0.01) { this.camera.fov = vfov; this.camera.updateProjectionMatrix(); }
-    this.vm.camera.fov = 58 - ads * 8; this.vm.camera.updateProjectionMatrix();
+    this.vm.camera.fov = 54 - ads * (p.weapon === "rail" ? 22 : 10); this.vm.camera.updateProjectionMatrix();
 
     // 장면 갱신
     this.level.update(dt, t, w, this.camera.position);
