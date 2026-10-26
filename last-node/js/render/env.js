@@ -43,12 +43,13 @@ export class Environment {
   }
 
   buildSky() {
+    this.moonDir = new THREE.Vector3(-0.45, 0.5, -0.74).normalize();
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: {
         uTime: this.time, uFlash: this.flash,
         uZenith: { value: PALETTE.zenith }, uMid: { value: PALETTE.mid }, uHorizon: { value: PALETTE.horizon },
-        uGlow: { value: PALETTE.cityGlow }, uMoon: { value: new THREE.Vector3(-0.45, 0.42, -0.78).normalize() },
+        uGlow: { value: PALETTE.cityGlow }, uMoon: { value: this.moonDir },
       },
       vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
       fragmentShader: `varying vec3 vDir; uniform float uTime, uFlash; uniform vec3 uZenith, uMid, uHorizon, uGlow, uMoon;
@@ -82,79 +83,124 @@ void main(){
   }
 
   // 원경 빌딩: 인스턴스 1번 그리기. 창문·네온 띠·항공등은 셰이더에서
+  // 원경 빌딩: 빌딩 하나 = 여러 덩어리(몸통 · 후퇴층 · 꼭대기 왕관 · 안테나). 전부 인스턴스 1번 그리기.
+  // 외벽(층 슬래브 · 세로 기둥 · 하늘 비친 유리 · 아래서 올라오는 거리 불빛 · 모서리 하이라이트)과 창문은 셰이더에서
   buildCity(count) {
     const geo = new THREE.BoxGeometry(1, 1, 1);
     geo.translate(0, 0.5, 0);
-    const mesh = new THREE.InstancedMesh(geo, null, count);
-    const seeds = new Float32Array(count * 4);
+    const maxInst = count * 4;
+    const mesh = new THREE.InstancedMesh(geo, null, maxInst);
+    const seeds = new Float32Array(maxInst * 4);
+    const kinds = new Float32Array(maxInst * 2); // [종류 0몸통 1후퇴층 2왕관 3안테나, 그 덩어리의 높이(m)]
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
-    let i = 0, tries = 0;
+    let i = 0, tries = 0, nb = 0;
     const placed = [];
     const rnd = mulberry(7);
-    while (i < count && tries < count * 20) {
+    const put = (x, y, z, w, h, d, rot, seed, kind) => {
+      if (i >= maxInst) return;
+      p.set(x, y, z); q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rot); s.set(w, h, d);
+      m4.compose(p, q, s); mesh.setMatrixAt(i, m4);
+      seeds.set(seed, i * 4); kinds[i * 2] = kind; kinds[i * 2 + 1] = h;
+      i++;
+    };
+    while (nb < count && tries < count * 20) {
       tries++;
-      const near = i < 40;
+      const near = nb < 40;
       const r = near ? 170 + rnd() * 120 : 210 + Math.pow(rnd(), 0.7) * 560;
       const a = rnd() * Math.PI * 2;
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      const w = (near ? 22 : 14) + rnd() * (near ? 34 : 40), d = w * (0.6 + rnd() * 0.8);
+      const w = (near ? 22 : 14) + rnd() * (near ? 30 : 36), d = w * (0.6 + rnd() * 0.8);
       if (placed.some((o) => Math.abs(o.x - x) < (o.w + w) * 0.55 && Math.abs(o.z - z) < (o.d + d) * 0.55)) continue;
       placed.push({ x, z, w, d });
+      nb++;
       const tall = rnd() < (near ? 0.22 : 0.1);
       const h = tall ? 380 + rnd() * 260 : 120 + rnd() * 260;
-      p.set(x, -330, z);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.round(rnd() * 4) * (Math.PI / 2) + (rnd() - 0.5) * 0.3);
-      s.set(w, h, d);
-      m4.compose(p, q, s);
-      mesh.setMatrixAt(i, m4);
-      seeds[i * 4] = rnd(); seeds[i * 4 + 1] = rnd(); seeds[i * 4 + 2] = rnd(); seeds[i * 4 + 3] = tall ? 1 : 0;
-      i++;
+      const rot = Math.round(rnd() * 4) * (Math.PI / 2) + (rnd() - 0.5) * 0.3;
+      const seed = [rnd(), rnd(), rnd(), tall ? 1 : 0];
+      const base = -330;
+      // 몸통
+      const tiers = tall ? 1 + Math.floor(rnd() * 2) : rnd() < 0.4 ? 1 : 0;
+      let top = base + h, ww = w, dd = d;
+      put(x, base, z, ww, h, dd, rot, seed, 0);
+      // 후퇴층: 위로 갈수록 좁아짐
+      for (let t = 0; t < tiers; t++) {
+        const th = h * (0.12 + rnd() * 0.12);
+        ww *= 0.72 + rnd() * 0.12; dd *= 0.72 + rnd() * 0.12;
+        put(x, top, z, ww, th, dd, rot, seed, 1);
+        top += th;
+      }
+      // 꼭대기 왕관(기계실·조명 띠) + 높은 빌딩은 안테나
+      const ch = 4 + rnd() * 6;
+      put(x, top, z, ww * 0.82, ch, dd * 0.82, rot, seed, 2);
+      top += ch;
+      if (tall || rnd() < 0.15) put(x, top, z, 0.9, 25 + rnd() * 45, 0.9, rot, seed, 3);
     }
     mesh.count = i;
     geo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seeds, 4));
+    geo.setAttribute('aKind', new THREE.InstancedBufferAttribute(kinds, 2));
     mesh.material = new THREE.ShaderMaterial({
       fog: false,
-      uniforms: { uTime: this.time, uFlash: this.flash, uFog: { value: PALETTE.fog }, uGlow: { value: PALETTE.cityGlow }, uHorizon: { value: PALETTE.horizon } },
-      vertexShader: `attribute vec4 aSeed; varying vec3 vW; varying vec3 vL; varying vec3 vN; varying vec4 vS; varying vec3 vScale;
-void main(){ vS = aSeed; vL = position; vN = normal;
+      uniforms: { uTime: this.time, uFlash: this.flash, uFog: { value: PALETTE.fog }, uGlow: { value: PALETTE.cityGlow }, uHorizon: { value: PALETTE.horizon }, uMid: { value: PALETTE.mid } },
+      vertexShader: `attribute vec4 aSeed; attribute vec2 aKind; varying vec3 vW; varying vec3 vL; varying vec3 vN; varying vec3 vWN; varying vec4 vS; varying vec3 vScale; varying vec2 vK;
+void main(){ vS = aSeed; vK = aKind; vL = position; vN = normal; vWN = normalize(mat3(instanceMatrix) * normal);
   vScale = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
   vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `varying vec3 vW; varying vec3 vL; varying vec3 vN; varying vec4 vS; varying vec3 vScale; uniform float uTime, uFlash; uniform vec3 uFog, uGlow, uHorizon;
+      fragmentShader: `varying vec3 vW; varying vec3 vL; varying vec3 vN; varying vec3 vWN; varying vec4 vS; varying vec3 vScale; varying vec2 vK;
+uniform float uTime, uFlash; uniform vec3 uFog, uGlow, uHorizon, uMid;
 float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 void main(){
-  vec3 base = vec3(0.012, 0.016, 0.026) * (0.7 + vS.x * 0.6);
-  vec3 col = base;
+  float kind = vK.x;
   float side = 1.0 - abs(vN.y);
-  // 면 좌표(미터)
+  vec3 V = normalize(cameraPosition - vW);
+  /* 바탕: 어두운 유리 외벽. 기울어진 각도일수록 하늘(위쪽 중간 톤)이 비침 */
+  float fres = pow(1.0 - max(dot(vWN, V), 0.0), 3.0);
+  vec3 col = vec3(0.010, 0.013, 0.02) * (0.75 + vS.x * 0.5) + uMid * 0.22 * fres * side;
   vec2 f = abs(vN.x) > 0.5 ? vec2(vL.z * vScale.z, vL.y * vScale.y) : vec2(vL.x * vScale.x, vL.y * vScale.y);
   float floorH = 3.2 + vS.y * 0.6, winW = 1.4 + vS.z * 0.8;
-  vec2 cell = floor(vec2(f.x / winW, f.y / floorH));
-  vec2 fr = fract(vec2(f.x / winW, f.y / floorH));
-  float frame = step(0.14, fr.x) * step(fr.x, 0.86) * step(0.22, fr.y) * step(fr.y, 0.84);
-  float r = h21(cell + vS.xy * 91.0 + floor(vN.xz * 3.0) * 17.0);
-  float rowOn = step(0.62, h21(vec2(cell.y * 0.37, vS.x * 53.0 + floor(vN.x * 2.0 + vN.z * 5.0))));
-  float lit = step(0.5, r) * rowOn + step(0.965, r) * (1.0 - rowOn);
-  vec2 fw = fwidth(vec2(f.x / winW, f.y / floorH));
+  vec2 g = vec2(f.x / winW, f.y / floorH);
+  vec2 cell = floor(g), fr = fract(g);
+  vec2 fw = fwidth(g);
   float far = smoothstep(0.25, 0.7, max(fw.x, fw.y));
-  // 가끔 깜빡이는 창
-  lit *= 1.0 - step(0.985, r) * step(0.5, fract(uTime * 0.3 + r * 9.0));
-  vec3 warm = vec3(1.0, 0.7, 0.42), cool = vec3(0.6, 0.78, 1.0);
-  vec3 wc = fract(r * 13.0) > 0.8 ? cool : warm;
-  vec3 winC = wc * lit * frame * (0.34 + fract(r * 7.3) * 0.4);
-  vec3 avgC = vec3(0.9, 0.72, 0.55) * 0.045;
-  col += mix(winC, avgC, far) * side;
-  // 세로 네온 띠(일부 빌딩 모서리)
-  if (vS.z > 0.92) {
-    float edge = abs(vN.x) > 0.5 ? abs(vL.z) : abs(vL.x);
-    float strip = smoothstep(0.47, 0.5, edge) * side;
-    vec3 nc = vS.x > 0.5 ? vec3(0.15, 0.9, 1.0) : vec3(1.0, 0.18, 0.85);
-    col += nc * strip * 0.9;
+  if (kind < 2.5) {
+    /* 층 슬래브(가로 띠) · 세로 기둥(창 6칸마다) — 가까울 때만, 멀면 평균으로 */
+    float slab = smoothstep(0.08, 0.0, fr.y) + smoothstep(0.92, 1.0, fr.y);
+    float fin = step(mod(cell.x, 6.0), 0.0) * smoothstep(0.35, 0.0, abs(fr.x - 0.5) - 0.15);
+    float frame = step(0.1, fr.x) * step(fr.x, 0.9) * step(0.2, fr.y) * step(fr.y, 0.86) * (1.0 - fin);
+    float r = h21(cell + vS.xy * 91.0 + floor(vN.xz * 3.0) * 17.0 + kind * 7.0);
+    float rowOn = step(0.62, h21(vec2(cell.y * 0.37, vS.x * 53.0 + floor(vN.x * 2.0 + vN.z * 5.0) + kind)));
+    float lit = step(0.5, r) * rowOn + step(0.965, r) * (1.0 - rowOn);
+    lit *= 1.0 - step(0.985, r) * step(0.5, fract(uTime * 0.3 + r * 9.0));
+    vec3 warm = vec3(1.0, 0.7, 0.42), cool = vec3(0.6, 0.78, 1.0);
+    vec3 wc = fract(r * 13.0) > 0.8 ? cool : warm;
+    /* 방 안 깊이감: 창 아래쪽이 조금 더 밝음 */
+    vec3 winC = wc * lit * frame * (0.34 + fract(r * 7.3) * 0.4) * (0.75 + 0.35 * (1.0 - fr.y));
+    vec3 avgC = vec3(0.9, 0.72, 0.55) * 0.045;
+    col += mix(winC, avgC, far) * side;
+    col *= 1.0 - (slab * 0.5 + fin * 0.35) * (1.0 - far) * side;
   }
-  // 옥상 가장자리 띠 + 항공 경고등
-  float top = vL.y * vScale.y;
-  col += vec3(1.0, 0.1, 0.1) * step(vScale.y - 0.6, top) * side * step(0.5, fract(uTime * 0.5 + vS.x)) * 1.4 * vS.w * step(0.3, abs(vL.x) + abs(vL.z));
-  // 아래로 갈수록 거리 불빛 반사로 붉은 안개
+  /* 꼭대기 왕관: 위 가장자리 건축 조명 띠(일부만, 은은하게) */
+  float yTop = vL.y * vScale.y;
+  if (kind > 1.5 && kind < 2.5) {
+    float band = smoothstep(0.6, 0.0, abs(yTop - vK.y + 0.8)) * step(0.55, vS.y) * side;
+    col += mix(vec3(0.85, 0.9, 1.0), vec3(1.0, 0.55, 0.35), step(0.8, vS.z)) * band * 0.9;
+  }
+  /* 안테나: 몸은 어둡고 끝에 깜빡이는 빨간 항공등 */
+  if (kind > 2.5) {
+    col = vec3(0.02, 0.022, 0.03);
+    float tip = step(vK.y - 1.2, yTop);
+    col += vec3(1.0, 0.08, 0.06) * tip * step(0.45, fract(uTime * 0.55 + vS.x)) * 2.4;
+  }
+  /* 세로 네온 띠(드물게) */
+  if (vS.z > 0.92 && kind < 0.5) {
+    float edge = abs(vN.x) > 0.5 ? abs(vL.z) : abs(vL.x);
+    col += (vS.x > 0.5 ? vec3(0.15, 0.9, 1.0) : vec3(1.0, 0.18, 0.85)) * smoothstep(0.47, 0.5, edge) * side * 0.9;
+  }
+  /* 모서리 하이라이트: 아래 도시 빛이 세로 모서리를 스침 → 덩어리 형태가 읽힘 */
+  { float e = abs(vN.x) > 0.5 ? abs(vL.z) : abs(vL.x);
+    col += uGlow * 0.05 * smoothstep(0.47, 0.5, e) * side * (1.0 - far * 0.5); }
+  /* 거리 불빛: 아래층일수록 붉은 주황 빛이 올라옴 */
   float hgt = vW.y;
+  col += uGlow * 0.06 * smoothstep(-120.0, -330.0, hgt) * side;
   float dist = length(vW - cameraPosition);
   float fog = 1.0 - exp(-pow(dist * 0.0046, 1.15));
   vec3 fogC = mix(uHorizon * 0.95 + uGlow * 0.12, uFog, smoothstep(-200.0, 120.0, hgt));
@@ -167,6 +213,7 @@ void main(){
     this.scene.add(mesh);
     this.city = mesh;
     this.cityPlaced = placed;
+    this.buildSkyline();
 
     // 거대 광고판(일부 빌딩 면)
     const atlas = adAtlas();
@@ -203,6 +250,35 @@ void main(){ float idx = floor(mod(vAd.x * 4.0 + floor(uTime / 7.0 + vAd.y * 4.0
     adGeo.setAttribute('aAd', new THREE.InstancedBufferAttribute(adAttr, 4));
     adMesh.frustumCulled = false;
     this.scene.add(adMesh);
+  }
+
+  // 지평선 근처 아주 먼 실루엣(낮은 대비, 지평선 색에 가깝게) — 깊이감용
+  buildSkyline() {
+    const geo = new THREE.CylinderGeometry(900, 900, 260, 128, 1, true);
+    geo.translate(0, -70, 0);
+    const mat = new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false,
+      uniforms: { uHorizon: { value: PALETTE.horizon }, uGlow: { value: PALETTE.cityGlow }, uFog: { value: PALETTE.fog } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform vec3 uHorizon, uGlow, uFog; varying vec2 vUv;
+float h(float x){ return fract(sin(x * 127.1) * 43758.5453); }
+void main(){
+  float x = vUv.x * 520.0;
+  float c = floor(x), fx = fract(x);
+  float bh = 0.18 + h(c) * 0.32 + step(0.93, h(c + 3.0)) * 0.25;
+  float bh2 = 0.12 + h(c * 0.5 + 9.0) * 0.18;
+  float top = max(bh * step(0.08, fx) * step(fx, 0.92), bh2);
+  float inside = step(vUv.y, top);
+  if (inside < 0.5) discard;
+  vec3 col = mix(uHorizon * 0.78 + uGlow * 0.1, uFog * 0.9, smoothstep(0.0, 0.5, vUv.y));
+  float win = step(0.97, h(floor(x * 6.0) + floor(vUv.y * 90.0) * 13.0)) * 0.12;
+  gl_FragColor = vec4(col + vec3(1.0, 0.75, 0.5) * win, 1.0);
+}`,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.renderOrder = -9; m.frustumCulled = false;
+    this.scene.add(m);
+    this.skyline = m;
   }
 
   // 비행 차량: 원형 차선을 도는 불빛(전조등 흰색 / 후미등 빨강)
@@ -328,7 +404,7 @@ void main(){ float t = fract(uTime * 1.6 + aOff.z * 13.0); float cyc = floor(uTi
       m.position.set(x, y, z); m.lookAt(0, 0, 0); env.add(m);
     };
     card(0x27e8ff, 6, 0, 6, -14, 3, 10);     // 코어 빛 기둥
-    card(0xff2bd6, 1.6, -16, 8, -10, 10, 5); // 광고판
+    card(0xff2bd6, 0.7, -16, 10, -10, 8, 1.4); // 광고판(얇은 띠: 넓은 판이면 웅덩이마다 분홍 얼룩)
     card(0x27e8ff, 3, 18, 3, 6, 6, 1);       // 헬리패드 띠
     card(0x27e8ff, 2.2, -10, 5, 16, 8, 2);  // 반대편 시안 간판
     card(0xffa040, 3, -18, 4, 10, 2, 4);     // 나트륨등

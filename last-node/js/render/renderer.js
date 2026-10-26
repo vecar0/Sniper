@@ -70,7 +70,7 @@ export class Renderer {
 
     // 달빛(그림자) + 아주 어두운 반구광
     const moon = new THREE.DirectionalLight(0x9fb4e8, 1.15);
-    moon.position.set(-18, 40, -22);
+    moon.position.copy(this.env.moonDir).multiplyScalar(60); // 하늘에 보이는 달과 같은 방향에서 그림자
     moon.target.position.set(0, 0, 0);
     moon.castShadow = this.quality !== 'low';
     moon.shadow.mapSize.set(this.quality === 'high' ? 2048 : 1024, this.quality === 'high' ? 2048 : 1024);

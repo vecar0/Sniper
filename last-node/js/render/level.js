@@ -432,7 +432,7 @@ void main(){ float row = floor(vUv.y * 40.0); float gl = step(0.93, fract(sin(ro
     this.boardLight = add(0xff2bd6, 22, 20, -15, 9, -21);
     add(0x27e8ff, 26, 16, 19, 6.5, -5);       // 헬리패드
     add(0xffa040, 22, 12, -20.8, 3.0, -2);    // 계단실 문 나트륨등
-    add(0xff2bd6, 6, 10, -18, 7, 11);         // 냉각 구역
+    add(0xff2bd6, 2.5, 5, -12.4, 2.8, 12);    // 냉각 구역 간판 바로 앞(넓게 비추면 웅덩이에 분홍 얼룩)
     this.elevLight = add(0xff2a3a, 0, 14, 0, 4.4, -21.5);
   }
 
@@ -450,7 +450,7 @@ void main(){ float row = floor(vUv.y * 40.0); float gl = step(0.93, fract(sin(ro
       this.refl.push({ mesh, x, z, len });
     };
     mk(0x27e8ff, 0, 0, 1.6, 16, 1.0);
-    mk(0xff2bd6, -15, -22.5, 7, 18, 0.3);
+    mk(0xff2bd6, -15, -22.5, 3.2, 14, 0.16);
     mk(0x27e8ff, 13, -5, 2.2, 10, 0.4);
     mk(0xffa040, -21.5, -2, 1.2, 9, 0.5);
   }
