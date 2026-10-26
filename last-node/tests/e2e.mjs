@@ -213,7 +213,7 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     await touch('#touch .zone.r', 'touchstart', 600, 200, 2);
     for (let i = 1; i <= 6; i++) { await touch('#touch', 'touchmove', 600 + i * 15, 200, 2); await sleep(40); }
     await touch('#touch', 'touchend', 690, 200, 2);
-    await sleep(200);
+    await page.waitForFunction((y0) => Math.abs(__ln.world.player.yaw - y0) > 0.1, y0, { timeout: 15000 }).catch(() => {});
     const y1 = await W(page, () => __ln.world.player.yaw);
     assert(Math.abs(y1 - y0) > 0.1, `시점 변화 ${(y1 - y0).toFixed(3)}`);
     const s0 = await W(page, () => __ln.world.stats.shots);

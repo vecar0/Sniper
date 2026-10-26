@@ -17,7 +17,9 @@ function tiling(tex, srgb) {
 // 파일을 불러오되, 실패하면 대체 캔버스를 그대로 쓴다(같은 Texture 객체에 이미지만 바꿔 끼움)
 function loadOr(url, fallbackCanvas, srgb) {
   const tex = tiling(new THREE.CanvasTexture(fallbackCanvas), srgb);
-  loader.load(url, (t) => { tex.image = t.image; tex.needsUpdate = true; }, undefined, () => {});
+  // 크기가 다른 이미지로 바꿀 때는 GPU 텍스처를 버리고 새로 만든다(r170은 텍스처 저장 공간 크기가 고정이라
+  // 그대로 덮으면 'Offset overflows texture dimensions'로 업로드가 실패하고 대체 텍스처가 남는다)
+  loader.load(url, (t) => { tex.dispose(); tex.image = t.image; tex.needsUpdate = true; }, undefined, () => {});
   return tex;
 }
 
