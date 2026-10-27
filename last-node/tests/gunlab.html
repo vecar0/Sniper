@@ -20,12 +20,14 @@ const scene = new THREE.Scene(); scene.background = new THREE.Color(0x101318);
 const env = viewmodelEnvironment(r);
 scene.environment = env;
 scene.add(new THREE.HemisphereLight(0x55688a, 0x120a12, 0.35));
-const key = new THREE.DirectionalLight(0xc8d8ff, 0.9); key.position.set(-1, 2.2, 0.6); scene.add(key);
+const key = new THREE.DirectionalLight(0xc8d8ff, 1.6); key.position.set(-1, 2.2, 0.6); scene.add(key);
+const rim = new THREE.PointLight(0x8ad8ff, 0.6, 2.5, 2); rim.position.set(-0.35, 0.25, -0.9); scene.add(rim);
 const M = gunMaterials(env);
 const ammo = new THREE.MeshBasicMaterial({ color: 0x223322 });
 const gun = buildGun(q.get('gun') || 'rifle', M, { ammoMat: ammo, reticleMat: ammo, scopeMat: ammo });
 scene.add(gun.group);
-const box = new THREE.Box3().setFromObject(gun.group); const c = box.getCenter(new THREE.Vector3());
+if (q.get('noarm')) gun.group.traverse((o) => { if (o.isMesh && [M.sleeve, M.glove, M.knuckle].includes(o.material)) o.visible = false; });
+const box = new THREE.Box3(); gun.group.updateMatrixWorld(true); gun.group.traverse((o) => { if (o.isMesh && o.visible && o.parent.visible) box.expandByObject(o); }); const c = box.getCenter(new THREE.Vector3());
 const cam = new THREE.PerspectiveCamera(q.get('fp') ? 54 : 30, innerWidth / innerHeight, 0.01, 20);
 const yaw = +(q.get('yaw') ?? 1.2), pitch = +(q.get('pitch') ?? 0.15), dist = +(q.get('dist') ?? 1.4);
 if (q.get('fp')) { // 플레이어 눈: 허리 사격 위치의 반대(fp=x,y,z)
@@ -35,7 +37,6 @@ if (q.get('fp')) { // 플레이어 눈: 허리 사격 위치의 반대(fp=x,y,z)
   cam.position.set(c.x + Math.sin(yaw) * Math.cos(pitch) * dist, c.y + Math.sin(pitch) * dist, c.z + Math.cos(yaw) * Math.cos(pitch) * dist);
   cam.lookAt(c);
 }
-if (q.get('noarm')) gun.group.traverse((o) => { if (o.material === M.sleeve) o.visible = false; });
 r.render(scene, cam);
 window.__tris = r.info.render.triangles;
 window.__done = true;
