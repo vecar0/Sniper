@@ -156,7 +156,7 @@ export function gunMaterials(envMap) {
   return M;
 }
 
-// 뷰모델 전용 반사 환경: 거의 검은 방 + 밝고 경계가 또렷한 조명판(창·네온). PMREM으로 미리 흐림
+// 뷰모델 전용 반사 환경: 거의 검은 방 + 밝고 경계가 또렷한 조명판(투광등·하늘·눈). PMREM으로 미리 흐림
 export function viewmodelEnvironment(renderer) {
   const env = new THREE.Scene();
   env.background = lin(0.012, 0.014, 0.02);
@@ -164,13 +164,13 @@ export function viewmodelEnvironment(renderer) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: lin(...rgb), side: THREE.DoubleSide, toneMapped: false }));
     m.position.set(x, y, z); m.lookAt(0, 0, 0); env.add(m);
   };
-  // 위쪽 왼편 큰 '창'(먼 도시 하늘): 4×3 창살 — 금속에 구조 있는 반사가 생긴다
-  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) card(1.0, 1.1, -4.8 + i * 1.32, 3.6 + j * 1.38, 3.5, [3.6, 3.8, 4.4]);
-  card(0.5, 5.5, 5.2, 1.0, 1.5, [3.2, 0.45, 2.5]);   // 오른쪽 마젠타 네온 기둥
-  card(5.5, 0.35, 0.5, 2.6, -5.0, [0.5, 3.0, 3.6]); // 앞쪽 시안 띠(코어)
+  // 위쪽 왼편 투광등 묶음(등 4개) — 금속에 구조 있는 반사가 생긴다
+  for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) card(1.3, 0.9, -4.2 + i * 1.6, 4.4 + j * 1.2, 3.5, [4.2, 3.0, 1.8]);
+  card(0.5, 5.5, 5.2, 1.0, 1.5, [1.4, 1.6, 2.0]);   // 오른쪽 달빛 받은 옹벽 모서리
+  card(5.5, 0.35, 0.5, 2.6, -5.0, [2.6, 1.8, 1.0]); // 앞쪽 먼 투광등 줄
   card(2.2, 3.4, 3.0, 2.6, -4.5, [2.4, 1.6, 0.8]); // 따뜻한 나트륨등
-  card(7, 2.2, 0, 6.0, 0, [0.4, 0.46, 0.58]);       // 흐린 하늘(위)
-  card(9, 9, 0, -4, 0, [0.06, 0.04, 0.06]);          // 젖은 바닥 반사(아래)
+  card(7, 2.2, 0, 6.0, 0, [0.4, 0.48, 0.62]);       // 흐린 밤하늘(위)
+  card(9, 9, 0, -4, 0, [0.16, 0.17, 0.2]);           // 눈 덮인 바닥 반사(아래)
   const pm = new THREE.PMREMGenerator(renderer);
   const rt = pm.fromScene(env, 0.006);
   for (const o of env.children) { o.geometry.dispose(); o.material.dispose(); }
@@ -333,7 +333,7 @@ function buildPistol(g, add, M, out, X) {
   add(rbox(0.017, 0.0022, 0.034, 0.0008, 0, 0.0475, 0.003), 'gunmetal');
   for (const z of [-0.008, 0.014]) add(new THREE.CylinderGeometry(0.0016, 0.0016, 0.0012, 10).translate(0, 0.0488, z), 'bright');
   // 각인: 슬라이드 왼쪽
-  engrave(add, M, 'K-9 · 9×19 · NEO-SEOUL ARMS', -0.0127, 0.027, -0.045, 0.07, 0.0048);
+  engrave(add, M, 'P9 · 9×19 · NORDVAG ARMS', -0.0127, 0.027, -0.045, 0.07, 0.0048);
   // 슬라이드 톱니(뒤·앞) · 배출구 · 측면 각인 홈
   add(grooves(0.012, 0.044, 8, 0.02, 0.043, 0.0127), 'port'); add(grooves(0.012, 0.044, 8, 0.02, 0.043, -0.0127), 'port');
   add(grooves(-0.13, -0.11, 4, 0.022, 0.042, 0.0127), 'port'); add(grooves(-0.13, -0.11, 4, 0.022, 0.042, -0.0127), 'port');
@@ -401,8 +401,8 @@ function buildRifle(g, add, M, out, X) {
   add(side([[0.12, 0.0], [0.12, -0.026, 0.004], [0.075, -0.04], [0.06, -0.04], [0.035, -0.055, 0.005], [-0.005, -0.055, 0.004], [-0.02, -0.04], [-0.026, -0.072, 0.003], [-0.09, -0.072, 0.003], [-0.094, -0.02], [-0.11, 0.0]], 0.03,
     { holes: [[[0.055, -0.03], [0.03, -0.044], [0.0, -0.044], [-0.006, -0.032], [-0.006, -0.028], [0.055, -0.028]]], bevel: 0.0022 }), 'gunmetal');
   // 탄창 삽입구 왼쪽 각인 + 조정간 표시(작은 주황 점이 '연발'을 가리킴)
-  engrave(add, M, 'VX-7 PULSE', -0.0152, -0.04, -0.058, 0.05, 0.0075);
-  engrave(add, M, 'CAL 5.7×28 · NEO-SEOUL', -0.0152, -0.055, -0.058, 0.055, 0.0045);
+  engrave(add, M, 'AR-7', -0.0152, -0.04, -0.058, 0.05, 0.0075);
+  engrave(add, M, 'CAL 5.56×45 · NORDVAG', -0.0152, -0.055, -0.058, 0.055, 0.0045);
   engrave(add, M, 'SAFE   SEMI   AUTO', -0.0152, -0.004, 0.064, 0.036, 0.004);
   add(new THREE.CircleGeometry(0.0012, 10).rotateY(-Math.PI / 2).translate(-0.0162, -0.012, 0.052), 'accent');
   // 방아쇠 · 셀렉터
@@ -474,8 +474,8 @@ function buildShotgun(g, add, M, out, X) {
   // 리시버(세라코트, 둥근 윗면) + 배출구 + 위 레일 짧게
   add(side([[0.12, -0.02], [0.12, 0.034, 0.006], [0.1, 0.047, 0.006], [-0.1, 0.047, 0.004], [-0.105, 0.04], [-0.105, -0.02]], 0.036, { bevel: 0.0035 }), 'gunmetal');
   // 리시버 각인 · 핀 · 크로스볼트 안전장치 · 탄 넣는 구멍(아래)
-  engrave(add, M, 'BREAKER 12GA', -0.0182, 0.032, 0.04, 0.05, 0.0065);
-  engrave(add, M, '3" CHAMBER · NEO-SEOUL ARMS', -0.0182, 0.0, -0.06, 0.06, 0.0042);
+  engrave(add, M, 'M12 12GA', -0.0182, 0.032, 0.04, 0.05, 0.0065);
+  engrave(add, M, '3" CHAMBER · NORDVAG ARMS', -0.0182, 0.0, -0.06, 0.06, 0.0042);
   pinX(0.0022, 0.0368, 0, -0.012, 0.09, 'bright', add); pinX(0.0022, 0.0368, 0, -0.012, -0.08, 'bright', add);
   pinX(0.0032, 0.031, 0, -0.03, 0.098, 'steel', add);
   add(new THREE.CircleGeometry(0.0024, 12).rotateY(-Math.PI / 2).translate(-0.0158, -0.03, 0.098), 'accent');
@@ -540,8 +540,8 @@ function buildRail(g, add, M, out, X) {
     for (const z of [-0.04, -0.24]) add(cylZ(0.0025, 0.002, 0, 0, 0, 10).rotateY(Math.PI / 2).translate(x + Math.sign(x) * 0.0009, 0.026, z), 'bright');
   }
   // 각인 · 경고 띠(주황) · 통풍 슬롯
-  engrave(add, M, 'LANCE RG-1', -0.026, 0.03, -0.09, 0.06, 0.009);
-  engrave(add, M, '고전압 · 충전 중 분리 금지', -0.026, 0.018, -0.12, 0.07, 0.0052);
+  engrave(add, M, 'XM-1 EXPERIMENTAL', -0.026, 0.03, -0.09, 0.06, 0.009);
+  engrave(add, M, '고전압 · 충전 중 분해 금지', -0.026, 0.018, -0.12, 0.07, 0.0052);
   add(new THREE.PlaneGeometry(0.03, 0.005).rotateY(-Math.PI / 2).translate(-0.0262, 0.005, -0.2), 'accent');
   for (let i = 0; i < 7; i++) add(box(0.0008, 0.016, 0.003, -0.0258, 0.012, 0.02 + i * 0.008), 'port');
   // 윗면 방열핀(조준경 앞, 위에서 보이는 결) + 고정 띠

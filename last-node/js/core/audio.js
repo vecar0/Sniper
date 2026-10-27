@@ -1,4 +1,4 @@
-// 사운드: Web Audio 실시간 합성(외부 파일 없음). 총성·적·폭발·UI + 빗소리 + 신스웨이브 배경음.
+// 사운드: Web Audio 실시간 합성(외부 파일 없음). 총성·적·폭발·UI + 극지 바람·발전기 + 어두운 전투 음악.
 export class Audio {
   constructor() {
     this.ctx = null;
@@ -19,12 +19,12 @@ export class Audio {
     this.sfx = ctx.createGain(); this.sfx.gain.value = this.sfxVol; this.sfx.connect(this.master);
     this.music = ctx.createGain(); this.music.gain.value = this.musicVol * 0.5; this.music.connect(this.master);
     this.amb = ctx.createGain(); this.amb.gain.value = this.sfxVol * 0.5; this.amb.connect(this.master);
-    // 잔향(옥상 개방감)
+    // 잔향(콘크리트 옹벽에 둘러싸인 광장)
     this.verb = ctx.createConvolver(); this.verb.buffer = this.impulse(2.2, 2.6);
     this.verbGain = ctx.createGain(); this.verbGain.gain.value = 0.28;
     this.verb.connect(this.verbGain); this.verbGain.connect(this.sfx);
     this.noiseBuf = this.makeNoise(2);
-    this.startRain();
+    this.startWind();
     this.startMusic();
   }
 
@@ -201,26 +201,33 @@ export class Audio {
   elevator() { if (!this.ctx) return; const t = this.ctx.currentTime, sp = this.spatial(0, -22, 60), o = this.out(sp.g, sp.pan, 0.3); this.tone(o, t, 0.4, { type: 'sine', f0: 1046, gain: 0.25 }); this.noise(o, t + 0.3, 1.2, { type: 'lowpass', freq: 300, gain: 0.5 }); }
 
   // ── 앰비언스 · 음악 ───────────────────────────────────
-  startRain() {
+  // 바람: 저역 통과 잡음의 차단 주파수·음량을 느리게 흔들어 돌풍을 만든다 + 멀리 디젤 발전기 웅웅거림
+  startWind() {
     const ctx = this.ctx, s = ctx.createBufferSource(); s.buffer = this.noiseBuf; s.loop = true;
-    const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 900;
-    const f2 = ctx.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = 7000;
-    const g = ctx.createGain(); g.gain.value = 0.32;
-    s.connect(f); f.connect(f2); f2.connect(g); g.connect(this.amb); s.start();
-    // 낮은 도시 웅웅거림
-    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 48;
-    const lf = ctx.createBiquadFilter(); lf.type = 'lowpass'; lf.frequency.value = 120;
-    const og = ctx.createGain(); og.gain.value = 0.05;
-    o.connect(lf); lf.connect(og); og.connect(this.amb); o.start();
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 420; f.Q.value = 0.6;
+    const g = ctx.createGain(); g.gain.value = 0.22;
+    s.connect(f); f.connect(g); g.connect(this.amb); s.start();
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07;
+    const lg = ctx.createGain(); lg.gain.value = 260; lfo.connect(lg); lg.connect(f.frequency); lfo.start();
+    const lfo2 = ctx.createOscillator(); lfo2.frequency.value = 0.11;
+    const lg2 = ctx.createGain(); lg2.gain.value = 0.12; lfo2.connect(lg2); lg2.connect(g.gain); lfo2.start();
+    // 높은 휘파람 같은 바람(철망 사이)
+    const s2 = ctx.createBufferSource(); s2.buffer = this.noiseBuf; s2.loop = true; s2.playbackRate.value = 0.7;
+    const f2 = ctx.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 1500; f2.Q.value = 8;
+    const g2 = ctx.createGain(); g2.gain.value = 0.035;
+    s2.connect(f2); f2.connect(g2); g2.connect(this.amb); s2.start();
+    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 50;
+    const og = ctx.createGain(); og.gain.value = 0.03;
+    o.connect(og); og.connect(this.amb); o.start();
   }
 
   startMusic() {
     const ctx = this.ctx;
     this.step16 = 0;
     this.nextNote = ctx.currentTime + 0.1;
-    const bpm = 112, sx = 60 / bpm / 4;
-    // Am - F - C - G 진행
-    const roots = [45, 41, 48, 43];
+    const bpm = 104, sx = 60 / bpm / 4;
+    // Dm - B♭ - Gm - A (어둡고 긴장된 단조)
+    const roots = [38, 34, 43, 45];
     const pad = ctx.createGain(); pad.gain.value = 0.0; pad.connect(this.music);
     this.padGain = pad;
     const tick = () => {
@@ -232,7 +239,7 @@ export class Audio {
         // 베이스(16분 옥타브 펌핑)
         if (I > 0 || st % 4 === 0) {
           const n = st % 2 === 0 ? r : r + 12;
-          this.musicTone(t, sx * 0.9, midi(n - 12), 'sawtooth', I > 0 ? 0.11 : 0.06, 300 + I * 500);
+          this.musicTone(t, sx * 0.9, midi(n - 12), 'sawtooth', I > 0 ? 0.1 : 0.05, 220 + I * 300);
         }
         // 킥·스네어·하이햇
         if (I > 0) {
@@ -244,11 +251,11 @@ export class Audio {
         if (I >= 1 && st % 2 === 0) {
           const chord = [0, 3, 7, 12, 15, 12, 7, 3];
           const n = r + 24 + chord[(st / 2) % 8] + (bar === 1 || bar === 2 ? 1 : 0) * 0;
-          this.musicTone(t, sx * 1.6, midi(n), 'square', I >= 2 ? 0.045 : 0.03, 2400);
+          this.musicTone(t, sx * 1.6, midi(n), 'triangle', I >= 2 ? 0.04 : 0.026, 1600);
         }
         // 패드(마디 시작)
         if (st % 16 === 0) {
-          for (const iv of [0, 7, 12, 15]) this.musicTone(t, sx * 16, midi(r + 12 + iv), 'sawtooth', 0.018, 900, 0.6);
+          for (const iv of [0, 7, 12, 15]) this.musicTone(t, sx * 16, midi(r + 12 + iv), 'triangle', 0.02, 700, 0.8);
         }
         this.nextNote += sx; this.step16++;
       }

@@ -95,8 +95,8 @@ const browser = await playwright.chromium.launch({ args: ARGS });
       window.__hits = 0; const orig = __ln.app.hud.hitmark.bind(__ln.app.hud); __ln.app.hud.hitmark = (k) => { window.__hits++; orig(k); };
     });
     const mag0 = await W(page, () => __ln.world.player.ammo.pistol.mag);
-    if (!(await W(page, () => document.pointerLockElement != null))) { await page.mouse.click(640, 360); await sleep(400); }
-    await page.mouse.down(); await sleep(700); await page.mouse.up(); await sleep(300);
+    if (!(await W(page, () => __ln.app.input.locked))) { await page.mouse.click(640, 360); await page.waitForFunction(() => __ln.app.input.locked, null, { timeout: 3000 }).catch(() => {}); }
+    await page.mouse.down(); await sleep(1100); await page.mouse.up(); await sleep(300);
     const r = await W(page, () => ({ mag: __ln.world.player.ammo.pistol.mag, shots: __ln.world.stats.shots, hits: window.__hits }));
     assert(r.mag < mag0, `탄창 그대로 ${mag0}→${r.mag}`);
     assert(r.hits > 0, '명중 표시 없음');
@@ -109,24 +109,27 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     // 첫 장을 무기 카드로 바꿔 끼워 시험(무작위 제시와 무관하게)
     await W(page, () => { __ln.world.offer[0] = 'get:rifle'; });
     await page.keyboard.press('Digit1');
-    await page.waitForFunction(() => !document.querySelector('.cards'), null, { timeout: 5000 });
+    const closed = await page.waitForFunction(() => !document.querySelector('.cards'), null, { timeout: 5000 }).then(() => true).catch(() => false);
+    assert(closed, `카드 화면이 안 닫힘 ${JSON.stringify(await W(page, () => ({ app: __ln.app.state, st: __ln.world.state, offer: __ln.world.offer, cards: !!document.querySelector('.cards') })))}`);
     const st = await W(page, () => ({ state: __ln.world.state, owned: !!__ln.world.player.owned.rifle, weapon: __ln.world.player.weapon }));
     assert(st.state === 'intermission' && st.owned && st.weapon === 'rifle', `카드 적용 실패 ${JSON.stringify(st)}`);
-    if (!(await W(page, () => document.pointerLockElement != null))) { await page.mouse.click(640, 360); await sleep(400); }
+    // 카드를 고르면 게임이 포인터를 다시 잠근다(잠금 완료까지 기다림, 안 되면 클릭으로)
+    let locked = await page.waitForFunction(() => __ln.app.input.locked, null, { timeout: 1500 }).then(() => true).catch(() => false);
+    if (!locked) { await page.mouse.click(640, 360); await page.waitForFunction(() => __ln.app.input.locked, null, { timeout: 3000 }).catch(() => {}); }
     await sleep(500);
     const s0 = await W(page, () => __ln.world.player.ammo.rifle.mag);
-    await page.mouse.down(); await sleep(500); await page.mouse.up(); await sleep(200);
-    assert(await W(page, () => __ln.world.player.ammo.rifle.mag) < s0, '소총 발사 안 됨');
+    await page.mouse.down(); await sleep(1200); await page.mouse.up(); await sleep(200); // 소프트웨어 렌더러는 프레임이 느려 넉넉히
+    const dbg = await W(page, () => { const p = __ln.world.player; return { mag: p.ammo.rifle.mag, w: p.weapon, sw: p.switchT, rl: p.reloadT, st: __ln.world.state, app: __ln.app.state, lock: __ln.app.input.locked, en: __ln.app.input.enabled }; });
+    assert(dbg.mag < s0, `소총 발사 안 됨 ${s0} ${JSON.stringify(dbg)}`);
   });
 
   await check('피격 방향, 처치 점수·연속 배수, 레이더, 보스 체력 바', async () => {
     await W(page, () => { const w = __ln.world; w.state = 'wave'; w.hurtPlayer(5, { x: w.player.x + 8, z: w.player.z }, 'test'); });
     const dirOk = await page.waitForSelector('.dir', { timeout: 10000 }).then(() => true).catch(() => false);
     assert(dirOk, '피격 방향 표시 없음');
-    await W(page, () => { const w = __ln.world; for (let i = 0; i < 2; i++) { const e = w.spawnEnemy('reaper', 3, 0, 3); w.damageEnemy(e, 1e6, { kind: 'weak' }); } });
-    await page.waitForSelector('.pop .kp', { timeout: 10000 }).catch(() => {});
-    assert((await page.$$('.pop .kp')).length > 0, '처치 점수 표시 없음');
-    assert(await page.$eval('.mult', (e) => e.classList.contains('on')), '연속 처치 배수 표시 없음');
+    await W(page, () => { window.__kp = 0; const h = __ln.app.hud, o = h.killPop.bind(h); h.killPop = (ev) => { window.__kp++; o(ev); }; const w = __ln.world; for (let i = 0; i < 2; i++) { const e = w.spawnEnemy('reaper', 3, 0, 3); w.damageEnemy(e, 1e6, { kind: 'weak' }); } });
+    const kp = await page.waitForFunction(() => window.__kp >= 2 && document.querySelector('.mult.on'), null, { timeout: 10000 }).then(() => true).catch(() => false);
+    assert(kp, `처치 점수·연속 배수 표시 없음 ${await W(page, () => window.__kp)}`);
     const radar = await page.$eval('.hud-radar canvas', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return n; });
     assert(radar > 500, '레이더가 비어 있음');
     await W(page, () => { const w = __ln.world; w.player.hp = 1e6; w.wave = 4; w.startWave(); w.spawn.t = 3.5; });

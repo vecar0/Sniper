@@ -68,10 +68,10 @@ export class Level {
     this.buildWallTops();
     this.buildRailings();
     this.buildDetails();
-    this.batch.build(this.root);
-    this.glowBatch.build(this.root, { shadow: false });
     this.buildRadome();
     this.buildFloodlights();
+    this.batch.build(this.root);
+    this.glowBatch.build(this.root, { shadow: false });
     this.buildLiftDoors();
     this.buildLights();
   }
@@ -375,10 +375,10 @@ export class Level {
     for (let y = 0.3; y < 6; y += 0.32) lad.push(pipe([-0.25, y, 1.52], [0.25, y, 1.52], 0.018, 4));
     g.add(new THREE.Mesh(mergeGeometries(lad.map((q) => { const n = q.toNonIndexed(); n.deleteAttribute('uv'); return n; })), m.galv));
     // 꼭대기 항공등 · 받침 둘레 분전함
-    this.aviation = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), m.red); this.aviation.position.y = 10.65; g.add(this.aviation);
     const box = new THREE.Mesh(boxGeo(-0.4, 0.3, 1.5, 0.4, 1.4, 1.75, 1), m.steelGrey); box.rotation.y = Math.PI / 2; g.add(box);
-    this.root.add(g);
-    this.radome = g;
+    this.bake(g);
+    // 항공등은 깜빡이므로 따로
+    this.aviation = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), m.red); this.aviation.position.y = 10.65; this.root.add(this.aviation);
   }
 
   // 투광등 4기: 강철 기둥 + 등 4개 묶음(광장 가운데를 향함) + 실제 스포트라이트 + 눈발에 걸린 빛줄기
@@ -409,7 +409,7 @@ void main(){ float f = pow(abs(dot(vN, vV)), 1.6);
         lamp.add(new THREE.Mesh(boxGeo(-0.26, -0.2, -0.1, 0.26, 0.2, 0.18, 1), m.black));
         lamp.add(new THREE.Mesh(boxGeo(-0.22, -0.16, 0.18, 0.22, 0.16, 0.19, 1), m.lamp));
       }
-      this.root.add(g);
+      this.bake(g);
       // 실제 빛: 그림자 없는 스포트라이트(가운데 쪽 바닥을 향함)
       const target = new THREE.Object3D(); target.position.set(L.x * 0.35, 0, L.z * 0.35); this.root.add(target);
       const spot = new THREE.SpotLight(0xffd0a0, 360, 70, 0.62, 0.75, 1.6);
@@ -424,6 +424,16 @@ void main(){ float f = pow(abs(dot(vN, vV)), 1.6);
       cone.renderOrder = 3;
       this.root.add(cone);
     }
+  }
+
+  // 정적인 묶음(Group)을 월드 좌표로 구워 재질별 병합 메시에 넣는다(그리기 호출 절약)
+  bake(group) {
+    group.updateMatrixWorld(true);
+    group.traverse((o) => {
+      if (!o.isMesh) return;
+      const g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      (o.material.isMeshBasicMaterial ? this.glowBatch : this.batch).add(o.material, g);
+    });
   }
 
   buildLiftDoors() {

@@ -165,7 +165,7 @@ export class Renderer {
         } else {
           fx.sparkBurst(pos, ev.weak ? 12 : 6, null, ev.weak ? [3, 2.6, 1.6] : [3, 1.5, 0.5], ev.weak ? 7 : 5, 0.05, 0.3);
           fx.glowPuff(pos, ev.weak ? 0.5 : 0.3, ev.weak ? [2, 1.8, 1.2] : [1.6, 0.8, 0.3], 0.08);
-          if (ev.type !== 'drone' && ev.type !== 'boss') fx.energyBurst(pos, 3, [0.2, 0.9, 1.6], 2, 0.04, 0.5); // 냉각액
+          if (ev.type !== 'drone' && ev.type !== 'boss' && Math.random() < 0.4) fx.smokePuff(pos, 0.2, 0.5, 0.12); // 부서진 외장 가루
         }
         break;
       }
@@ -175,7 +175,7 @@ export class Renderer {
         if (ev.type !== 'boss' && !ev.self) {
           fx.sparkBurst(pos, 18, ev.dir ? { x: ev.dir.x, y: 0.4, z: ev.dir.z } : null, [3, 1.2, 0.4], 7, 0.06, 0.5);
           fx.debrisBurst(pos, ev.type === 'mech' ? 14 : 6, ev.type === 'mech' ? 0.2 : 0.08, 5, ev.dir);
-          fx.energyBurst(pos, 10, [3, 0.4, 0.3], 2.5, 0.06, 0.8);
+          fx.glowPuff(pos, ev.type === 'mech' ? 1.6 : 0.7, [3, 1.4, 0.5], 0.12);
           fx.smokePuff(pos, 0.8, 1.2, 0.1);
         }
         break;
@@ -193,8 +193,7 @@ export class Renderer {
       case 'tele': this.telegraph(ev); break;
       case 'elevator': this.level.openElevator(); break;
       case 'spawn':
-        if (ev.source === 'dropship') { fx.energyBurst({ x: ev.x, y: ev.y + 1, z: ev.z }, 20, [3, 0.3, 0.3], 3, 0.06, 0.6); fx.glowPuff({ x: ev.x, y: ev.y + 1, z: ev.z }, 2.2, [2, 0.3, 0.3], 0.3); }
-        else if (ev.type !== 'drone' && ev.type !== 'boss') fx.energyBurst({ x: ev.x, y: ev.y + 1, z: ev.z }, 8, [3, 0.4, 0.3], 1.5, 0.05, 0.5);
+        if (ev.source === 'dropship') fx.smokePuff({ x: ev.x, y: ev.y + 3, z: ev.z }, 1.0, 0.8, 0.2, { x: 0, y: -2, z: 0 });
         break;
       case 'playerHurt':
         this.hurt = Math.min(1, this.hurt + 0.4 + ev.dmg * 0.02);
@@ -300,9 +299,10 @@ export class Renderer {
   renderMenu(dt) {
     const t = this.env.time.value + dt;
     this.env.update(dt, t);
-    const a = t * 0.05;
-    this.camera.position.set(Math.cos(a) * 19, 7.5 + Math.sin(t * 0.2) * 0.8, Math.sin(a) * 19);
-    this.camera.lookAt(0, 4.5, 0);
+    // 남동쪽 낮은 곳에서 레이돔 탑과 북쪽 산을 올려다보며 천천히 좌우로 흔든다(왼쪽은 메뉴 글줄 자리)
+    const a = 1.05 + Math.sin(t * 0.035) * 0.35;
+    this.camera.position.set(Math.cos(a) * 21 - 4, 2.6 + Math.sin(t * 0.13) * 0.3, Math.sin(a) * 21);
+    this.camera.lookAt(-6, 6.5, -6);
     const vfov = 2 * Math.atan(Math.tan((90 * Math.PI) / 360) * (9 / 16)) * 180 / Math.PI;
     if (Math.abs(this.camera.fov - vfov) > 0.01) { this.camera.fov = vfov; this.camera.updateProjectionMatrix(); }
     if (this.world) { this.level.update(dt, t, this.world, this.camera.position); this.fx.update(dt, this.world, 1); this.enemies.sync(this.world, 1, dt); }

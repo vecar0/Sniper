@@ -160,17 +160,16 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, uHaze, clamp(hz, 0.0, 0.97));`);
       [-62, -48, 30, 9, 14, 0.3], [-70, 12, 18, 6, 10, -0.2], [58, -62, 26, 11, 16, 0.5], [74, 18, 34, 8, 12, 0.1],
       [18, 78, 22, 7, 12, 0], [-38, 82, 40, 10, 18, 0.25], [96, -12, 14, 18, 14, 0], [-104, -20, 20, 7, 30, 0.4],
     ];
+    // 건물은 재질별로 한 덩어리로 합쳐 그리기 호출 3번
+    const lists = { dark: [], roof: [], win: [] };
+    const place = (g, x, z, ry) => { g.rotateY(ry); g.translate(x, 0, z); return g; };
     for (const [x, z, w, h, d, ry] of blds) {
-      const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry;
-      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), dark); b.position.y = h / 2; g.add(b);
-      const r = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.35, d + 0.4), roofSnow); r.position.y = h + 0.17; g.add(r);
+      lists.dark.push(place(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), x, z, ry));
+      lists.roof.push(place(new THREE.BoxGeometry(w + 0.4, 0.35, d + 0.4).translate(0, h + 0.17, 0), x, z, ry));
       const n = Math.floor(w / 4);
-      for (let i = 0; i < n; i++) if (rnd() < 0.35) {
-        const wm = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.8), win);
-        wm.position.set(-w / 2 + 2 + i * 4, h * 0.55, d / 2 + 0.02); g.add(wm);
-      }
-      this.scene.add(g);
+      for (let i = 0; i < n; i++) if (rnd() < 0.35) lists.win.push(place(new THREE.PlaneGeometry(1.2, 0.8).translate(-w / 2 + 2 + i * 4, h * 0.55, d / 2 + 0.02), x, z, ry));
     }
+    this.scene.add(new THREE.Mesh(mergeList(lists.dark, true), dark), new THREE.Mesh(mergeList(lists.roof, true), roofSnow), new THREE.Mesh(mergeList(lists.win, true), win));
     // 먼 레이돔
     const dome = new THREE.Mesh(new THREE.SphereGeometry(7, 24, 16), new THREE.MeshStandardMaterial({ color: 0xd8dee6, roughness: 0.6, metalness: 0 }));
     dome.position.set(-88, 14, -70); this.scene.add(dome);
@@ -276,11 +275,13 @@ function strut(a, b, r) {
   g.translate(a.x, a.y, a.z);
   return g.toNonIndexed();
 }
-function mergeList(list) {
-  let n = 0; for (const g of list) n += g.attributes.position.count;
-  const pos = new Float32Array(n * 3); let o = 0;
-  for (const g of list) { pos.set(g.attributes.position.array, o); o += g.attributes.position.array.length; }
+function mergeList(list, normals = false) {
+  const geos = list.map((g) => (g.index ? g.toNonIndexed() : g));
+  let n = 0; for (const g of geos) n += g.attributes.position.count;
+  const pos = new Float32Array(n * 3), nor = normals ? new Float32Array(n * 3) : null; let o = 0;
+  for (const g of geos) { pos.set(g.attributes.position.array, o); if (nor) nor.set(g.attributes.normal.array, o); o += g.attributes.position.array.length; }
   const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  if (nor) out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   return out;
 }
 
