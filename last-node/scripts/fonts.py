@@ -5,7 +5,7 @@ import glob, re, urllib.request, urllib.parse, os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FAMILIES = {
-    'black-han-sans': ('Black+Han+Sans', [400]),
+    'barlow-cond': ('Barlow+Condensed', [600, 700]),
     'plex-kr': ('IBM+Plex+Sans+KR', [400, 600]),
 }
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
@@ -16,7 +16,7 @@ def used_chars():
         text += open(f, encoding='utf-8').read()
     chars = set(c for c in text if ord(c) >= 0xAC00 and ord(c) <= 0xD7A3)
     chars |= set(chr(c) for c in range(0x20, 0x7F))
-    chars |= set('₵∞×−·…’“”—–→←↑↓◆▶■□○●★%')
+    chars |= set('∞×−·…’“”—–→←↑↓◆▶■□○●★%°′')
     return ''.join(sorted(chars))
 
 def get(url):

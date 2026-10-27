@@ -91,7 +91,7 @@ export class ViewModel {
     // 작은 흑백 OLED: 탄창 수만 크게(예비탄은 HUD에)
     const g = this.ammoCanvas.getContext('2d');
     g.fillStyle = '#020303'; g.fillRect(0, 0, 128, 56);
-    g.font = "40px 'Black Han Sans', 'Apple SD Gothic Neo', sans-serif"; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = "700 44px 'Barlow Cond', 'Apple SD Gothic Neo', sans-serif"; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillStyle = mag === 0 ? '#ff5a4a' : '#d8f0e8';
     g.fillText(String(mag).padStart(2, '0'), 64, 30);
     g.fillStyle = 'rgba(216,240,232,0.25)'; for (let y = 0; y < 56; y += 3) g.fillRect(0, y, 128, 1);

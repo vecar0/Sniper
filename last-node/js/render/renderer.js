@@ -69,7 +69,7 @@ export class Renderer {
     this.level = new Level(this.scene, this.env.time, this.quality);
 
     // 달빛(그림자) + 아주 어두운 반구광
-    const moon = new THREE.DirectionalLight(0x9fb4e8, 1.15);
+    const moon = new THREE.DirectionalLight(0x9fb4e8, 1.2);
     moon.position.copy(this.env.moonDir).multiplyScalar(60); // 하늘에 보이는 달과 같은 방향에서 그림자
     moon.target.position.set(0, 0, 0);
     moon.castShadow = this.quality !== 'low';
@@ -78,7 +78,7 @@ export class Renderer {
     moon.shadow.bias = -0.0004; moon.shadow.normalBias = 0.03;
     this.scene.add(moon, moon.target);
     this.moon = moon;
-    this.scene.add(new THREE.HemisphereLight(0x3a5a88, 0x141c2a, 0.9));
+    this.scene.add(new THREE.HemisphereLight(0x4a6088, 0x2a2a2c, 1.05)); // 하늘(청) / 눈 반사(회)
 
     this.fx = new FX(this.scene, this.camera, null, this.quality);
     this.enemies = new EnemyViews(this.scene, this.fx);
@@ -92,7 +92,7 @@ export class Renderer {
     vmPass.clear = false; vmPass.clearDepth = true;
     composer.addPass(vmPass);
     this.vmPass = vmPass;
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.85, 0.55, 0.82);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.5, 0.88);
     this.bloom.enabled = this.quality !== 'low';
     composer.addPass(this.bloom);
     this.final = new ShaderPass(FinalShader);
@@ -104,7 +104,6 @@ export class Renderer {
     this.resScale = 1; this.frameAvg = 16; this.resTimer = 0;
     this.lasers = new Map();
     this.resize();
-    this.env.onThunder = () => this.onThunder && this.onThunder();
   }
 
   attach(world) {
@@ -197,16 +196,14 @@ export class Renderer {
         if (ev.source === 'dropship') { fx.energyBurst({ x: ev.x, y: ev.y + 1, z: ev.z }, 20, [3, 0.3, 0.3], 3, 0.06, 0.6); fx.glowPuff({ x: ev.x, y: ev.y + 1, z: ev.z }, 2.2, [2, 0.3, 0.3], 0.3); }
         else if (ev.type !== 'drone' && ev.type !== 'boss') fx.energyBurst({ x: ev.x, y: ev.y + 1, z: ev.z }, 8, [3, 0.4, 0.3], 1.5, 0.05, 0.5);
         break;
-      case 'shieldHit': this.level.shieldHit(ev.fx, ev.fz); break;
       case 'playerHurt':
         this.hurt = Math.min(1, this.hurt + 0.4 + ev.dmg * 0.02);
         this.aberr = Math.min(1, this.aberr + 0.5);
         this.shake = Math.min(1, this.shake + 0.15 + ev.dmg * 0.01);
         break;
       case 'emp': fx.emp(ev, ev.r); break;
-      case 'corePulse': fx.ring({ x: 0, y: 0, z: 0 }, 6, [0.3, 1.8, 3], 0.7); fx.energyBurst({ x: 0, y: 2, z: 0 }, 50, [0.3, 2, 3], 6, 0.06, 0.6); break;
-      case 'turretFire': fx.tracer({ x: ev.x, y: ev.y, z: ev.z }, { x: ev.tx, y: ev.ty, z: ev.tz }, [0.5, 2.4, 3], 0.06, 0.02); fx.sparkBurst({ x: ev.tx, y: ev.ty, z: ev.tz }, 3, null, [0.6, 2, 3], 3, 0.03, 0.2); break;
-      case 'turretBuilt': fx.energyBurst({ x: ev.x, y: ev.y + 0.6, z: ev.z }, 40, [0.3, 2, 3], 3, 0.06, 0.8); break;
+      case 'shock': fx.emp(ev, ev.r); break;
+      case 'dashStun': fx.sparkBurst(ev, 10, null, [0.6, 1.6, 3], 4, 0.04, 0.3); break;
       case 'pickup': fx.glowPuff(ev, 0.6, ev.kind === 'orb' ? [0.3, 2, 2.6] : [2.6, 1.5, 0.3], 0.18); break;
       case 'melee':
         this.vm.onMelee();
@@ -299,7 +296,7 @@ export class Renderer {
     }
   }
 
-  // 메뉴 배경: 옥상 위를 천천히 도는 카메라
+  // 메뉴 배경: 광장 위를 천천히 도는 카메라
   renderMenu(dt) {
     const t = this.env.time.value + dt;
     this.env.update(dt, t);
@@ -314,16 +311,18 @@ export class Renderer {
     this.composer.render(dt);
   }
 
+  // 수리 로봇 → 아군: 수리 레이저(초록빛 흰 선 + 맞는 곳 불꽃)
   updateLeechBeams() {
     const w = this.world, used = new Set();
     for (const e of w.enemies) {
-      if (e.type !== 'leech' || e.state !== 'attach' || !e.alive) continue;
+      if (e.type !== 'leech' || e.state !== 'heal' || !e.alive || !e.healTarget) continue;
       used.add(e.id);
+      const o = e.healTarget;
       if (!this.lasers.has(e.id)) {
-        const l = this.fx.telegraphLaser({ from: () => (e.alive && e.state === 'attach' ? { x: e.x - Math.sin(e.yaw) * 0.45, y: e.y + 1.05, z: e.z - Math.cos(e.yaw) * 0.45 } : null), to: () => ({ x: 0, y: 2.2, z: 0 }), w: 2.2 }, Infinity);
+        const l = this.fx.telegraphLaser({ from: () => (e.alive && e.state === 'heal' && e.healing ? { x: e.x - Math.sin(e.yaw) * 0.35, y: e.y + 1.05, z: e.z - Math.cos(e.yaw) * 0.35 } : null), to: () => ({ x: o.x, y: o.y + (o.type === 'mech' ? 1.2 : o.type === 'reaper' ? 0.6 : 1.1), z: o.z }), w: 1.4 }, Infinity, [0.8, 2.6, 1.4]);
         this.lasers.set(e.id, l);
       }
-      if (Math.random() < 0.3) this.fx.energy.emit(e.x - Math.sin(e.yaw) * 0.5, e.y + 1.05, e.z - Math.cos(e.yaw) * 0.5, -e.x * 0.6, 0.5, -e.z * 0.6, 0.5, 3, 0.3, 0.3, 0.05, this.fx.now);
+      if (e.healing && Math.random() < 0.4) this.fx.sparkBurst({ x: o.x, y: o.y + (o.type === 'reaper' ? 0.6 : 1.1), z: o.z }, 1, null, [1.2, 2.6, 1.4], 2, 0.03, 0.25);
     }
     for (const [id, l] of this.lasers) if (!used.has(id)) { l.until = 0; this.lasers.delete(id); }
   }

@@ -164,13 +164,17 @@ export class FX {
   }
 
   buildBatteries(list) {
-    const body = new THREE.MeshStandardMaterial({ color: 0x1b1f25, metalness: 0.85, roughness: 0.35, envMapIntensity: 1.3 });
-    const band = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 1.6, 0.25) });
+    // 연료 드럼(빨간 도장 + 굴림 테 + 흰 경고 띠). 발광 없음
+    const body = new THREE.MeshStandardMaterial({ color: 0x7a1d14, metalness: 0.35, roughness: 0.5, envMapIntensity: 1.0 });
+    const rim = new THREE.MeshStandardMaterial({ color: 0x5c1610, metalness: 0.5, roughness: 0.4, envMapIntensity: 1.0 });
+    const band = new THREE.MeshStandardMaterial({ color: 0xd8d4c8, metalness: 0.1, roughness: 0.6 });
     for (const b of list) {
       const g = new THREE.Group();
-      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 1.1, 16), body); c.position.y = 0.55; c.castShadow = true; g.add(c);
-      for (const y of [0.3, 0.8]) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.335, 0.335, 0.08, 16), band); r.position.y = y; g.add(r); }
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.25, 0.15, 12), body); cap.position.y = 1.17; g.add(cap);
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.9, 20), body); c.position.y = 0.45; c.castShadow = true; c.receiveShadow = true; g.add(c);
+      for (const y of [0.3, 0.6]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.305, 0.018, 6, 24), rim); r.rotation.x = Math.PI / 2; r.position.y = y; g.add(r); }
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.303, 0.303, 0.1, 20, 1, true), band); w.position.y = 0.75; g.add(w);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.03, 10), rim); cap.position.set(0.15, 0.91, 0.05); g.add(cap);
+      g.rotation.y = b.x * 1.7;
       g.position.set(b.x, b.y, b.z);
       this.scene.add(g);
       this.batteryViews.push({ g, band });
@@ -262,9 +266,9 @@ export class FX {
     this.sparkBurst(p, 25, null, [0.6, 1.8, 3.2], 9, 0.05, 0.4);
   }
 
-  telegraphLaser(src, until) {
+  telegraphLaser(src, until, color = [3, 0.2, 0.2]) {
     const l = this.lasers.find((q) => q.until < this.now) || this.lasers[0];
-    l.until = until; l.src = src; l.m.visible = true;
+    l.until = until; l.src = src; l.m.visible = true; l.m.material.color.setRGB(...color);
     return l;
   }
   telegraphCircle(p, r, dur) {
@@ -398,7 +402,6 @@ export class FX {
     world.batteries.forEach((b, i) => {
       const bv = this.batteryViews[i]; if (!bv) return;
       bv.g.visible = b.alive;
-      bv.band.color.setRGB(3.2 * (0.7 + 0.3 * Math.sin(this.now * 3 + i)), 1.6, 0.25);
     });
   }
 }

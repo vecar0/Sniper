@@ -1,4 +1,4 @@
-// 자동 플레이 봇: world.input(이동·시점·사격·대시·점프)과 상점 구매만 쓴다. 상태는 전부 읽을 수 있다.
+// 자동 플레이 봇: world.input(이동·시점·사격·대시·점프·카드 선택)만 쓴다. 상태는 전부 읽을 수 있다.
 import { enemyParts } from '../js/sim/enemies.js';
 
 const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
@@ -16,7 +16,8 @@ export class Bot {
     const w = this.w, p = w.player, inp = w.input;
     this.t += dt; this.dashCd -= dt;
     if (this.idle) return;
-    if (w.canShop()) { this.shop(); inp.ready = w.timer < 17; }
+    if (w.state === 'pick') { inp.pick = this.pickCard(); return; }
+    if (w.state === 'intermission' || w.state === 'prep') inp.ready = true;
     // 목표 고르기
     let best = null, bs = Infinity;
     for (const e of w.enemies) {
@@ -24,7 +25,7 @@ export class Bot {
       if (this.ignoreLeech && e.type === 'leech') continue;
       const d = Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z);
       let s = d;
-      if (e.type === 'leech') s -= e.state === 'attach' ? 40 : 15;
+      if (e.type === 'leech') s -= 15;
       if (e.type === 'reaper' && d < 8) s -= 20;
       if (e.type === 'drone' && d < 10) s -= 12;
       if (e.type === 'boss') s += 15;
@@ -53,7 +54,10 @@ export class Bot {
     // 이동: 코어 주변을 돈다 + 체력 낮으면 구슬로 + 위험하면 대시
     let tx, tz;
     const orb = p.hp < 75 ? w.pickups.filter((k) => k.kind === 'orb').sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0] : null;
+    this.blind = best ? 0 : (this.blind || 0) + dt;
+    const hunt = this.blind > 2 ? w.enemies.filter((e) => e.alive && e.type !== 'boss').sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0] : null;
     if (orb && Math.hypot(orb.x - p.x, orb.z - p.z) < 14) { tx = orb.x; tz = orb.z; }
+    else if (hunt) { tx = hunt.x; tz = hunt.z; }
     else {
       const a = Math.atan2(p.z, p.x) + 0.5 * this.orbit;
       tx = Math.cos(a) * 8; tz = Math.sin(a) * 8;
@@ -70,16 +74,12 @@ export class Bot {
     if (p.emp > 0 && w.enemies.filter((e) => e.alive && Math.hypot(e.x - p.x, e.z - p.z) < 6).length >= 3) inp.throwEmp = true;
   }
 
-  shop() {
-    const w = this.w, p = w.player;
-    const order = this.ignoreLeech
-      ? ['rifle', 'up:rifle', 'armor', 'up:rifle', 'heal', 'shotgun', 'up:rifle']
-      : ['shotgun', 'rifle', 'turret', 'up:rifle', 'coreShield', 'armor', 'up:rifle', 'turret', 'heal', 'up:rifle', 'coreShield', 'corePulse'];
-    if (p.hp < 50) w.buy('heal');
-    if (w.core.hp < w.core.max * 0.5 && !this.ignoreLeech) w.buy('coreRepair');
-    for (const id of order) { const r = w.buy(id); if (!r.ok && r.reason === 'poor') break; }
-    if (p.emp < 2) w.buy('emp');
-    w.buy('ammo');
+  // 카드: 무기(소총 > 산탄 > 레일) > 체력 > 무기 강화 > 나머지 무작위
+  pickCard() {
+    const o = this.w.offer;
+    const pref = ['get:rifle', 'get:shotgun', 'maxhp', 'up:rifle', 'armor', 'vamp', 'get:rail'];
+    for (const id of pref) { const i = o.indexOf(id); if (i >= 0) return i; }
+    return Math.floor(this.rnd() * o.length);
   }
 }
 

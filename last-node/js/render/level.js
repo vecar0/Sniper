@@ -1,10 +1,9 @@
-// 옥상 레벨: 충돌 상자(map.js)를 재질별로 병합한 메시 + 장식(난간·네온·케이블·간판) + 코어 · 광고판 · 단말 · 포탑 · 배터리
+// 북천 기지 광장: 충돌 상자(map.js)를 재질별로 병합한 메시 + 실제 기지 구조물(옹벽·차량 터널·화물 승강장·관제동·발전기 플랫폼·
+// 레이돔 탑·컨테이너·콘크리트 블록·연료 탱크·발전기·투광등). 위를 향한 면에는 눈이 쌓인다(snowMaterial).
 import * as THREE from 'three';
 import { mergeGeometries } from '../../vendor/three/addons/utils/BufferGeometryUtils.js';
-import { BOXES, ROOF, TERMINALS, TURRET_SLOTS, SPAWNS } from '../config/map.js';
-const BILLBOARD = { x0: -21.5, x1: -8.5, y0: 6, y1: 13.5, z: -24.5 }; // 임시(새 레벨로 교체 예정)
-import { loadSurface, wetMaterial, puddleTexture, neonSign, glowTexture } from './materials.js';
-import { PALETTE } from './env.js';
+import { BOXES, ROOF, LAMPS, SPAWNS } from '../config/map.js';
+import { loadSurface, snowMaterial } from './materials.js';
 
 // 월드 좌표 기준 UV를 가진 상자(타일 밀도 일정)
 export function boxGeo(x0, y0, z0, x1, y1, z1, tile = 3, opts = {}) {
@@ -20,6 +19,18 @@ export function boxGeo(x0, y0, z0, x1, y1, z1, tile = 3, opts = {}) {
   }
   return g;
 }
+const cyl = (rt, rb, h, x, y, z, seg = 16, open = false) => { const g = new THREE.CylinderGeometry(rt, rb, h, seg, 1, open); g.translate(x, y, z); return g; };
+// 원통 UV를 월드 크기에 맞춤
+function scaleUV(g, su, sv) { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv); return g; }
+// 두 점 사이 파이프
+function pipe(a, b, r, seg = 8) {
+  const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), len = A.distanceTo(B);
+  const g = new THREE.CylinderGeometry(r, r, len, seg, 1);
+  g.translate(0, len / 2, 0);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize()));
+  g.translate(A.x, A.y, A.z);
+  return g;
+}
 
 class Batch {
   constructor() { this.map = new Map(); }
@@ -27,10 +38,13 @@ class Batch {
   build(parent, { shadow = true } = {}) {
     for (const [mat, list] of this.map) {
       const norm = list.map((g) => (g.index ? g.toNonIndexed() : g));
-      for (const g of norm) { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); }
+      for (const g of norm) {
+        if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+        for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+      }
       const merged = mergeGeometries(norm, false);
       const m = new THREE.Mesh(merged, mat);
-      m.castShadow = shadow && !mat.transparent && !(mat.userData.noShadow);
+      m.castShadow = shadow && !mat.transparent && !mat.userData.noShadow;
       m.receiveShadow = !mat.userData.noReceive;
       m.matrixAutoUpdate = false;
       parent.add(m);
@@ -49,170 +63,275 @@ export class Level {
     this.batch = new Batch();
     this.glowBatch = new Batch();
     this.lights = [];
-    this.anim = [];
     this.buildFloor();
     for (const b of BOXES) this.addBox(b);
+    this.buildWallTops();
     this.buildRailings();
     this.buildDetails();
     this.batch.build(this.root);
     this.glowBatch.build(this.root, { shadow: false });
-    this.buildCore();
-    this.buildBillboard();
-    this.buildSigns();
-    this.buildTerminals();
-    this.buildTurrets();
-    this.buildElevatorDoors();
+    this.buildRadome();
+    this.buildFloodlights();
+    this.buildLiftDoors();
     this.buildLights();
-    this.buildReflections();
   }
 
   makeMaterials() {
-    const puddle = puddleTexture();
-    const S = (name, r) => loadSurface(name, r);
-    const concrete = S('concrete', 170), plate = S('plate', 120), container = S('container', 140), panel = S('panel', 130), rust = S('rust', 180);
-    const mats = {
-      floor: wetMaterial({ ...concrete, roughness: 1, metalness: 0.0, envMapIntensity: 1.2, normalScale: new THREE.Vector2(0.8, 0.8) }, { puddle, time: this.time }),
-      concrete: wetMaterial({ ...concrete, roughness: 1, metalness: 0.0, envMapIntensity: 0.9, color: 0xb8bcc4 }, { puddle, time: this.time, wet: 0.6 }),
-      plate: wetMaterial({ ...plate, roughness: 0.9, metalness: 0.75, envMapIntensity: 1.3 }, { puddle, time: this.time, wet: 0.7 }),
-      panel: new THREE.MeshStandardMaterial({ ...panel, roughness: 0.8, metalness: 0.3, envMapIntensity: 1.3, color: 0xd0d8e4 }),
-      panelDark: new THREE.MeshStandardMaterial({ ...panel, roughness: 0.75, metalness: 0.3, envMapIntensity: 1.2, color: 0x9aa4b4 }),
-      rust: new THREE.MeshStandardMaterial({ ...rust, roughness: 1, metalness: 0.25, envMapIntensity: 1.0 }),
-      containerTeal: new THREE.MeshStandardMaterial({ ...container, roughness: 0.8, metalness: 0.3, envMapIntensity: 1.2 }),
-      containerRed: new THREE.MeshStandardMaterial({ ...container, roughness: 0.8, metalness: 0.3, envMapIntensity: 1.2, color: new THREE.Color(2.2, 0.55, 0.45) }),
-      containerGrey: new THREE.MeshStandardMaterial({ ...container, roughness: 0.8, metalness: 0.3, envMapIntensity: 1.2, color: new THREE.Color(0.75, 0.62, 0.55) }),
-      metal: new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.35, metalness: 1.0, envMapIntensity: 1.4 }),
-      blackMetal: new THREE.MeshStandardMaterial({ color: 0x121418, roughness: 0.42, metalness: 0.9, envMapIntensity: 1.2 }),
-      hazard: new THREE.MeshStandardMaterial({ map: hazardTexture(), roughness: 0.7, metalness: 0.3 }),
-      cyan: glowMat(PALETTE.cyan, 1.35),
-      magenta: glowMat(PALETTE.magenta, 1.4),
-      amber: glowMat(PALETTE.amber, 1.6),
-      red: glowMat(PALETTE.red, 2.0),
-      white: glowMat(new THREE.Color(0xdde8ff), 2.2),
+    const snow = loadSurface('snow', 160);
+    const wall = loadSurface('wall', 200), ground = loadSurface('ground', 190), steel = loadSurface('steel', 140);
+    const S = (set, params, opts) => snowMaterial({ ...set, ...params }, { snow, ...opts });
+    const m = {
+      floor: S(ground, { roughness: 1, metalness: 0, envMapIntensity: 0.6, normalScale: new THREE.Vector2(0.7, 0.7), color: 0xc4c9d0 }, { amount: 0.3, drift: 1 }),
+      concrete: S(wall, { roughness: 1, metalness: 0, envMapIntensity: 0.5, color: 0xd4d8dc }, { amount: 0.9 }),
+      concreteDark: S(wall, { roughness: 1, metalness: 0, envMapIntensity: 0.5, color: 0x8e949b }, { amount: 0.9 }),
+      olive: S(steel, { roughness: 0.7, metalness: 0.1, envMapIntensity: 0.8, color: 0xb4c09a }, { amount: 0.85 }),
+      steelGrey: S(steel, { roughness: 0.65, metalness: 0.1, envMapIntensity: 0.8, color: 0xd6dce2 }, { amount: 0.85 }),
+      steelDark: S(steel, { roughness: 0.6, metalness: 0.3, envMapIntensity: 0.9, color: 0x8c939b }, { amount: 0.6 }),
+      galv: new THREE.MeshStandardMaterial({ color: 0x8a9198, roughness: 0.42, metalness: 1, envMapIntensity: 1.1 }),
+      black: new THREE.MeshStandardMaterial({ color: 0x15181c, roughness: 0.6, metalness: 0.5, envMapIntensity: 0.8 }),
+      void: new THREE.MeshBasicMaterial({ color: 0x030405 }),
+      white: new THREE.MeshStandardMaterial({ color: 0xdfe4ea, roughness: 0.55, metalness: 0, envMapIntensity: 0.9, flatShading: true }),
+      tank: S({}, { color: 0xd4d8dc, roughness: 0.5, metalness: 0.3, envMapIntensity: 1.0 }, { amount: 0.9 }),
+      hazard: new THREE.MeshStandardMaterial({ map: hazardTexture(), roughness: 0.7, metalness: 0.2 }),
+      rubber: new THREE.MeshStandardMaterial({ color: 0x1a1b1d, roughness: 0.9, metalness: 0 }),
+      lamp: glowMat(new THREE.Color(1.0, 0.62, 0.3), 5.0),
+      lampWarm: glowMat(new THREE.Color(1.0, 0.7, 0.4), 2.2),
+      window: glowMat(new THREE.Color(1.0, 0.72, 0.42), 1.25),
+      ledGreen: glowMat(new THREE.Color(0.3, 1.0, 0.4), 2.2),
+      red: glowMat(new THREE.Color(1.0, 0.08, 0.05), 3.0),
+      paint: new THREE.MeshStandardMaterial({ color: 0xc9a23a, roughness: 0.7, metalness: 0, transparent: true, opacity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false }),
     };
-    for (const k of ['containerTeal', 'containerRed', 'containerGrey', 'panel', 'panelDark', 'rust']) mats[k].normalScale = new THREE.Vector2(1, 1);
-    return mats;
+    m.paint.userData.noShadow = true;
+    return m;
   }
 
   buildFloor() {
     const m = this.mats;
-    // 옥상 바닥 + 두께(밖에서 보이는 가장자리)
-    this.batch.add(m.floor, boxGeo(-ROOF, -0.6, -ROOF, ROOF, 0, ROOF, 5.5));
-    this.batch.add(m.panelDark, boxGeo(-ROOF - 0.4, -2.2, -ROOF - 0.4, ROOF + 0.4, -0.6, ROOF + 0.4, 4));
-    // 바닥 도색: 코어 원 · 통로선
-    const lines = new THREE.MeshStandardMaterial({ color: 0xc9b23a, roughness: 0.6, metalness: 0.1, transparent: true, opacity: 0.55, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
-    lines.userData.noShadow = true;
-    const ring = new THREE.RingGeometry(6.2, 6.45, 64);
-    ring.rotateX(-Math.PI / 2); ring.translate(0, 0.005, 0);
-    this.batch.add(lines, ring);
-    for (const [x0, z0, x1, z1] of [[-0.12, 6.6, 0.12, 12.4], [-0.12, -21.5, 0.12, -6.6], [6.6, -0.12, 12.6, 0.12], [-20.5, -0.12, -6.6, 0.12]]) {
-      const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, 0.005, (z0 + z1) / 2);
-      this.batch.add(lines, g);
+    this.batch.add(m.floor, boxGeo(-ROOF, -0.6, -ROOF, ROOF, 0, ROOF, 4));
+    // 바닥 도색(바랜 노란 차선): 터널 → 중앙, 승강장 → 중앙
+    for (const [x0, z0, x1, z1] of [[-21.5, -2.15, -6.5, -1.85], [-0.15, -21.5, 0.15, -6.5]]) {
+      const len = Math.max(x1 - x0, z1 - z0), alongX = x1 - x0 > z1 - z0;
+      for (let k = 0; k < len; k += 2.4) {
+        const g = new THREE.PlaneGeometry(alongX ? 1.4 : x1 - x0, alongX ? z1 - z0 : 1.4); g.rotateX(-Math.PI / 2);
+        g.translate(alongX ? x0 + k + 0.7 : (x0 + x1) / 2, 0.006, alongX ? (z0 + z1) / 2 : z0 + k + 0.7);
+        this.batch.add(m.paint, g);
+      }
     }
   }
 
   addBox(b) {
-    const m = this.mats, B = this.batch;
+    const m = this.mats, B = this.batch, G = this.glowBatch;
     const { x0, z0, x1, z1, y0, y1 } = b;
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
     switch (b.kind) {
-      case 'parapet':
-        B.add(m.concrete, boxGeo(x0, y0, z0, x1, y1 - 0.08, z1, 3));
-        B.add(m.metal, boxGeo(x0 - 0.03, y1 - 0.08, z0 - 0.03, x1 + 0.03, y1, z1 + 0.03, 3));
+      case 'wall': {
+        // 옹벽: 안쪽 면 = 충돌면, 바깥으로 1.2m 두께. 6m마다 신축 줄눈
+        const alongX = x1 - x0 > z1 - z0;
+        const out = alongX ? Math.sign(cz) : Math.sign(cx);
+        const ax0 = alongX ? x0 - 1.2 : Math.min(x0, x0 + out * 1.2), ax1 = alongX ? x1 + 1.2 : Math.max(x1, x1 + out * 1.2);
+        const az0 = alongX ? Math.min(z0, z0 + out * 1.2) : z0 - 1.2, az1 = alongX ? Math.max(z1, z1 + out * 1.2) : z1 + 1.2;
+        B.add(m.concrete, boxGeo(ax0, 0, az0, ax1, y1, az1, 3));
+        // 줄눈(어두운 가는 홈) + 아래쪽 물때(조금 어두운 띠)
+        const inner = alongX ? (out > 0 ? z0 : z1) : (out > 0 ? x0 : x1);
+        for (let k = -27; k <= 27; k += 6) {
+          if (alongX) B.add(m.black, boxGeo(k - 0.03, 0, inner - out * 0.012 - 0.01, k + 0.03, y1, inner - out * 0.012 + 0.01, 1));
+          else B.add(m.black, boxGeo(inner - out * 0.012 - 0.01, 0, k - 0.03, inner - out * 0.012 + 0.01, y1, k + 0.03, 1));
+        }
+        // 벽 위 갓돌(살짝 튀어나옴)
+        B.add(m.concreteDark, boxGeo(ax0 - (alongX ? 0 : 0.12), y1, az0 - (alongX ? 0.12 : 0), ax1 + (alongX ? 0 : 0.12), y1 + 0.18, az1 + (alongX ? 0.12 : 0), 2));
         break;
-      case 'stairwell': case 'elevator':
-        B.add(m.panel, boxGeo(x0, y0, z0, x1, y1, z1, 2.5));
-        B.add(m.blackMetal, boxGeo(x0 - 0.15, y1, z0 - 0.15, x1 + 0.15, y1 + 0.25, z1 + 0.15, 3));
-        break;
-      case 'platform': case 'helipad':
-        B.add(m.rust, boxGeo(x0, y0, z0, x1, y1 - 0.3, z1, 3));
-        B.add(m.plate, boxGeo(x0 - 0.1, y1 - 0.3, z0 - 0.1, x1 + 0.1, y1, z1 + 0.1, 2.5));
-        // 가장자리 LED 띠
-        this.glowBatch.add(b.kind === 'helipad' ? m.cyan : m.magenta, boxGeo(x0 - 0.12, y1 - 0.22, z0 - 0.12, x1 + 0.12, y1 - 0.14, z1 + 0.12, 3));
+      }
+      case 'tunnel': this.buildTunnel(b); break;
+      case 'lift': this.buildLift(b); break;
+      case 'bunker': this.buildBunker(b); break;
+      case 'deck':
+        B.add(m.concreteDark, boxGeo(x0, y0, z0, x1, y1 - 0.25, z1, 3));
+        B.add(m.steelDark, boxGeo(x0 - 0.08, y1 - 0.25, z0 - 0.08, x1 + 0.08, y1, z1 + 0.08, 2));
+        // 갑판 위 미끄럼 방지 줄(바닥판 이음)
+        for (let z = z0 + 1.5; z < z1; z += 1.5) B.add(m.black, boxGeo(x0, y1, z - 0.02, x1, y1 + 0.006, z + 0.02, 1));
         break;
       case 'step':
-        B.add(m.plate, boxGeo(x0, y0, z0, x1, y1, z1, 2));
-        this.glowBatch.add(m.amber, boxGeo(x1 - 0.04, y1 - 0.04, z0 + 0.1, x1 - 0.005, y1, z1 - 0.1, 1));
+        B.add(m.concreteDark, boxGeo(x0, y0, z0, x1, y1 - 0.05, z1, 2));
+        B.add(m.galv, boxGeo(x0, y1 - 0.05, z0, x1, y1, z1, 1));
         break;
-      case 'cooler':
-        B.add(m.panelDark, boxGeo(x0, y0, z0, x1, y1 - 0.4, z1, 2));
-        B.add(m.blackMetal, boxGeo(x0 + 0.2, y1 - 0.4, z0 + 0.2, x1 - 0.2, y1, z1 - 0.2, 2));
-        { const fan = new THREE.CylinderGeometry(1.15, 1.15, 0.06, 28); fan.translate((x0 + x1) / 2, y1 + 0.03, (z0 + z1) / 2); B.add(m.metal, fan); }
+      case 'equip': // 옥상 통신 장비함
+        B.add(m.steelGrey, boxGeo(x0 + 0.1, y0, z0 + 0.1, x1 - 0.1, y1 - 0.3, z1 - 0.1, 1.5));
+        for (let i = 0; i < 5; i++) B.add(m.black, boxGeo(x0 + 0.4 + i * 0.45, y0 + 0.6, z1 - 0.1, x0 + 0.65 + i * 0.45, y1 - 0.8, z1 - 0.08, 1));
+        B.add(m.steelDark, boxGeo(x0, y1 - 0.3, z0, x1, y1, z1, 1.5));
+        G.add(m.ledGreen, boxGeo(x1 - 0.5, y1 - 0.7, z1 - 0.09, x1 - 0.4, y1 - 0.65, z1 - 0.07, 1));
         break;
-      case 'core': break; // 코어는 따로
-      case 'rail': break; // 난간은 buildRailings에서 파이프로
-      case 'ring':
-        B.add(m.concrete, boxGeo(x0, y0, z0, x1, y1, z1, 2));
-        { const w = 0.03, xm = (x0 + x1) / 2, zm = (z0 + z1) / 2, alongX = x1 - x0 > z1 - z0;
-          this.glowBatch.add(m.cyan, alongX ? boxGeo(x0, y1, zm - w, x1, y1 + 0.012, zm + w, 2) : boxGeo(xm - w, y1, z0, xm + w, y1 + 0.012, z1, 2)); }
-        break;
+      case 'core': break;                   // 레이돔 탑은 따로
+      case 'rail': break;                   // 난간은 buildRailings
+      case 'ring': this.jersey(x0, z0, x1, z1, y1); break;
       case 'pedestal':
-        B.add(m.blackMetal, boxGeo(x0, y0, z0, x1, y1, z1, 1));
-        this.glowBatch.add(m.cyan, boxGeo(x0 - 0.01, y1 - 0.15, z0 - 0.01, x1 + 0.01, y1 - 0.1, z1 + 0.01, 1));
+        B.add(m.concreteDark, cyl(0.42, 0.48, y1, cx, y1 / 2, cz, 16));
+        B.add(m.hazard, cyl(0.485, 0.485, 0.18, cx, y1 - 0.25, cz, 16, true));
         break;
-      case 'terminal': break;
-      case 'container': {
-        const along = x1 - x0 > z1 - z0;
-        const mat = [m.containerTeal, m.containerRed, m.containerGrey][Math.abs(Math.round(x0 * 7 + z0 * 3)) % 3];
-        const g = boxGeo(x0, y0, z0, x1, y1, z1, 2.6, { vtile: 2.6 });
-        // 골이 세로로 서도록: 옆면 UV는 (가로, 세로) 그대로
-        B.add(mat, g);
-        // 모서리 프레임
-        const f = 0.12;
-        for (const [ax, az] of [[x0, z0], [x1 - f, z0], [x0, z1 - f], [x1 - f, z1 - f]]) B.add(m.blackMetal, boxGeo(ax - 0.02, y0, az - 0.02, ax + f + 0.02, y1 + 0.02, az + f + 0.02, 1));
-        if (along) { B.add(m.blackMetal, boxGeo(x0 - 0.02, y1 - 0.1, z0 - 0.02, x1 + 0.02, y1 + 0.02, z0 + 0.12, 1)); B.add(m.blackMetal, boxGeo(x0 - 0.02, y1 - 0.1, z1 - 0.12, x1 + 0.02, y1 + 0.02, z1 + 0.02, 1)); }
-        else { B.add(m.blackMetal, boxGeo(x0 - 0.02, y1 - 0.1, z0 - 0.02, x0 + 0.12, y1 + 0.02, z1 + 0.02, 1)); B.add(m.blackMetal, boxGeo(x1 - 0.12, y1 - 0.1, z0 - 0.02, x1 + 0.02, y1 + 0.02, z1 + 0.02, 1)); }
+      case 'terminal': // 전기 분전함
+        B.add(m.steelGrey, boxGeo(x0, y0, z0, x1, y1, z1, 1));
+        B.add(m.steelGrey, boxGeo(x0 + 0.08, y0 + 0.2, z1, x1 - 0.08, y1 - 0.2, z1 + 0.015, 1));
+        B.add(m.black, boxGeo(x0 + (x1 - x0) / 2 - 0.01, y0 + 0.2, z1 + 0.015, x0 + (x1 - x0) / 2 + 0.01, y1 - 0.2, z1 + 0.02, 1));
+        B.add(m.galv, boxGeo(x1 - 0.2, y0 + 0.9, z1 + 0.015, x1 - 0.15, y0 + 1.15, z1 + 0.05, 1));
+        B.add(m.steelGrey, boxGeo(x0 - 0.05, y1, z0 - 0.05, x1 + 0.05, y1 + 0.06, z1 + 0.05, 1));
+        G.add(m.ledGreen, boxGeo(x1 - 0.25, y1 - 0.35, z1 + 0.015, x1 - 0.17, y1 - 0.29, z1 + 0.025, 1));
+        G.add(m.red, boxGeo(x1 - 0.4, y1 - 0.35, z1 + 0.015, x1 - 0.32, y1 - 0.29, z1 + 0.025, 1));
+        break;
+      case 'block': {
+        // 컨테이너(길쭉한 것 중 일부) 또는 프리캐스트 콘크리트 블록 2단
+        const container = Math.abs(Math.round(x0 * 3 + z0)) % 2 === 0;
+        if (container) this.container(b, Math.abs(Math.round(z0)) % 3 === 0 ? m.olive : m.steelGrey);
+        else {
+          const h = (y1 - y0) / 2, alongX = x1 - x0 > z1 - z0, L = alongX ? x1 - x0 : z1 - z0, n = Math.max(1, Math.round(L / 1.6));
+          for (let r = 0; r < 2; r++) for (let i = 0; i < n - r; i++) {
+            const a = (alongX ? x0 : z0) + (L / n) * (i + r * 0.5), c = a + L / n - 0.04;
+            const g = alongX ? boxGeo(a, r * h, z0 + r * 0.1, c, (r + 1) * h - 0.02, z1 - r * 0.1, 2) : boxGeo(x0 + r * 0.1, r * h, a, x1 - r * 0.1, (r + 1) * h - 0.02, c, 2);
+            B.add(m.concrete, g);
+          }
+        }
         break;
       }
-      case 'vent':
-        B.add(m.panelDark, boxGeo(x0, y0, z0, x1, y1, z1, 1.5));
-        for (let i = 0; i < 4; i++) { const zz = z0 + 0.3 + i * ((z1 - z0 - 0.6) / 3); B.add(m.blackMetal, boxGeo(x0 + 0.15, y1, zz - 0.04, x1 - 0.15, y1 + 0.05, zz + 0.04, 1)); }
-        break;
+      case 'barrier': this.jersey(x0, z0, x1, z1, y1, true); break;
       case 'tank': {
-        const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, r = (x1 - x0) / 2 + 0.25;
-        const cyl = new THREE.CylinderGeometry(r, r, y1 - 0.6, 32, 1); cyl.translate(cx, (y1 - 0.6) / 2 + 0.6, cz);
-        scaleUV(cyl, (2 * Math.PI * r) / 3, (y1 - 0.6) / 3);
-        B.add(m.rust, cyl);
-        const cap = new THREE.CylinderGeometry(r * 0.6, r, 0.5, 32); cap.translate(cx, y1 + 0.25, cz); B.add(m.rust, cap);
-        for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) B.add(m.blackMetal, boxGeo(cx + lx * r * 0.7 - 0.1, 0, cz + lz * r * 0.7 - 0.1, cx + lx * r * 0.7 + 0.1, 0.6, cz + lz * r * 0.7 + 0.1, 1));
+        const r = (x1 - x0) / 2 + 0.25;
+        B.add(m.tank, scaleUV(cyl(r, r, y1 - 0.6, cx, (y1 - 0.6) / 2 + 0.6, cz, 32), 4, 1));
+        B.add(m.tank, cyl(r * 0.92, r, 0.35, cx, y1 + 0.17, cz, 32));
+        for (const y of [1.4, 2.6, 3.6]) B.add(m.galv, cyl(r + 0.03, r + 0.03, 0.06, cx, y, cz, 32, true));
+        for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) B.add(m.black, boxGeo(cx + lx * r * 0.7 - 0.1, 0, cz + lz * r * 0.7 - 0.1, cx + lx * r * 0.7 + 0.1, 0.6, cz + lz * r * 0.7 + 0.1, 1));
+        // 사다리
+        for (const s of [-0.22, 0.22]) B.add(m.galv, pipe([cx - r - 0.12, 0, cz + s], [cx - r - 0.12, y1 + 0.3, cz + s], 0.025, 6));
+        for (let y = 0.4; y < y1; y += 0.35) B.add(m.galv, pipe([cx - r - 0.12, y, cz - 0.22], [cx - r - 0.12, y, cz + 0.22], 0.018, 5));
         break;
       }
-      case 'hvac':
-        B.add(m.panel, boxGeo(x0, y0, z0, x1, y1, z1, 1.5));
-        { const fan = new THREE.CylinderGeometry(0.85, 0.85, 0.04, 24); fan.rotateZ(Math.PI / 2); fan.translate(x1 + 0.02, (y0 + y1) / 2, (z0 + z1) / 2); B.add(m.blackMetal, fan); }
+      case 'generator': {
+        // 디젤 발전기 함체 + 배기통 + 통풍 루버
+        B.add(m.olive, boxGeo(x0, y0, z0, x1, y1, z1, 1.5));
+        for (let i = 0; i < 6; i++) B.add(m.black, boxGeo(x1, 0.35 + i * 0.2, z0 + 0.4, x1 + 0.04, 0.42 + i * 0.2, z1 - 0.4, 1));
+        B.add(m.black, cyl(0.12, 0.12, 1.2, cx - 0.6, y1 + 0.6, cz + 0.8, 10));
+        B.add(m.steelDark, boxGeo(x0 - 0.05, y1, z0 - 0.05, x1 + 0.05, y1 + 0.08, z1 + 0.05, 1));
+        G.add(m.ledGreen, boxGeo(x1 + 0.01, 1.4, cz - 0.05, x1 + 0.03, 1.46, cz + 0.05, 1));
         break;
-      case 'pillar':
-        B.add(m.blackMetal, boxGeo(x0, y0, z0, x1, y1, z1, 1));
-        break;
-      case 'crate':
-        B.add(m.panelDark, boxGeo(x0, y0, z0, x1, y1, z1, 1.2));
-        B.add(m.hazard, boxGeo(x0 - 0.01, y1 - 0.25, z0 - 0.01, x1 + 0.01, y1 - 0.12, z1 + 0.01, 1.2));
+      }
+      case 'pole': break;                  // 투광등은 buildFloodlights
+      case 'crate': // 군용 하드케이스(올리브) + 걸쇠
+        B.add(m.olive, boxGeo(x0 + 0.02, y0, z0 + 0.02, x1 - 0.02, y1 - 0.02, z1 - 0.02, 1.2));
+        B.add(m.black, boxGeo(x0, y1 - 0.35, z0, x1, y1 - 0.3, z1, 1));
+        for (const s of [0.3, 0.7]) B.add(m.galv, boxGeo(x0 + (x1 - x0) * s - 0.05, y1 - 0.42, z1 - 0.02, x0 + (x1 - x0) * s + 0.05, y1 - 0.24, z1 + 0.01, 1));
         break;
       default:
-        B.add(m.panel, boxGeo(x0, y0, z0, x1, y1, z1, 2));
+        B.add(m.concrete, boxGeo(x0, y0, z0, x1, y1, z1, 2));
     }
+  }
+
+  // 저지 방벽(아래가 넓은 콘크리트 방호벽), 길이 방향으로 2m씩 끊어 놓는다
+  jersey(x0, z0, x1, z1, h, wide = false) {
+    const alongX = x1 - x0 > z1 - z0, L = alongX ? x1 - x0 : z1 - z0, W = alongX ? z1 - z0 : x1 - x0;
+    const base = Math.max(W, wide ? W : 0.6) / 2, top = Math.min(0.12, base * 0.5);
+    const prof = new THREE.Shape([new THREE.Vector2(-base, 0), new THREE.Vector2(base, 0), new THREE.Vector2(base, h * 0.12), new THREE.Vector2(base * 0.55, h * 0.3), new THREE.Vector2(top, h), new THREE.Vector2(-top, h), new THREE.Vector2(-base * 0.55, h * 0.3), new THREE.Vector2(-base, h * 0.12)]);
+    const n = Math.max(1, Math.round(L / 2));
+    for (let i = 0; i < n; i++) {
+      const a = (alongX ? x0 : z0) + (L / n) * i + 0.03, seg = L / n - 0.06;
+      const g = new THREE.ExtrudeGeometry(prof, { depth: seg, bevelEnabled: false });
+      // 윤곽(x, y)을 길이 방향(z)으로 뽑은 뒤 놓기
+      if (alongX) { g.rotateY(Math.PI / 2); g.translate(a, 0, (z0 + z1) / 2); } else g.translate((x0 + x1) / 2, 0, a);
+      const uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * 0.5, uv.getY(k) * 0.5);
+      this.batch.add(this.mats.concrete, g);
+    }
+  }
+
+  container(b, mat) {
+    const B = this.batch, m = this.mats;
+    const { x0, z0, x1, z1, y0, y1 } = b;
+    const alongX = x1 - x0 > z1 - z0;
+    B.add(mat, boxGeo(x0 + 0.05, y0, z0 + 0.05, x1 - 0.05, y1, z1 - 0.05, 2.6));
+    // 골판(세로 골): 긴 면에 0.3m 간격
+    const L = alongX ? x1 - x0 : z1 - z0;
+    for (let k = 0.25; k < L - 0.2; k += 0.3) {
+      if (alongX) { B.add(mat, boxGeo(x0 + k, y0 + 0.15, z0, x0 + k + 0.12, y1 - 0.15, z0 + 0.06, 1)); B.add(mat, boxGeo(x0 + k, y0 + 0.15, z1 - 0.06, x0 + k + 0.12, y1 - 0.15, z1, 1)); }
+      else { B.add(mat, boxGeo(x0, y0 + 0.15, z0 + k, x0 + 0.06, y1 - 0.15, z0 + k + 0.12, 1)); B.add(mat, boxGeo(x1 - 0.06, y0 + 0.15, z0 + k, x1, y1 - 0.15, z0 + k + 0.12, 1)); }
+    }
+    // 모서리 기둥 · 위아래 테
+    const f = 0.14;
+    for (const [ax, az] of [[x0, z0], [x1 - f, z0], [x0, z1 - f], [x1 - f, z1 - f]]) B.add(m.steelDark, boxGeo(ax, y0, az, ax + f, y1 + 0.02, az + f, 1));
+    B.add(m.steelDark, boxGeo(x0, y1 - 0.1, z0, x1, y1 + 0.02, z1, 1));
+    // 끝면 문짝 손잡이 막대
+    const endX = alongX ? x1 : null;
+    if (endX != null) for (const s of [0.3, 0.45, 0.55, 0.7]) B.add(m.galv, pipe([x1 + 0.03, 0.3, z0 + (z1 - z0) * s], [x1 + 0.03, y1 - 0.2, z0 + (z1 - z0) * s], 0.025, 6));
+  }
+
+  // 서쪽 차량 터널 출입동: 콘크리트 덩어리 + 동쪽 면 개구부(어두운 터널 안) + 강철 문틀 · 경고 띠 · 나트륨등
+  buildTunnel(b) {
+    const m = this.mats, B = this.batch, G = this.glowBatch;
+    const { x0, z0, x1, z1, y1 } = b;
+    const oz0 = SPAWNS.stairs.z - 2.2, oz1 = SPAWNS.stairs.z + 2.2, oh = 4.6;
+    B.add(m.concrete, boxGeo(x0 - 1.2, 0, z0, x1, y1, oz0, 3));
+    B.add(m.concrete, boxGeo(x0 - 1.2, 0, oz1, x1, y1, z1, 3));
+    B.add(m.concrete, boxGeo(x0 - 1.2, oh, oz0, x1, y1, oz1, 3));
+    B.add(m.void, boxGeo(x0, 0.01, oz0, x1 - 0.4, oh, oz1, 1));
+    // 문틀 + 경고 띠
+    B.add(m.steelDark, boxGeo(x1 - 0.1, 0, oz0 - 0.25, x1 + 0.08, oh + 0.25, oz0, 1));
+    B.add(m.steelDark, boxGeo(x1 - 0.1, 0, oz1, x1 + 0.08, oh + 0.25, oz1 + 0.25, 1));
+    B.add(m.steelDark, boxGeo(x1 - 0.1, oh, oz0, x1 + 0.08, oh + 0.25, oz1, 1));
+    B.add(m.hazard, boxGeo(x1 + 0.08, 0, oz0 - 0.24, x1 + 0.09, 1.2, oz0 - 0.01, 0.6));
+    B.add(m.hazard, boxGeo(x1 + 0.08, 0, oz1 + 0.01, x1 + 0.09, 1.2, oz1 + 0.24, 0.6));
+    // 반쯤 올라간 방폭문(셔터) 아랫단
+    B.add(m.steelGrey, boxGeo(x1 - 0.35, oh - 0.9, oz0, x1 - 0.2, oh, oz1, 1));
+    for (let y = oh - 0.85; y < oh; y += 0.15) B.add(m.black, boxGeo(x1 - 0.2, y, oz0, x1 - 0.19, y + 0.02, oz1, 1));
+    // 위 투광등 2개 + 지붕 위 환풍기
+    for (const z of [oz0 + 0.6, oz1 - 0.6]) { B.add(m.black, boxGeo(x1, oh + 0.6, z - 0.25, x1 + 0.35, oh + 0.85, z + 0.25, 1)); G.add(m.lampWarm, boxGeo(x1 + 0.35, oh + 0.62, z - 0.2, x1 + 0.36, oh + 0.82, z + 0.2, 1)); }
+    B.add(m.steelGrey, boxGeo(x0 + 1, y1, z0 + 2, x0 + 3, y1 + 1.2, z0 + 4, 1));
+  }
+
+  // 북쪽 화물 승강장: 높은 콘크리트 승강로 + 강철 문(열림 애니메이션) + 기계실 + 회전 경광등
+  buildLift(b) {
+    const m = this.mats, B = this.batch;
+    const { x0, z0, x1, z1, y1 } = b;
+    B.add(m.concrete, boxGeo(x0, 0, z0 - 1.2, x1, y1, z1, 3));
+    B.add(m.void, boxGeo(-1.6, 0.01, z1 - 0.6, 1.6, 3.4, z1 + 0.01, 1));
+    B.add(m.steelDark, boxGeo(-1.85, 0, z1, -1.6, 3.65, z1 + 0.12, 1));
+    B.add(m.steelDark, boxGeo(1.6, 0, z1, 1.85, 3.65, z1 + 0.12, 1));
+    B.add(m.steelDark, boxGeo(-1.85, 3.4, z1, 1.85, 3.65, z1 + 0.12, 1));
+    B.add(m.hazard, boxGeo(-1.6, 0, z1 + 0.12, 1.6, 0.06, z1 + 0.5, 0.6));
+    B.add(m.steelGrey, boxGeo(x0 + 0.8, y1, z0 + 0.5, x1 - 0.8, y1 + 2, z1 - 1.5, 2));
+    B.add(m.black, boxGeo(x0 + 1.5, y1 + 0.6, z1 - 1.51, x0 + 2.5, y1 + 1.6, z1 - 1.49, 1));
+  }
+
+  // 관제동: 콘크리트 건물(지붕 4m) + 따뜻한 창 + 철문 + 지붕 테
+  buildBunker(b) {
+    const m = this.mats, B = this.batch, G = this.glowBatch;
+    const { x0, z0, x1, z1, y1 } = b;
+    B.add(m.concreteDark, boxGeo(x0, 0, z0, x1, y1, z1, 3));
+    B.add(m.concrete, boxGeo(x0 - 0.1, y1 - 0.25, z0 - 0.1, x1 + 0.1, y1, z1 + 0.1, 3));
+    // 남쪽 창(z1 면), 동쪽 창(x1 면, 계단 쪽은 빼고)
+    for (const x of [x0 + 2, x0 + 5, x0 + 8]) { G.add(m.window, boxGeo(x - 0.7, 1.5, z1 + 0.01, x + 0.7, 2.4, z1 + 0.02, 1)); B.add(m.black, boxGeo(x - 0.8, 1.4, z1, x + 0.8, 2.5, z1 + 0.01, 1)); }
+    for (const z of [z0 + 4.5, z0 + 7.5]) { G.add(m.window, boxGeo(x1 + 0.01, 1.5, z - 0.7, x1 + 0.02, 2.4, z + 0.7, 1)); B.add(m.black, boxGeo(x1, 1.4, z - 0.8, x1 + 0.01, 2.5, z + 0.8, 1)); }
+    // 철문 + 문 위 등
+    B.add(m.steelGrey, boxGeo(x1 + 0.005, 0, z1 - 2.2, x1 + 0.05, 2.2, z1 - 1.2, 1));
+    G.add(m.lampWarm, boxGeo(x1 + 0.05, 2.45, z1 - 1.85, x1 + 0.2, 2.55, z1 - 1.55, 1));
+    // 지붕 안테나 마스트
+    B.add(m.galv, pipe([x0 + 1, y1, z0 + 1.2], [x0 + 1, y1 + 6, z0 + 1.2], 0.05, 6));
+    for (const y of [y1 + 4, y1 + 5.4]) B.add(m.galv, pipe([x0 + 0.4, y, z0 + 1.2], [x0 + 1.6, y, z0 + 1.2], 0.02, 5));
+  }
+
+  // 옹벽 위: 철망 기둥 + 위아래 파이프 (안쪽 가장자리)
+  buildWallTops() {
+    const m = this.mats, R = ROOF + 0.4, y = 7.18;
+    const line = (ax, az, bx, bz) => {
+      const len = Math.hypot(bx - ax, bz - az), n = Math.ceil(len / 3);
+      for (const h of [0.5, 1.2]) this.batch.add(m.galv, pipe([ax, y + h, az], [bx, y + h, bz], 0.025, 6));
+      for (let i = 0; i <= n; i++) { const t = i / n; this.batch.add(m.galv, pipe([ax + (bx - ax) * t, y, az + (bz - az) * t], [ax + (bx - ax) * t, y + 1.3, az + (bz - az) * t], 0.035, 6)); }
+    };
+    line(-R, -R, R, -R); line(R, -R, R, R); line(R, R, -R, R); line(-R, R, -R, -R);
   }
 
   buildRailings() {
     const m = this.mats;
-    // 난간 위 파이프 레일(0.4m 위) + 기둥
-    const rail = (ax, az, bx, bz) => {
-      const len = Math.hypot(bx - ax, bz - az);
-      const g = new THREE.CylinderGeometry(0.035, 0.035, len, 8); g.rotateZ(Math.PI / 2);
-      g.rotateY(-Math.atan2(bz - az, bx - ax)); g.translate((ax + bx) / 2, 1.5, (az + bz) / 2);
-      this.batch.add(m.metal, g);
-      const n = Math.floor(len / 2.4);
-      for (let i = 0; i <= n; i++) {
-        const t = i / Math.max(1, n), x = ax + (bx - ax) * t, z = az + (bz - az) * t;
-        const p = new THREE.CylinderGeometry(0.03, 0.03, 0.42, 6); p.translate(x, 1.31, z); this.batch.add(m.metal, p);
-      }
-    };
-    const R = ROOF - 0.25;
-    rail(-R, -R, R, -R); rail(-R, -R, -R, R); rail(-R, R, 4, R); rail(9, R, R, R); rail(R, -R, R, 16); rail(R, 21, R, R);
-    // 플랫폼·헬리패드 난간
     const prail = (ax, az, bx, bz, y) => {
       const len = Math.hypot(bx - ax, bz - az);
-      for (const h of [0.55, 1.05]) { const g = new THREE.CylinderGeometry(0.03, 0.03, len, 6); g.rotateZ(Math.PI / 2); g.rotateY(-Math.atan2(bz - az, bx - ax)); g.translate((ax + bx) / 2, y + h, (az + bz) / 2); this.batch.add(m.metal, g); }
+      for (const h of [0.55, 1.05]) this.batch.add(m.galv, pipe([ax, y + h, az], [bx, y + h, bz], 0.03, 6));
       const n = Math.ceil(len / 1.6);
-      for (let i = 0; i <= n; i++) { const t = i / n; const p = new THREE.CylinderGeometry(0.035, 0.035, 1.08, 6); p.translate(ax + (bx - ax) * t, y + 0.54, az + (bz - az) * t); this.batch.add(m.metal, p); }
+      for (let i = 0; i <= n; i++) { const t = i / n; this.batch.add(m.galv, pipe([ax + (bx - ax) * t, y, az + (bz - az) * t], [ax + (bx - ax) * t, y + 1.08, az + (bz - az) * t], 0.035, 6)); }
+      // 발끝막이(노란 도장)
+      this.batch.add(m.hazard, boxGeo(Math.min(ax, bx) - 0.02, y, Math.min(az, bz) - 0.02, Math.max(ax, bx) + 0.02, y + 0.12, Math.max(az, bz) + 0.02, 0.6));
     };
     prail(-22.9, 16.9, -13.1, 16.9, 4); prail(-22.9, 6.1, -22.9, 16.9, 4); prail(-13.1, 8.2, -13.1, 16.9, 4);
     prail(13.1, -10.9, 24.9, -10.9, 4); prail(24.9, -10.9, 24.9, 0.9, 4); prail(13.1, -8.8, 13.1, 0.9, 4);
@@ -220,282 +339,130 @@ export class Level {
 
   buildDetails() {
     const m = this.mats;
-    // 바닥 배수구·케이블 덕트
-    for (const [x0, z0, x1, z1] of [[-27.4, 3, -26.6, 26], [26.6, -27, 27.4, -12], [-10, 26.6, 3, 27.4]]) this.batch.add(m.blackMetal, boxGeo(x0, 0, z0, x1, 0.12, z1, 1));
-    // 코어로 가는 굵은 케이블(바닥)
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      const pts = [];
-      for (let k = 0; k <= 12; k++) { const r = 1.5 + k * 0.6; pts.push(new THREE.Vector3(Math.cos(a + k * 0.04) * r, 0.07, Math.sin(a + k * 0.04) * r)); }
-      const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.07, 6, false);
-      this.batch.add(m.blackMetal, g);
+    // 벽을 따라 늘어선 케이블 트레이(옹벽 안쪽 면, 높이 3m)
+    for (const [ax, az, bx, bz] of [[-27.4, 4, -27.4, 26], [27.4, -26, 27.4, -12], [-10, 27.4, 14, 27.4]]) {
+      this.batch.add(m.galv, boxGeo(Math.min(ax, bx) - 0.06, 3, Math.min(az, bz) - 0.06, Math.max(ax, bx) + 0.06, 3.08, Math.max(az, bz) + 0.06, 1));
+      this.batch.add(m.black, boxGeo(Math.min(ax, bx) - 0.04, 3.08, Math.min(az, bz) - 0.04, Math.max(ax, bx) + 0.04, 3.16, Math.max(az, bz) + 0.04, 1));
     }
-    // 머리 위 늘어진 케이블(광고판 기둥 ↔ 계단실 ↔ 엘리베이터)
-    const sag = (a, b, s) => {
-      const pts = []; for (let k = 0; k <= 16; k++) { const t = k / 16; pts.push(new THREE.Vector3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t - Math.sin(t * Math.PI) * s, a.z + (b.z - a.z) * t)); }
-      this.batch.add(m.blackMetal, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 32, 0.035, 5, false));
-    };
-    sag(new THREE.Vector3(-20, 14.5, -24.5), new THREE.Vector3(-25, 3.4, -4), 2.5);
-    sag(new THREE.Vector3(-10, 14.5, -24.5), new THREE.Vector3(-3.5, 4.6, -24), 3);
-    sag(new THREE.Vector3(-10, 12, -24.5), new THREE.Vector3(14, 4.2, -10.5), 5);
-    sag(new THREE.Vector3(3.5, 4.6, -23), new THREE.Vector3(22, 4.1, -10.8), 4);
-    // 계단실 문(어두운 입구 + 위 표시등)
-    const sp = SPAWNS.stairs;
-    this.batch.add(m.blackMetal, boxGeo(-22.05, 0, sp.z - 1.1, -21.95, 2.4, sp.z + 1.1, 1));
-    this.glowBatch.add(m.amber, boxGeo(-21.95, 2.45, sp.z - 1.2, -21.9, 2.55, sp.z + 1.2, 1));
-    // 헬리패드 H 표시
-    const hm = new THREE.MeshStandardMaterial({ map: helipadTexture(), transparent: true, roughness: 0.7, metalness: 0.2, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
-    hm.userData.noShadow = true;
-    const hp = new THREE.PlaneGeometry(9, 9); hp.rotateX(-Math.PI / 2); hp.translate(19, 4.005, -5);
-    this.batch.add(hm, hp);
+    // 바닥 배수구 덮개(격자)
+    for (const [x, z] of [[-10, 10], [10, -10], [6, 18], [-18, -6]]) {
+      this.batch.add(m.black, boxGeo(x - 0.4, 0.002, z - 0.4, x + 0.4, 0.012, z + 0.4, 1));
+      for (let k = -0.3; k <= 0.3; k += 0.1) this.batch.add(m.galv, boxGeo(x - 0.38, 0.012, z + k - 0.015, x + 0.38, 0.02, z + k + 0.015, 1));
+    }
+    // 벽등(나트륨 벽부등) — 실제 빛은 투광등이 담당
+    for (const [x, z, nx, nz] of [[-27.45, 14, 1, 0], [27.45, 14, -1, 0], [10, -27.45, 0, 1], [-14, 27.45, 0, -1], [27.45, -18, -1, 0]]) {
+      this.batch.add(m.black, boxGeo(x - 0.2 + nx * 0.1, 3.6, z - 0.2 + nz * 0.1, x + 0.2 + nx * 0.1, 3.9, z + 0.2 + nz * 0.1, 1));
+      this.glowBatch.add(m.lampWarm, boxGeo(x - 0.15 + nx * 0.12, 3.58, z - 0.15 + nz * 0.12, x + 0.15 + nx * 0.12, 3.6, z + 0.15 + nz * 0.12, 1));
+    }
   }
 
-  // ── 오로라 코어 ───────────────────────────────────────
-  buildCore() {
-    const g = new THREE.Group();
-    const m = this.mats;
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 0.7, 8), m.blackMetal);
-    base.position.y = 0.35; base.castShadow = base.receiveShadow = true; g.add(base);
-    const base2 = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 2.0, 0.5, 8), m.metal);
-    base2.position.y = 0.95; base2.castShadow = true; g.add(base2);
-    // 기둥 지지대 4개
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      const s = new THREE.Mesh(new THREE.BoxGeometry(0.22, 7.6, 0.3), m.blackMetal);
-      s.position.set(Math.cos(a) * 1.35, 4.8, Math.sin(a) * 1.35); s.rotation.y = -a; s.castShadow = true; g.add(s);
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 7.2, 0.06), m.cyan);
-      strip.position.set(Math.cos(a) * 1.22, 4.8, Math.sin(a) * 1.22); g.add(strip);
-    }
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.2, 0.6, 8), m.blackMetal);
-    cap.position.y = 8.8; cap.castShadow = true; g.add(cap);
-    // 유리관 + 에너지 기둥
-    const glass = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 7.4, 32, 1, true), new THREE.MeshPhysicalMaterial({
-      color: 0x88ccff, roughness: 0.05, metalness: 0, transmission: 0, transparent: true, opacity: 0.22, envMapIntensity: 2.5, side: THREE.DoubleSide, depthWrite: false,
-    }));
-    glass.position.y = 4.9; g.add(glass);
-    this.coreU = { uTime: this.time, uHurt: { value: 0 }, uPower: { value: 1 } };
-    const energyMat = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      uniforms: this.coreU,
-      vertexShader: `varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position,1.0); vN = normalize(mat3(modelMatrix)*normal); vV = normalize(cameraPosition - w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform float uTime, uHurt, uPower; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
-float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
-void main(){ float core = pow(abs(dot(vN, vV)), 2.5);
-  float flow = n(vec2(vUv.x * 8.0, vUv.y * 6.0 - uTime * 2.2)) * 0.6 + n(vec2(vUv.x * 21.0, vUv.y * 14.0 - uTime * 4.5)) * 0.4;
-  float bands = 0.65 + 0.35 * sin(vUv.y * 60.0 - uTime * 9.0);
-  vec3 c = mix(vec3(0.1, 0.85, 1.0), vec3(1.0, 0.15, 0.2), uHurt);
-  float a = (core * 1.4 + 0.15) * (0.55 + flow * 0.8) * bands * uPower;
-  gl_FragColor = vec4(c * a * 2.4 + vec3(0.8,1.0,1.0) * pow(core, 6.0) * 1.5 * uPower, 1.0); }`,
-    });
-    const energy = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 7.2, 24, 1, true), energyMat);
-    energy.position.y = 4.9; g.add(energy);
-    // 떠 있는 고리 2개
-    this.coreRings = [];
-    for (const [y, r] of [[3.4, 2.3], [6.6, 1.9]]) {
-      const ring = new THREE.Group();
-      const t = new THREE.Mesh(new THREE.TorusGeometry(r, 0.16, 12, 64), m.metal); t.rotation.x = Math.PI / 2; t.castShadow = true; ring.add(t);
-      const tg = new THREE.Mesh(new THREE.TorusGeometry(r - 0.2, 0.035, 6, 64), m.cyan); tg.rotation.x = Math.PI / 2; ring.add(tg);
-      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const nod = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.3, 0.35), m.blackMetal); nod.position.set(Math.cos(a) * r, 0, Math.sin(a) * r); ring.add(nod); }
-      ring.position.y = y; g.add(ring);
-      this.coreRings.push(ring);
-    }
-    // 하늘로 솟는 빛기둥
-    const beamMat = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: this.coreU,
-      vertexShader: `varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position,1.0); vN = normalize(mat3(modelMatrix)*normal); vV = normalize(cameraPosition - w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform float uTime, uHurt, uPower; varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(abs(dot(vN, vV)), 3.0); float fade = (1.0 - vUv.y); float pulse = 0.75 + 0.25 * sin(vUv.y * 40.0 - uTime * 6.0); vec3 c = mix(vec3(0.1, 0.8, 1.0), vec3(1.0, 0.2, 0.25), uHurt); gl_FragColor = vec4(c * f * fade * fade * pulse * 0.55 * uPower, 1.0); }`,
-    });
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.7, 260, 20, 1, true), beamMat);
-    beam.position.y = 9 + 130; g.add(beam);
-    // 실드(육각 격자)
-    this.shieldU = { uTime: this.time, uAmt: { value: 0 }, uHit: { value: 0 }, uHitDir: { value: new THREE.Vector3(1, 0, 0) } };
-    const shield = new THREE.Mesh(new THREE.SphereGeometry(3.6, 48, 24, 0, Math.PI * 2, 0, Math.PI * 0.55), new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: this.shieldU,
-      vertexShader: `varying vec3 vP; varying vec3 vN; varying vec3 vV; void main(){ vP = position; vec4 w = modelMatrix * vec4(position,1.0); vN = normalize(mat3(modelMatrix)*normal); vV = normalize(cameraPosition - w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform float uTime, uAmt, uHit; uniform vec3 uHitDir; varying vec3 vP; varying vec3 vN; varying vec3 vV;
-float hex(vec2 p){ p.x *= 1.1547; p.y += mod(floor(p.x), 2.0) * 0.5; p = abs(fract(p) - 0.5); return abs(max(p.x * 1.5 + p.y, p.y * 2.0) - 1.0); }
-void main(){ vec3 d = normalize(vP); vec2 uv = vec2(atan(d.z, d.x) * 3.0, acos(clamp(d.y, -1.0, 1.0)) * 6.0);
-  float e = smoothstep(0.12, 0.0, hex(uv * 1.0));
-  float rim = pow(1.0 - abs(dot(vN, vV)), 2.5);
-  float hit = uHit * smoothstep(0.6, 1.0, dot(d, normalize(uHitDir)));
-  float a = (e * 0.35 + rim * 0.6) * uAmt * (0.7 + 0.3 * sin(uTime * 3.0 + vP.y * 4.0)) + hit * (0.6 + e * 1.5);
-  gl_FragColor = vec4(vec3(0.2, 0.9, 1.0) * a, 1.0); }`,
-    }));
-    shield.position.y = 0.2; g.add(shield);
-    this.shield = shield;
-    this.core = g;
+  // ── 레이돔 탑(가운데 랜드마크): 팔각 콘크리트 받침 6m + 난간 두른 장비 층 + 흰 다면체 레이돔 + 항공등 ──
+  buildRadome() {
+    const m = this.mats, g = new THREE.Group();
+    const base = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(1.42, 1.5, 6, 8), 3, 2), m.concrete); base.position.y = 3; base.castShadow = base.receiveShadow = true; g.add(base);
+    const deck = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 0.25, 24), m.steelDark); deck.position.y = 6.1; deck.castShadow = true; g.add(deck);
+    const rails = [];
+    for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; rails.push(pipe([Math.cos(a) * 2.4, 6.2, Math.sin(a) * 2.4], [Math.cos(a) * 2.4, 7.2, Math.sin(a) * 2.4], 0.03, 5)); }
+    const ring = new THREE.TorusGeometry(2.4, 0.03, 5, 48); ring.rotateX(Math.PI / 2); ring.translate(0, 7.2, 0); rails.push(ring);
+    const ring2 = ring.clone(); ring2.translate(0, -0.5, 0); rails.push(ring2);
+    const rm = new THREE.Mesh(mergeGeometries(rails.map((q) => { const n = q.index ? q.toNonIndexed() : q; n.deleteAttribute('uv'); return n; })), m.galv); g.add(rm);
+    // 레이돔: 다면체 패널(살짝 각진 면이 실제 레이돔 이음매처럼 보인다)
+    const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(2.25, 3), m.white); dome.position.y = 8.35; dome.castShadow = true; g.add(dome);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.9, 0.6, 24), m.steelGrey); neck.position.y = 6.5; g.add(neck);
+    // 사다리(남쪽 면)
+    const lad = [];
+    for (const s of [-0.25, 0.25]) lad.push(pipe([s, 0, 1.52], [s, 6.1, 1.52], 0.025, 5));
+    for (let y = 0.3; y < 6; y += 0.32) lad.push(pipe([-0.25, y, 1.52], [0.25, y, 1.52], 0.018, 4));
+    g.add(new THREE.Mesh(mergeGeometries(lad.map((q) => { const n = q.toNonIndexed(); n.deleteAttribute('uv'); return n; })), m.galv));
+    // 꼭대기 항공등 · 받침 둘레 분전함
+    this.aviation = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), m.red); this.aviation.position.y = 10.65; g.add(this.aviation);
+    const box = new THREE.Mesh(boxGeo(-0.4, 0.3, 1.5, 0.4, 1.4, 1.75, 1), m.steelGrey); box.rotation.y = Math.PI / 2; g.add(box);
     this.root.add(g);
+    this.radome = g;
   }
 
-  buildBillboard() {
-    const B = BILLBOARD;
-    const w = B.x1 - B.x0, h = B.y1 - B.y0;
-    const frame = new THREE.Group();
+  // 투광등 4기: 강철 기둥 + 등 4개 묶음(광장 가운데를 향함) + 실제 스포트라이트 + 눈발에 걸린 빛줄기
+  buildFloodlights() {
     const m = this.mats;
-    const fr = (x0, y0, x1, y1) => { const g = new THREE.Mesh(boxGeo(x0, y0, B.z - 0.25, x1, y1, B.z + 0.25, 1), m.blackMetal); g.castShadow = true; frame.add(g); };
-    fr(B.x0 - 0.3, B.y0 - 0.3, B.x1 + 0.3, B.y0); fr(B.x0 - 0.3, B.y1, B.x1 + 0.3, B.y1 + 0.3); fr(B.x0 - 0.3, B.y0, B.x0, B.y1); fr(B.x1, B.y0, B.x1 + 0.3, B.y1);
-    // 뒷면 철골 격자
-    for (let i = 1; i < 6; i++) { const x = B.x0 + (w * i) / 6; const g = new THREE.Mesh(boxGeo(x - 0.06, B.y0, B.z - 0.5, x + 0.06, B.y1, B.z - 0.35, 1), m.metal); frame.add(g); }
-    this.root.add(frame);
-    this.boardU = { uTime: this.time, uMap: { value: holoAd() } };
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: this.boardU,
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: `uniform float uTime; uniform sampler2D uMap; varying vec2 vUv;
-void main(){ float row = floor(vUv.y * 40.0); float gl = step(0.93, fract(sin(row * 13.1 + floor(uTime * 6.0)) * 4375.5)) * step(0.7, fract(uTime * 0.37));
-  vec2 uv = vUv + vec2(gl * 0.03, 0.0);
-  float page = floor(mod(uTime / 6.0, 2.0));
-  vec3 c = texture2D(uMap, vec2(uv.x, uv.y * 0.5 + page * 0.5)).rgb;
-  float scan = 0.78 + 0.22 * sin(vUv.y * 600.0 - uTime * 10.0);
-  float edge = smoothstep(0.0, 0.02, vUv.x) * smoothstep(0.0, 0.02, 1.0 - vUv.x) * smoothstep(0.0, 0.03, vUv.y) * smoothstep(0.0, 0.03, 1.0 - vUv.y);
-  float flick = 0.92 + 0.08 * sin(uTime * 37.0);
-  gl_FragColor = vec4(c * scan * flick * edge * 1.25, 1.0); }`,
-    }));
-    board.position.set((B.x0 + B.x1) / 2, (B.y0 + B.y1) / 2, B.z + 0.05);
-    this.root.add(board); // 평면 앞면(+z)이 옥상 안쪽(남쪽)을 본다
-  }
-
-  buildSigns() {
-    const add = (text, color, x, y, z, ry, w, h, opts) => {
-      const tex = neonSign(text, color, opts);
-      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(1.8, 1.8, 1.8) });
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-      m.position.set(x, y, z); m.rotation.y = ry; this.root.add(m);
-      return m;
-    };
-    add('아케론', '#ff2bd6', -21.94, 2.0, -5.0, Math.PI / 2, 0.9, 2.6, { vertical: true, w: 128, h: 384, size: 96 });
-    add('NODE-07', '#27e8ff', 0, 3.7, -22.44, 0, 3.4, 0.85, { size: 90 });
-    add('LIFT', '#ffa040', 3.0, 2.6, -22.44, 0, 1.2, 0.4, { size: 90 });
-    add('HELIPAD', '#27e8ff', 13.0 - 0.02, 2.6, -5, -Math.PI / 2, 4.0, 1.0, { size: 90 });
-    add('냉각 구역', '#ff2bd6', -12.98, 2.6, 12, Math.PI / 2, 3.2, 0.8, { size: 76 });
-    add('AURORA', '#27e8ff', 0, 9.6, 1.62, 0, 2.6, 0.6, { size: 92 });
-  }
-
-  buildTerminals() {
-    this.terminals = [];
-    const m = this.mats;
-    const scr = neonSign('상점', '#27e8ff', { size: 100, w: 256, h: 160 });
-    for (const t of TERMINALS) {
-      const g = new THREE.Group();
-      const body = new THREE.Mesh(boxGeo(-0.6, 0, -0.25, 0.6, 1.9, 0.25, 1), m.blackMetal); body.castShadow = true; g.add(body);
-      const scrMat = new THREE.MeshBasicMaterial({ map: scr, color: new THREE.Color(1.6, 1.6, 1.6), transparent: true });
-      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.6), scrMat);
-      screen.position.set(0, 1.35, 0.26); g.add(screen);
-      const strip = new THREE.Mesh(boxGeo(-0.62, 0.05, 0.24, 0.62, 0.1, 0.27, 1), m.cyan); g.add(strip);
-      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), m.cyan); beacon.position.set(0, 2.0, 0); g.add(beacon);
-      g.position.set(t.x, t.y, t.z - 0.9);
-      // 단말이 옥상 안쪽을 보게
-      if (t.x > 10) { g.rotation.y = 0; }
+    const coneMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      uniforms: { uTime: this.time, uC: { value: new THREE.Color(1.0, 0.64, 0.32) } },
+      vertexShader: 'varying float vY; varying vec3 vN; varying vec3 vV; varying vec3 vW; void main(){ vY = uv.y; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }',
+      fragmentShader: `uniform float uTime; uniform vec3 uC; varying float vY; varying vec3 vN; varying vec3 vV; varying vec3 vW;
+float h(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+void main(){ float f = pow(abs(dot(vN, vV)), 1.6);
+  float along = smoothstep(0.0, 0.15, 1.0 - vY) * pow(vY, 0.7);
+  float flick = 0.85 + 0.15 * h(floor(vW * 1.5 + vec3(uTime * 2.0, -uTime * 3.0, 0.0)));
+  float near = smoothstep(1.0, 5.0, length(vW - cameraPosition));
+  gl_FragColor = vec4(uC * f * along * flick * near * 0.09, 1.0); }`,
+    });
+    this.spots = [];
+    for (const L of LAMPS) {
+      const g = new THREE.Group(); g.position.set(L.x, 0, L.z);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.22, 12.4, 12), m.galv); pole.position.y = 6.2; pole.castShadow = true; g.add(pole);
+      const foot = new THREE.Mesh(boxGeo(-0.4, 0, -0.4, 0.4, 0.5, 0.4, 1), m.concreteDark); g.add(foot);
+      // 등 묶음(가운데를 향해 기울어짐)
+      const head = new THREE.Group(); head.position.y = 12.6; head.rotation.y = Math.atan2(-L.x, -L.z); g.add(head);
+      const frame = new THREE.Mesh(boxGeo(-0.9, -0.05, -0.1, 0.9, 0.05, 0.1, 1), m.galv); head.add(frame);
+      for (const [x, y] of [[-0.55, 0.25], [0.55, 0.25], [-0.55, -0.35], [0.55, -0.35]]) {
+        const lamp = new THREE.Group(); lamp.position.set(x, y, 0); lamp.rotation.x = -0.55; head.add(lamp);
+        lamp.add(new THREE.Mesh(boxGeo(-0.26, -0.2, -0.1, 0.26, 0.2, 0.18, 1), m.black));
+        lamp.add(new THREE.Mesh(boxGeo(-0.22, -0.16, 0.18, 0.22, 0.16, 0.19, 1), m.lamp));
+      }
       this.root.add(g);
-      this.terminals.push({ g, scrMat, beacon });
+      // 실제 빛: 그림자 없는 스포트라이트(가운데 쪽 바닥을 향함)
+      const target = new THREE.Object3D(); target.position.set(L.x * 0.35, 0, L.z * 0.35); this.root.add(target);
+      const spot = new THREE.SpotLight(0xffd0a0, 360, 70, 0.62, 0.75, 1.6);
+      spot.position.set(L.x, 12.4, L.z); spot.target = target; this.root.add(spot);
+      this.spots.push(spot);
+      // 빛줄기 원뿔
+      const len = Math.hypot(L.x * 0.65, 12.4, L.z * 0.65);
+      const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.4, len * Math.tan(0.5), len, 24, 1, true), coneMat);
+      cone.geometry.translate(0, -len / 2, 0);
+      cone.position.set(L.x, 12.5, L.z);
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(target.position.x - L.x, -12.4, target.position.z - L.z).normalize());
+      cone.renderOrder = 3;
+      this.root.add(cone);
     }
   }
 
-  buildTurrets() {
-    this.turretModels = [];
-    const m = this.mats;
-    for (const s of TURRET_SLOTS) {
-      const root = new THREE.Group(); root.position.set(s.x, s.y, s.z);
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.3, 12), m.blackMetal); base.position.y = 0.15; root.add(base);
-      const yaw = new THREE.Group(); yaw.position.y = 0.55; root.add(yaw);
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.38, 0.7), m.metal); head.castShadow = true; yaw.add(head);
-      const pitch = new THREE.Group(); pitch.position.set(0, 0.05, -0.1); yaw.add(pitch);
-      for (const sx of [-0.12, 0.12]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.9, 8), m.blackMetal); b.rotation.x = Math.PI / 2; b.position.set(sx, 0, -0.5); pitch.add(b); }
-      const eye = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.06, 0.02), m.cyan); eye.position.set(0, 0.08, -0.36); yaw.add(eye);
-      const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0x9ff6ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-      flash.position.set(0, 0, -1.0); flash.scale.setScalar(0.8); flash.visible = false; pitch.add(flash);
-      root.visible = false; root.scale.setScalar(0.01);
-      this.root.add(root);
-      this.turretModels.push({ root, yaw, pitch, flash, built: 0 });
-    }
-  }
-
-  buildElevatorDoors() {
+  buildLiftDoors() {
     const m = this.mats;
     this.doors = [];
+    const z = -22.42;
     for (const s of [-1, 1]) {
-      const d = new THREE.Mesh(boxGeo(-1.4, 0, -0.06, 0, 3.2, 0.06, 1.5), m.hazard);
-      d.position.set(s < 0 ? 0 : 1.4, 0, -22.42);
-      d.castShadow = true;
+      const d = new THREE.Group();
+      const panel = new THREE.Mesh(boxGeo(-1.6, 0, -0.06, 0, 3.4, 0.06, 1.5), m.steelGrey); panel.castShadow = true; d.add(panel);
+      const band = new THREE.Mesh(boxGeo(-1.6, 0.1, 0.06, 0, 0.5, 0.07, 0.6), m.hazard); d.add(band);
+      for (let y = 0.8; y < 3.3; y += 0.5) d.add(new THREE.Mesh(boxGeo(-1.55, y, 0.06, -0.05, y + 0.04, 0.075, 1), m.black));
+      d.position.set(s < 0 ? 0 : 1.6, 0, z);
       this.root.add(d);
       this.doors.push({ mesh: d, side: s });
     }
     this.doorOpen = 0; this.doorT = 0;
-    // 문 위 회전 경광등
-    const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.3, 12), this.mats.red);
-    beacon.position.set(0, 4.85, -22.6); this.root.add(beacon);
+    this.beacon = new THREE.Group(); this.beacon.position.set(0, 3.95, -22.35); this.root.add(this.beacon);
+    this.beacon.add(new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.25, 12), m.red));
   }
 
   buildLights() {
     const add = (color, intensity, dist, x, y, z, decay = 1.6) => { const l = new THREE.PointLight(color, intensity, dist, decay); l.position.set(x, y, z); this.root.add(l); this.lights.push(l); return l; };
-    this.coreLight = add(0x30e0ff, 60, 26, 0, 5, 0);
-    this.boardLight = add(0xff2bd6, 22, 20, -15, 9, -21);
-    add(0x27e8ff, 26, 16, 19, 6.5, -5);       // 헬리패드
-    add(0xffa040, 22, 12, -20.8, 3.0, -2);    // 계단실 문 나트륨등
-    add(0xff2bd6, 2.5, 5, -12.4, 2.8, 12);    // 냉각 구역 간판 바로 앞(넓게 비추면 웅덩이에 분홍 얼룩)
-    this.elevLight = add(0xff2a3a, 0, 14, 0, 4.4, -21.5);
-  }
-
-  // 젖은 바닥에 길게 비친 네온(가산 막대). 카메라 쪽으로 늘어진다
-  buildReflections() {
-    this.refl = [];
-    const tex = streakTexture();
-    const mk = (color, x, z, w, len, strength) => {
-      const mat = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(color).multiplyScalar(strength), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
-      const geo = new THREE.PlaneGeometry(1, 1); geo.rotateX(-Math.PI / 2); geo.translate(0, 0, 0.5);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, 0.012, z); mesh.scale.set(w, 1, len);
-      mesh.renderOrder = 2;
-      this.root.add(mesh);
-      this.refl.push({ mesh, x, z, len });
-    };
-    mk(0x27e8ff, 0, 0, 1.6, 16, 1.0);
-    mk(0xff2bd6, -15, -22.5, 3.2, 14, 0.16);
-    mk(0x27e8ff, 13, -5, 2.2, 10, 0.4);
-    mk(0xffa040, -21.5, -2, 1.2, 9, 0.5);
+    add(0xffa860, 14, 10, SPAWNS.stairs.x + 1.5, 5.4, SPAWNS.stairs.z);   // 터널 입구 등
+    this.elevLight = add(0xff2a1a, 0, 12, 0, 3.8, -21.5);
   }
 
   update(dt, t, world, camPos) {
-    for (const [i, r] of this.coreRings.entries()) { r.rotation.y += dt * (i ? -0.5 : 0.35); r.position.y += Math.sin(t * 1.3 + i * 2) * 0.002; }
-    const c = world.core;
-    const hurt = Math.max(0, 1 - c.hurtT * 2.5);
-    this.coreU.uHurt.value += (hurt - this.coreU.uHurt.value) * Math.min(1, dt * 12);
-    this.coreU.uPower.value = 0.35 + 0.65 * (c.hp / c.max) + Math.sin(t * 13) * 0.03;
-    this.coreLight.color.setRGB(0.19 + 0.8 * this.coreU.uHurt.value, 0.88 - 0.7 * this.coreU.uHurt.value, 1 - 0.75 * this.coreU.uHurt.value);
-    this.coreLight.intensity = (50 + Math.sin(t * 9) * 4) * this.coreU.uPower.value + 40 * this.coreU.uHurt.value;
-    const sh = c.shieldLevel ? c.shield / [300, 600, 900][c.shieldLevel - 1] : 0;
-    this.shieldU.uAmt.value += (sh * 0.6 - this.shieldU.uAmt.value) * Math.min(1, dt * 5);
-    this.shieldU.uHit.value = Math.max(0, this.shieldU.uHit.value - dt * 3);
-    this.shield.visible = this.shieldU.uAmt.value > 0.01 || this.shieldU.uHit.value > 0.01;
-    this.boardLight.intensity = 26 + Math.sin(t * 2) * 6 + (Math.sin(t * 37) > 0.97 ? -18 : 0);
-    // 단말: 정비 시간엔 밝게
-    const shopOn = world.canShop();
-    for (const term of this.terminals) { term.scrMat.color.setScalar(shopOn ? 1.8 + Math.sin(t * 4) * 0.3 : 0.35); term.beacon.visible = shopOn && Math.sin(t * 6) > 0; }
-    // 포탑
-    world.turrets.forEach((tr, i) => {
-      const m = this.turretModels[i];
-      if (tr.built && m.built < 1) { m.root.visible = true; m.built = Math.min(1, m.built + dt * 2); m.root.scale.setScalar(easeOutBack(m.built)); }
-      if (!tr.built) { m.root.visible = false; m.built = 0; }
-      m.yaw.rotation.y = tr.yaw; m.pitch.rotation.x = tr.pitch;
-      m.flash.visible = tr.fireT > 0; m.flash.material.rotation = Math.random() * 6;
-    });
-    // 엘리베이터 문
+    // 승강장 문 · 경광등
     this.doorT -= dt;
     const want = this.doorT > 0 ? 1 : 0;
     this.doorOpen += (want - this.doorOpen) * Math.min(1, dt * 3);
-    for (const d of this.doors) d.mesh.position.x = (d.side < 0 ? 0 : 1.4) + d.side * this.doorOpen * 1.35;
-    this.elevLight.intensity = this.doorT > -1 ? 30 * (0.5 + 0.5 * Math.sin(t * 12)) : 0;
-    // 바닥 반사 막대가 카메라 쪽으로 늘어지게
-    for (const r of this.refl) {
-      const dx = camPos.x - r.x, dz = camPos.z - r.z;
-      r.mesh.rotation.y = Math.atan2(dx, dz);
-      r.mesh.scale.z = Math.min(r.len, Math.hypot(dx, dz) * 0.9 + 1);
-    }
+    for (const d of this.doors) d.mesh.position.x = (d.side < 0 ? 0 : 1.6) + d.side * this.doorOpen * 1.55;
+    const spin = this.doorT > -1;
+    this.beacon.rotation.y += dt * 8;
+    this.elevLight.intensity = spin ? 18 * (0.5 + 0.5 * Math.sin(t * 12)) : 0;
+    this.aviation.visible = Math.sin(t * 2.4) > 0.55;
   }
 
   openElevator() { this.doorT = 3.5; }
-  shieldHit(fx, fz) { this.shieldU.uHit.value = 1; this.shieldU.uHitDir.value.set(fx, 1.2, fz).normalize(); }
 }
 
 function glowMat(color, intensity) {
@@ -504,56 +471,10 @@ function glowMat(color, intensity) {
   return m;
 }
 
-function scaleUV(g, su, sv) { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv); }
-function easeOutBack(x) { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); }
-
 function hazardTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
   g.fillStyle = '#1a1a1a'; g.fillRect(0, 0, 128, 128);
-  g.fillStyle = '#d9a91c';
+  g.fillStyle = '#c9a020';
   for (let i = -4; i < 8; i++) { g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32 + 16, 0); g.lineTo(i * 32 + 16 + 128, 128); g.lineTo(i * 32 + 128, 128); g.closePath(); g.fill(); }
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-
-function helipadTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
-  g.strokeStyle = 'rgba(230,230,230,0.8)'; g.lineWidth = 22; g.beginPath(); g.arc(256, 256, 220, 0, Math.PI * 2); g.stroke();
-  g.fillStyle = 'rgba(230,230,230,0.8)'; g.fillRect(150, 130, 50, 252); g.fillRect(312, 130, 50, 252); g.fillRect(150, 231, 212, 50);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-
-function streakTexture() {
-  const c = document.createElement('canvas'); c.width = 64; c.height = 256; const g = c.getContext('2d');
-  const img = g.createImageData(64, 256);
-  for (let y = 0; y < 256; y++) for (let x = 0; x < 64; x++) {
-    const u = x / 63 - 0.5, v = y / 255;
-    const a = Math.exp(-u * u * 18) * Math.pow(1 - v, 1.6) * (0.75 + 0.25 * Math.sin(v * 50 + x * 0.3));
-    const i = (y * 64 + x) * 4; img.data[i] = img.data[i + 1] = img.data[i + 2] = 255; img.data[i + 3] = a * 255;
-  }
-  g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-
-// 홀로그램 광고 2쪽(위/아래)
-function holoAd() {
-  const W = 1024, H = 1024, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
-  const font = "'Black Han Sans', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
-  // 페이지 1 (아래 절반 = uv.y 0~0.5)
-  const page = (y0, draw) => { g.save(); g.translate(0, y0); g.beginPath(); g.rect(0, 0, W, H / 2); g.clip(); draw(); g.restore(); };
-  page(H / 2, () => {
-    const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, 'rgba(255,43,214,0.85)'); gr.addColorStop(1, 'rgba(60,20,140,0.6)');
-    g.fillStyle = gr; g.fillRect(0, 0, W, H / 2);
-    g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 12; g.beginPath();
-    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + Math.PI / 6; g.lineTo(200 + Math.cos(a) * 120, 256 + Math.sin(a) * 120); }
-    g.closePath(); g.stroke();
-    g.fillStyle = '#fff'; g.font = `400 170px ${font}`; g.textAlign = 'left'; g.fillText('HELIX', 370, 270);
-    g.font = `400 56px ${font}`; g.fillText('DYNAMICS · 내일을 소유하라', 370, 360);
-  });
-  page(0, () => {
-    const gr = g.createLinearGradient(0, 0, 0, H / 2); gr.addColorStop(0, 'rgba(10,40,90,0.7)'); gr.addColorStop(1, 'rgba(39,232,255,0.8)');
-    g.fillStyle = gr; g.fillRect(0, 0, W, H / 2);
-    g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = `400 120px ${font}`; g.fillText('신서울 2089', W / 2, 230);
-    g.font = `400 54px ${font}`; g.fillText('하늘 위의 도시, 헬릭스가 지킵니다', W / 2, 330);
-  });
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }

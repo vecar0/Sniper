@@ -140,7 +140,7 @@ export class Geometry {
       const k = j * n + i, hk = this.h[k];
       let ok = true;
       for (let dj = -1; dj <= 1 && ok; dj++) for (let di = -1; di <= 1; di++) {
-        if (Math.abs(this.h[k + dj * n + di] - hk) > 0.3) { ok = false; break; }
+        if (Math.abs(this.h[k + dj * n + di] - hk) > 0.55) { ok = false; break; } // 계단 한 칸(0.25)이 격자 한 칸에 두 번 걸쳐도 이어지게
       }
       // 머리 위가 막힌 칸(상자 밑)은 없다고 가정. 키 큰 적(메크)은 물리 충돌이 처리
       this.clear[k] = ok ? 1 : 0;
@@ -157,7 +157,7 @@ export class Geometry {
     return { x: -ROOF + (i + 0.5) * this.cell, z: -ROOF + (j + 0.5) * this.cell, y: this.h[k] };
   }
   connected(a, b) {
-    return this.clear[a] && this.clear[b] && Math.abs(this.h[a] - this.h[b]) <= 0.3;
+    return this.clear[a] && this.clear[b] && Math.abs(this.h[a] - this.h[b]) <= 0.55;
   }
 
   // 가까운 통과 가능 칸(높이 maxY 이하 우선). 없으면 −1

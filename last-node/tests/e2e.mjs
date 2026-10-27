@@ -41,7 +41,7 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     await sleep(1500);
     assert(await W(page, () => __ln.app.state) === 'play', '플레이 상태 아님');
     assert(!(await page.$eval('#hud', (e) => e.classList.contains('hidden'))), 'HUD 숨김');
-    for (const s of ['.hud-core', '.hud-radar', '.hud-hp', '.hud-weapon', '.cross i']) assert(await page.isVisible(s), `${s} 안 보임`);
+    for (const s of ['.hud-top', '.hud-radar', '.hud-hp', '.hud-weapon', '.cross i']) assert(await page.isVisible(s), `${s} 안 보임`);
     // 화면이 검지 않다(가운데 영역 평균 밝기)
     const buf = await page.screenshot({ clip: { x: 340, y: 160, width: 600, height: 300 } });
     assert(buf.length > 20000, '렌더 결과가 비어 있음');
@@ -67,7 +67,7 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     assert(await W(page, () => __ln.app.state) === 'play', '이어하기 실패');
   });
 
-  await check('WASD 이동, 컨테이너를 통과하지 못함, 계단으로 헬리패드에 오른다', async () => {
+  await check('WASD 이동, 엄폐물을 통과하지 못함, 계단으로 발전기 플랫폼에 오른다', async () => {
     // 소프트웨어 렌더러는 프레임이 느려 게임 시간이 실제보다 덜 흐른다 → 게임 시간으로 잰다
     const move = async (setup, key, ms) => {
       await W(page, setup);
@@ -102,38 +102,31 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     assert(r.hits > 0, '명중 표시 없음');
   });
 
-  await check('정비 중 단말 앞 F → 상점 → 소총 구매 → 바꿔 쏘기, 포탑 구매 시 포탑이 보인다', async () => {
-    await W(page, () => { const w = __ln.world; for (const e of w.enemies) e.alive = false; w.enemies = []; w.state = 'intermission'; w.timer = 60; w.credits = 5000; const p = w.player; p.x = p.px = 0; p.z = p.pz = 12.6; p.y = p.py = 0; });
-    await sleep(300);
-    await page.keyboard.press('KeyF');
-    await page.waitForSelector('.shop', { timeout: 5000 });
-    await page.click('.card[data-id=rifle]');
-    await sleep(200);
-    await page.click('.card[data-id=turret]');
-    await sleep(200);
-    const r = await W(page, () => ({ owned: !!__ln.world.player.owned.rifle, turret: __ln.world.turrets.some((t) => t.built), cr: __ln.world.credits }));
-    assert(r.owned && r.turret, `구매 실패 ${JSON.stringify(r)}`);
-    await page.click('[data-a=close]');
-    await sleep(600);
-    assert(!(await page.$('.shop')), '상점이 안 닫힘');
+  await check('웨이브 정리 → 강화 카드 3장 → 키 1로 고르기 → 무기 카드면 바꿔 쏘기', async () => {
+    await W(page, () => { const w = __ln.world; for (const e of w.enemies) e.alive = false; w.enemies = []; w.state = 'wave'; w.wave = 2; w.parT = 10; w.spawn = { t: 9, total: 0, left: 0, stairsT: 1e9, elevT: 1e9, dropT: 1e9, boss: false, bossSpawned: true, mechs: 0, mechTotal: 0, mechNext: 1 }; });
+    await page.waitForSelector('.cards .pick', { timeout: 8000 });
+    assert((await page.$$('.cards .pick')).length === 3, '카드가 3장이 아님');
+    // 첫 장을 무기 카드로 바꿔 끼워 시험(무작위 제시와 무관하게)
+    await W(page, () => { __ln.world.offer[0] = 'get:rifle'; });
+    await page.keyboard.press('Digit1');
+    await page.waitForFunction(() => !document.querySelector('.cards'), null, { timeout: 5000 });
+    const st = await W(page, () => ({ state: __ln.world.state, owned: !!__ln.world.player.owned.rifle, weapon: __ln.world.player.weapon }));
+    assert(st.state === 'intermission' && st.owned && st.weapon === 'rifle', `카드 적용 실패 ${JSON.stringify(st)}`);
     if (!(await W(page, () => document.pointerLockElement != null))) { await page.mouse.click(640, 360); await sleep(400); }
-    const vis = await W(page, () => __ln.app.r.level.turretModels.some((m) => m.root.visible));
-    assert(vis, '포탑 모델이 안 보임');
-    await page.keyboard.press('Digit3'); await sleep(600);
-    assert(await W(page, () => __ln.world.player.weapon) === 'rifle', '소총으로 안 바뀜');
+    await sleep(500);
     const s0 = await W(page, () => __ln.world.player.ammo.rifle.mag);
     await page.mouse.down(); await sleep(500); await page.mouse.up(); await sleep(200);
     assert(await W(page, () => __ln.world.player.ammo.rifle.mag) < s0, '소총 발사 안 됨');
   });
 
-  await check('코어 피격 표시·방향, 처치 피드, 레이더, 보스 체력 바', async () => {
-    await W(page, () => { __ln.world.damageCore(40, { x: 12, z: 0 }, 'test'); __ln.world.state = 'wave'; });
-    const dirOk = await page.waitForSelector('.dir.core', { timeout: 10000 }).then(() => true).catch(() => false);
-    assert(await page.$eval('.hud-core', (e) => e.classList.contains('hurt')), '코어 바 경고 없음');
-    assert(dirOk, '코어 방향 표시 없음');
-    await W(page, () => { const w = __ln.world; const e = w.spawnEnemy('reaper', 3, 0, 3); w.damageEnemy(e, 1e6, { kind: 'weak' }); });
-    await page.waitForSelector('.feed div', { timeout: 10000 }).catch(() => {});
-    assert((await page.$$('.feed div')).length > 0, '처치 피드 없음');
+  await check('피격 방향, 처치 점수·연속 배수, 레이더, 보스 체력 바', async () => {
+    await W(page, () => { const w = __ln.world; w.state = 'wave'; w.hurtPlayer(5, { x: w.player.x + 8, z: w.player.z }, 'test'); });
+    const dirOk = await page.waitForSelector('.dir', { timeout: 10000 }).then(() => true).catch(() => false);
+    assert(dirOk, '피격 방향 표시 없음');
+    await W(page, () => { const w = __ln.world; for (let i = 0; i < 2; i++) { const e = w.spawnEnemy('reaper', 3, 0, 3); w.damageEnemy(e, 1e6, { kind: 'weak' }); } });
+    await page.waitForSelector('.pop .kp', { timeout: 10000 }).catch(() => {});
+    assert((await page.$$('.pop .kp')).length > 0, '처치 점수 표시 없음');
+    assert(await page.$eval('.mult', (e) => e.classList.contains('on')), '연속 처치 배수 표시 없음');
     const radar = await page.$eval('.hud-radar canvas', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return n; });
     assert(radar > 500, '레이더가 비어 있음');
     await W(page, () => { const w = __ln.world; w.player.hp = 1e6; w.wave = 4; w.startWave(); w.spawn.t = 3.5; });
@@ -192,7 +185,7 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     assert(await page.isVisible('#touch .tbtn.fire'), '발사 버튼 없음');
     const rects = await W(page, () => {
       const r = (s) => { const e = document.querySelector(s); if (!e || e.offsetParent === null && getComputedStyle(e).position !== 'fixed') return null; const b = e.getBoundingClientRect(); return b.width ? { s, x: b.left, y: b.top, w: b.width, h: b.height } : null; };
-      return { hud: ['.hud-radar', '.hud-core', '.hud-tr', '.hud-hp', '.hud-weapon'].map(r).filter(Boolean), btn: [...document.querySelectorAll('#touch .tbtn:not(.hidden)')].map((e) => { const b = e.getBoundingClientRect(); return { s: e.dataset.a, x: b.left, y: b.top, w: b.width, h: b.height }; }) };
+      return { hud: ['.hud-radar', '.hud-top', '.hud-tr', '.hud-hp', '.hud-weapon'].map(r).filter(Boolean), btn: [...document.querySelectorAll('#touch .tbtn:not(.hidden)')].map((e) => { const b = e.getBoundingClientRect(); return { s: e.dataset.a, x: b.left, y: b.top, w: b.width, h: b.height }; }) };
     });
     const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
     for (let i = 0; i < rects.hud.length; i++) for (let j = i + 1; j < rects.hud.length; j++) assert(!hit(rects.hud[i], rects.hud[j]), `${rects.hud[i].s} ↔ ${rects.hud[j].s} 겹침`);

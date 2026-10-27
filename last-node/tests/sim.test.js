@@ -3,7 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../js/sim/world.js';
 import { enemyParts } from '../js/sim/enemies.js';
-import { ENEMIES, WAVES, CORE, PLAYER, ECONOMY, WEAPONS, EMP } from '../js/config/balance.js';
+import { ENEMIES, WAVES, PLAYER, SCORE, WEAPONS, EMP } from '../js/config/balance.js';
+import { CARDS } from '../js/config/cards.js';
 import { SPAWNS } from '../js/config/map.js';
 import { load, save, recordRun, sanitize, SAVE_KEY } from '../js/core/save.js';
 import { runGame, Bot } from './bot.js';
@@ -21,10 +22,12 @@ function sandbox(seed = 1) {
 const put = (w, x, z, y = 0) => { const p = w.player; p.x = p.px = x; p.z = p.pz = z; p.y = p.py = y; p.vx = p.vy = p.vz = 0; w.updatePlayerField(true); };
 
 // ── 시작 상태 ───────────────────────────────────────────
-test('시작: 체력 100, 코어 1500, 크레딧 0, 권총 14/∞, EMP 1, 웨이브 1로 시작', () => {
+test('시작: 체력 100, 점수 0, 권총 14/∞, EMP 1, 웨이브 1. 코어·크레딧·상점은 없다', () => {
   const w = new World({ seed: 1 });
   const p = w.player;
-  assert.equal(p.hp, 100); assert.equal(w.core.hp, 1500); assert.equal(w.credits, 0);
+  assert.equal(p.hp, 100); assert.equal(w.score, 0);
+  assert.equal(w.core, undefined); assert.equal(w.credits, undefined); assert.equal(w.buy, undefined);
+  assert.deepEqual(Object.keys(p.owned), ['pistol']);
   assert.equal(p.weapon, 'pistol'); assert.equal(p.ammo.pistol.mag, 14); assert.equal(p.ammo.pistol.reserve, Infinity);
   assert.equal(p.emp, 1);
   w.input.ready = true; w.step(DT);
@@ -34,11 +37,12 @@ test('시작: 체력 100, 코어 1500, 크레딧 0, 권총 14/∞, EMP 1, 웨이
 // ── 웨이브 구성 ─────────────────────────────────────────
 test('웨이브 w의 적 수 = 10 + 4w, 동시 생존 20 이하, 정해진 입구에서만 등장', () => {
   const w = new World({ seed: 3 });
-  w.player.hp = 1e9; w.core.hp = w.core.max = 1e9;
+  w.player.hp = w.player.maxHp = 1e9;
   const seen = { 1: 0, 2: 0, 3: 0, 4: 0 }; let maxAlive = 0;
   const sources = { 1: new Set(), 2: new Set(), 3: new Set(), 4: new Set() };
   while (w.wave <= 4) {
     w.input.ready = true;
+    if (w.state === 'pick') w.input.pick = 0;
     w.step(DT);
     for (const e of w.events) if (e.t === 'spawn' && e.type !== 'boss') { seen[w.wave]++; sources[w.wave].add(e.source); }
     w.events.length = 0;
@@ -57,7 +61,7 @@ test('웨이브 w의 적 수 = 10 + 4w, 동시 생존 20 이하, 정해진 입�
 });
 
 // ── 적 AI ───────────────────────────────────────────────
-test('리퍼: 컨테이너를 돌아 플레이어에게 와서 근접 피해를 준다', () => {
+test('하운드: 콘크리트 블록을 돌아 플레이어에게 와서 근접 피해를 준다', () => {
   const w = sandbox(2);
   put(w, 11, 14);                         // 컨테이너(8~14.1, 10~12.45) 남쪽
   w.spawnEnemy('reaper', 11, 0, 7);       // 북쪽
@@ -66,21 +70,48 @@ test('리퍼: 컨테이너를 돌아 플레이어에게 와서 근접 피해를 
   assert.ok(w.player.hp < 100);
 });
 
-test('리치: 플레이어를 무시하고 코어에 접속해 초당 18씩 흡수, 맞으면 0.4초 멈춤', () => {
+test('수리 로봇: 다친 아군을 초당 18 회복, 맞으면 0.4초 끊김, 최대 체력을 넘지 않음', () => {
   const w = sandbox(4);
-  put(w, -15, -2);
-  const e = w.spawnEnemy('leech', SPAWNS.stairs.x, 0, SPAWNS.stairs.z);
+  put(w, 20, 20);
+  const ally = w.spawnEnemy('enforcer', -14, 0, -2); ally.stun = 99; ally.hp = ally.maxHp * 0.3;
+  const m = w.spawnEnemy('leech', -20, 0, -2);
   let t = 0;
-  while (e.state !== 'attach' && t < 20) { w.step(DT); t += DT; }
-  assert.equal(e.state, 'attach', '20초 안에 접속 못 함');
-  assert.equal(w.player.hp, 100, '플레이어는 공격하지 않는다');
-  const before = w.core.hp;
+  while (m.state !== 'heal' && t < 10) { w.step(DT); t += DT; }
+  assert.equal(m.state, 'heal', '수리를 시작하지 않음');
+  assert.equal(m.healTarget, ally);
+  run(w, 0.05);
+  const h0 = ally.hp;
   run(w, 1);
-  assert.ok(Math.abs(before - w.core.hp - ENEMIES.leech.drain) < 0.6, `1초 흡수량 ${before - w.core.hp}`);
-  w.damageEnemy(e, 1, { kind: 'body', dir: { x: 1, z: 0 } });
-  const h0 = w.core.hp;
+  assert.ok(Math.abs(ally.hp - h0 - ENEMIES.leech.heal) < 0.6, `1초 회복량 ${ally.hp - h0}`);
+  w.damageEnemy(m, 1, { kind: 'body', dir: { x: 1, z: 0 } });
+  const h1 = ally.hp;
   run(w, 0.3);
-  assert.equal(w.core.hp, h0, '맞은 직후 0.4초는 흡수 멈춤');
+  assert.equal(ally.hp, h1, '맞은 직후 0.4초는 회복 멈춤');
+  run(w, 8);
+  assert.ok(ally.hp <= ally.maxHp + 1e-9);
+  assert.equal(w.player.hp, 100, '수리 로봇은 공격하지 않는다');
+});
+
+test('수리 로봇: 플레이어가 다가오면 거리를 벌린다', () => {
+  const w = sandbox(41);
+  const guard = w.spawnEnemy('enforcer', -20, 0, -20); guard.stun = 99; // 지켜 줄 아군(다치지 않음)
+  const m = w.spawnEnemy('leech', 0, 0, 16);
+  put(w, 0, 10);
+  run(w, 3);
+  assert.ok(Math.hypot(m.x - w.player.x, m.z - w.player.z) > 8, `거리 ${Math.hypot(m.x - w.player.x, m.z - w.player.z).toFixed(1)}`);
+  // 아군이 다 사라지면 숨지 않고 나온다(교착 방지)
+  guard.alive = false; w.enemies = w.enemies.filter((e) => e.alive);
+  run(w, 6);
+  assert.ok(Math.hypot(m.x - w.player.x, m.z - w.player.z) < 8.5, '혼자 남아도 숨어 있음');
+});
+
+test('무인 전투차량: 플레이어를 노려 다가오고, 가까우면 들이받는다', () => {
+  const w = sandbox(42);
+  put(w, 0, 18);
+  const v = w.spawnEnemy('mech', 0, 0, 8);
+  const ev = events(w, 10);
+  assert.ok(ev.some((q) => q.t === 'playerHurt'), '플레이어 피해 없음');
+  assert.ok(Math.hypot(v.x - w.player.x, v.z - w.player.z) < 10);
 });
 
 test('집행관: 엄폐점으로 이동한 뒤 사격하고, 엄폐물 뒤의 플레이어는 맞지 않는다', () => {
@@ -209,84 +240,76 @@ test('둘레 옹벽: 대시·더블 점프로 달려도 광장 밖으로 나가�
   }
 });
 
-// ── 경제 ────────────────────────────────────────────────
-test('처치 크레딧: 약점 +50%, 근접 +30%, 2연속 +10%, 5연속 +25%', () => {
+// ── 점수 · 카드 ─────────────────────────────────────────
+test('처치 점수: 약점 +50%, 근접 +30%, 연속 처치 배수 +0.1씩(최대 2.0), 2.5초 지나면 끊김', () => {
   const w = sandbox(15);
-  const k = (type, info) => { const e = w.spawnEnemy(type, 0, 0, -10); const c0 = w.credits; w.damageEnemy(e, 1e6, info); return w.credits - c0; };
+  const k = (type, info) => { const e = w.spawnEnemy(type, 0, 0, -10); const c0 = w.score; w.damageEnemy(e, 1e6, info); return w.score - c0; };
   assert.equal(k('reaper', { kind: 'body' }), 50);
   w.comboT = 99; assert.equal(k('reaper', { kind: 'weak' }), 75);
   w.comboT = 99; assert.equal(k('enforcer', { kind: 'body', melee: true }), Math.round(80 * 1.3));
   w.comboT = 99; k('reaper', {});
   assert.equal(k('reaper', {}), Math.round(50 * 1.1), '2연속');
-  k('reaper', {}); k('reaper', {});
-  assert.equal(k('reaper', {}), Math.round(50 * 1.25), '5연속');
+  assert.equal(k('reaper', {}), Math.round(50 * 1.2), '3연속');
+  for (let i = 0; i < 20; i++) k('reaper', {});
+  assert.equal(w.comboMul, SCORE.comboMax); assert.equal(k('reaper', {}), 100, '최대 2.0');
+  run(w, SCORE.comboWindow + 0.1);
+  assert.equal(w.comboMul, 1); assert.equal(k('reaper', {}), 50, '끊긴 뒤');
 });
 
-test('웨이브 정리 → 보너스(코어 무피해 +300) → 코어 +150 → 20초 정비 → 다음 웨이브', () => {
+test('웨이브 정리 → 기준 시간 보너스 → 카드 3장(중복 없음) → 고르면 5초 뒤 다음 웨이브', () => {
   const w = new World({ seed: 16 });
-  w.core.hp = 1000;
+  w.player.hp = 60;
   w.input.ready = true; w.step(DT);
   assert.equal(w.state, 'wave');
+  assert.ok(Math.abs(w.parT - SCORE.par(1)) < 0.1);
   let t = 0;
   const ev = [];
   while (w.state === 'wave' && t < 120) { for (const e of w.enemies) w.damageEnemy(e, 1e6, {}); w.step(DT); ev.push(...w.events); w.events.length = 0; t += DT; }
-  assert.equal(w.state, 'intermission');
+  assert.equal(w.state, 'pick');
   const clear = ev.find((e) => e.t === 'waveClear');
-  assert.equal(clear.bonus, ECONOMY.waveBonus(1)); assert.equal(clear.perfect, true);
-  assert.equal(w.core.hp, 1000 + CORE.repairBetween);
-  assert.ok(Math.abs(w.timer - WAVES.intermission) < 0.1);
+  assert.ok(clear.parLeft > 0 && clear.parBonus === clear.parLeft * SCORE.parPerSec, `보너스 ${clear.parBonus}`);
+  assert.equal(w.player.hp, 60 + SCORE.waveHeal + SCORE.parHeal);
+  assert.equal(w.offer.length, 3); assert.equal(new Set(w.offer).size, 3);
+  // 고르기 전에는 시간이 흐르지 않는다
+  run(w, 3); assert.equal(w.state, 'pick'); assert.equal(w.wave, 1);
+  w.input.pick = 1; w.step(DT);
+  assert.equal(w.state, 'intermission'); assert.equal(w.stats.cards.length, 1);
   run(w, WAVES.intermission + 0.1);
   assert.equal(w.wave, 2); assert.equal(w.state, 'wave');
 });
 
-test('상점: 정비 중에만, 돈 부족하면 안 되고 크레딧은 음수가 되지 않음, 강화 3단계까지', () => {
-  const w = new World({ seed: 17 });
-  w.credits = 500;
-  assert.equal(w.buy('shotgun').reason, 'poor');
-  assert.equal(w.credits, 500);
-  w.credits = 100000;
-  assert.ok(w.buy('shotgun').ok);
-  assert.equal(w.player.owned.shotgun, true);
-  for (let i = 0; i < 3; i++) assert.ok(w.buy('up:shotgun').ok, `강화 ${i + 1}`);
-  assert.equal(w.buy('up:shotgun').reason, 'max');
-  assert.equal(w.player.levels.shotgun, 3);
-  w.input.ready = true; w.step(DT);
-  assert.equal(w.state, 'wave');
-  assert.equal(w.buy('armor').reason, 'closed');
-  assert.ok(w.credits >= 0);
-  // 단말에서만 열린다
-  const w2 = new World({ seed: 17 });
-  put(w2, 0, 0); w2.input.interact = true; w2.step(DT); assert.equal(w2.shopOpen, false, '멀리서 열림');
-  put(w2, 0, 12.6); w2.input.interact = true; w2.step(DT); assert.equal(w2.shopOpen, true, '단말 앞에서 안 열림');
+test('카드: 무기 카드는 W3 정리 전까지 최소 1번 나오고, 고르면 그 무기로 바꿔 쏠 수 있다', () => {
+  for (let seed = 1; seed <= 12; seed++) {
+    const w = new World({ seed });
+    let seenWeapon = null;
+    for (let wave = 1; wave <= 3 && !seenWeapon; wave++) {
+      w.wave = wave; w.state = 'wave'; w.parT = 0;
+      w.clearWave();
+      seenWeapon = w.offer.find((id) => id.startsWith('get:'));
+      if (!seenWeapon) w.pickCard(0);
+    }
+    assert.ok(seenWeapon, `seed ${seed}: 무기 카드 없음`);
+    w.pickCard(w.offer.indexOf(seenWeapon));
+    const id = seenWeapon.slice(4);
+    assert.equal(w.player.owned[id], true); assert.equal(w.player.weapon, id);
+  }
 });
 
-test('포탑: 사면 자리에 생기고 리치·드론을 우선 쏜다', () => {
-  const w = new World({ seed: 18 });
-  w.credits = 10000;
-  assert.ok(w.buy('turret').ok);
-  assert.equal(w.turrets.filter((t) => t.built).length, 1);
-  w.noEnd = true; w.state = 'wave'; w.wave = 3; w.spawn = { t: 0, total: 0, left: 0, stairsT: 1e9, elevT: 1e9, dropT: 1e9, mechs: 0, mechNext: 1 };
-  put(w, -20, 20);
-  const t0 = w.turrets.find((t) => t.built);
-  const r = w.spawnEnemy('reaper', t0.x + 3, 0, t0.z + 1); r.stun = 99;
-  const l = w.spawnEnemy('leech', t0.x + 6, 0, t0.z - 3); l.stun = 99;
-  run(w, 1);
-  assert.ok(l.hp < l.maxHp, '리치를 쏘지 않음');
-  assert.equal(r.hp, r.maxHp, '리치보다 리퍼를 먼저 쐈음');
-});
-
-test('코어 실드가 먼저 피해를 받고, 웨이브 시작 때 가득 찬다', () => {
-  const w = new World({ seed: 19 });
-  w.credits = 10000;
-  assert.ok(w.buy('coreShield').ok);
-  w.input.ready = true; w.step(DT);
-  assert.equal(w.core.shield, CORE.shieldLevels[0]);
-  w.damageCore(100, null, 'test');
-  assert.equal(w.core.hp, CORE.hp); assert.equal(w.core.shield, CORE.shieldLevels[0] - 100);
-  w.damageCore(400, null, 'test');
-  assert.equal(w.core.shield, 0); assert.equal(w.core.hp, CORE.hp - 200);
-  w.clearWave(); w.startWave();
-  assert.equal(w.core.shield, CORE.shieldLevels[0]);
+test('카드: 효과 적용 · 최대 단계 카드는 다시 안 나옴', () => {
+  const w = new World({ seed: 5 });
+  const p = w.player;
+  w.applyCard('maxhp'); assert.equal(p.maxHp, 125);
+  w.applyCard('dash+'); assert.equal(p.dashMax, 3);
+  w.applyCard('emp'); assert.equal(p.emp, 2); assert.equal(p.empMax, PLAYER.empMax + 1);
+  w.taken['dash+'] = 1;
+  for (let i = 0; i < 30; i++) { w.wave = 1; w.state = 'wave'; w.clearWave(); assert.ok(!w.offer.includes('dash+')); w.state = 'wave'; }
+  // 무기 강화는 가진 무기만, 3단계까지
+  assert.ok(!w.cardAvailable(CARDS.find((c) => c.id === 'up:rifle')));
+  p.owned.rifle = true; p.levels.rifle = 3;
+  assert.ok(!w.cardAvailable(CARDS.find((c) => c.id === 'up:rifle')));
+  // 보스 웨이브 뒤엔 희귀 카드 1장
+  w.wave = 5; w.state = 'wave'; w.clearWave();
+  assert.ok(w.offer.some((id) => CARDS.find((c) => c.id === id).kind === 'rare'));
 });
 
 test('재장전: 탄창이 비면 못 쏘고, 재장전 뒤 탄창이 차고 예비탄이 준다(권총은 무한)', () => {
@@ -322,14 +345,12 @@ test('웨이브 5 보스: 등장, 엔진 2개 파괴 시 조종석 ×3, 보스�
   hp = b.hp; w.damageEnemy(b, 100, { part: { kind: 'cockpit' } }); assert.equal(hp - b.hp, 300);
   w.damageEnemy(b, 1e6, { part: { kind: 'hull' } });
   run(w, 1, (ww) => { for (const e of ww.enemies) ww.damageEnemy(e, 1e6, {}); });
-  assert.equal(w.state, 'intermission');
+  assert.equal(w.state, 'pick');
 });
 
-test('패배: 체력 0 = 러너 사망, 코어 0 = 코어 함락', () => {
+test('패배: 체력 0 = 게임 오버', () => {
   const a = new World({ seed: 22 }); a.hurtPlayer(500, null, 'test', true);
   assert.equal(a.state, 'over'); assert.equal(a.overReason, 'player');
-  const b = new World({ seed: 22 }); b.damageCore(5000, null, 'test');
-  assert.equal(b.state, 'over'); assert.equal(b.overReason, 'core');
 });
 
 // ── 저장 ────────────────────────────────────────────────
@@ -358,12 +379,6 @@ test('밸런스: 봇이 8시드 모두 웨이브 4 이상 도달', () => {
   const res = [];
   for (let seed = 1; seed <= 8; seed++) { const r = runGame(World, { seed, maxTime: 600, untilWave: 5 }); res.push(r.world.wave); }
   assert.ok(res.every((x) => x >= 4), `도달 웨이브 ${res.join(',')}`);
-});
-test('밸런스: 리치를 무시하는 봇은 코어 함락으로 진다', () => {
-  for (let seed = 1; seed <= 4; seed++) {
-    const r = runGame(World, { seed, ignoreLeech: true, maxTime: 900 });
-    assert.equal(r.world.overReason, 'core', `seed ${seed}: ${r.world.state} ${r.world.overReason}`);
-  }
 });
 test('밸런스: 아무것도 안 하면 웨이브 1~2에서 진다', () => {
   for (let seed = 1; seed <= 4; seed++) {

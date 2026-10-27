@@ -2,7 +2,7 @@
 const BIND = {
   KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r',
   Space: 'jump', ShiftLeft: 'dash', ShiftRight: 'dash', KeyC: 'crouch', ControlLeft: 'crouch', KeyV: 'melee',
-  KeyR: 'reload', KeyQ: 'lastWeapon', KeyG: 'emp', KeyF: 'interact', Enter: 'ready',
+  KeyR: 'reload', KeyQ: 'lastWeapon', KeyG: 'emp', Enter: 'ready',
   Digit1: 's1', Digit2: 's2', Digit3: 's3', Digit4: 's4',
 };
 const SLOTS = { s1: 'pistol', s2: 'shotgun', s3: 'rifle', s4: 'rail' };
@@ -94,7 +94,6 @@ export class Input {
     if (E.has('melee')) inp.melee = true;
     if (E.has('reload')) inp.reload = true;
     if (E.has('lastWeapon')) inp.lastWeapon = true;
-    if (E.has('interact')) inp.interact = true;
     if (E.has('ready')) inp.ready = true;
     if (E.has('empRelease') || E.has('empTap')) inp.throwEmp = true;
     if (E.has('cycle')) inp.cycle = 1;

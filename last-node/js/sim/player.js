@@ -1,4 +1,4 @@
-// 러너(플레이어): 이동(대시·더블 점프·슬라이드) · 무기 · 근접 · EMP 투척
+// 요원(플레이어): 이동(대시·더블 점프·슬라이드) · 무기 · 근접 · EMP 투척
 import { PLAYER as P, WEAPONS, WEAPON_ORDER, UPGRADE, EMP, TICK } from '../config/balance.js';
 import { PLAYER_START } from '../config/map.js';
 
@@ -11,7 +11,8 @@ export function makePlayer() {
     x: PLAYER_START.x, y: PLAYER_START.y, z: PLAYER_START.z, px: PLAYER_START.x, py: PLAYER_START.y, pz: PLAYER_START.z,
     vx: 0, vy: 0, vz: 0, r: P.radius, h: P.height, grounded: true, landSpeed: 0,
     yaw: PLAYER_START.yaw, pitch: 0,
-    hp: P.hp, armor: 0, alive: true,
+    hp: P.hp, maxHp: P.hp, armor: 0, alive: true, perks: {},
+    dashMax: P.dashCharges, dashCdMul: 1, empMax: P.empMax,
     dashCharges: P.dashCharges, dashRecharge: 0, dashT: 0, dashDx: 0, dashDz: 0,
     airJumps: 1, crouch: false, slideT: 0, slideCd: 0, eye: P.eye,
     weapon: 'pistol', lastWeapon: 'pistol', owned: { pistol: true }, levels: { pistol: 0, shotgun: 0, rifle: 0, rail: 0 }, ammo,
@@ -66,16 +67,16 @@ export function updatePlayer(world, p, inp, dt) {
   p.eye += (targetEye - p.eye) * Math.min(1, dt * 14);
 
   // 대시
-  if (p.dashCharges < P.dashCharges) {
+  if (p.dashCharges < p.dashMax) {
     p.dashRecharge += dt;
-    if (p.dashRecharge >= P.dashRecharge) { p.dashCharges++; p.dashRecharge = 0; }
+    if (p.dashRecharge >= P.dashRecharge * p.dashCdMul) { p.dashCharges++; p.dashRecharge = 0; }
   } else p.dashRecharge = 0;
   if (inp.dash && p.dashCharges > 0 && p.dashT <= 0) {
     let dx = wx, dz = wz;
     if (wl < 0.1) { dx = -sy; dz = -cy; }
     const l = Math.hypot(dx, dz);
     p.dashDx = dx / l; p.dashDz = dz / l;
-    p.dashT = P.dashTime; p.dashCharges--; p.slideT = 0;
+    p.dashT = P.dashTime; p.dashCharges--; p.slideT = 0; p.dashHit = new Set();
     ev.push({ t: 'dash', dx: p.dashDx, dz: p.dashDz });
   }
 
@@ -83,6 +84,11 @@ export function updatePlayer(world, p, inp, dt) {
     const sp = P.dashDist / P.dashTime;
     p.vx = p.dashDx * sp; p.vz = p.dashDz * sp; p.vy = 0;
     p.dashT -= dt;
+    // 강화 '충격 돌파': 대시로 스친 적 기절
+    if (p.perks.dashStun) for (const e of world.enemies) {
+      if (!e.alive || e.type === 'boss' || p.dashHit.has(e.id)) continue;
+      if (Math.hypot(e.x - p.x, e.z - p.z) < 1.4 + e.r && Math.abs(e.y - p.y) < 2) { p.dashHit.add(e.id); e.stun = Math.max(e.stun, 1.0); world.events.push({ t: 'dashStun', id: e.id, x: e.x, y: e.y + 0.8, z: e.z }); }
+    }
     if (p.dashT <= 0) { p.vx = p.dashDx * P.speed; p.vz = p.dashDz * P.speed; }
   } else if (p.slideT > 0) {
     const f = Math.max(0, 1 - dt * 1.6);

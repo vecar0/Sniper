@@ -1,6 +1,6 @@
 """생성된 basecolor → seamless(Moisan 주기 분해) + 노멀 + 거칠기 맵.
 사용: python3 -I scripts/textures.py <원본폴더> <출력폴더>
-원본 폴더에 concrete.png plate.png container.png panel.png rust.png 가 있어야 한다.
+원본 폴더에 wall.png ground.png snow.png steel.png 가 있어야 한다(힉스필드 생성 basecolor).
 """
 import sys
 import numpy as np
@@ -8,11 +8,10 @@ from PIL import Image
 
 # 재질별: (노멀 세기, 거칠기 기본값, 거칠기 대비, 밝기 배율)
 SPEC = {
-    'concrete': (5.0, 0.78, 0.35, 1.0),
-    'plate': (7.0, 0.45, 0.45, 1.0),
-    'container': (8.0, 0.6, 0.4, 1.0),
-    'panel': (6.0, 0.5, 0.35, 1.0),
-    'rust': (5.0, 0.8, 0.3, 1.0),
+    'wall': (6.0, 0.82, 0.3, 1.0),     # 거푸집 콘크리트 옹벽
+    'ground': (4.0, 0.78, 0.35, 0.92), # 바닥 콘크리트 슬래브
+    'snow': (2.5, 0.62, 0.25, 1.0),    # 바람에 다져진 눈
+    'steel': (6.0, 0.5, 0.45, 1.0),    # 도장 강판
 }
 
 

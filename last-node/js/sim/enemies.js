@@ -1,5 +1,5 @@
-// 헬릭스 군단 AI. 모든 공격은 예고(telegraph) 후 발동한다.
-import { ENEMIES, CORE } from '../config/balance.js';
+// 기지 방어 로봇 AI. 모든 공격은 예고(telegraph) 후 발동한다.
+import { ENEMIES } from '../config/balance.js';
 
 let nextId = 1;
 
@@ -10,7 +10,7 @@ export function makeEnemy(type, x, y, z, hpMul, dmgMul, extra = {}) {
     id: nextId++, type, c, x, y, z, px: x, py: y, pz: z, vx: 0, vy: 0, vz: 0,
     yaw: 0, r: c.radius, h: c.height || 1.8, grounded: false, landSpeed: 0,
     hp, maxHp: hp, dmgMul, alive: true, state: 'spawn', t: 0, stun: 0, stagger: 0, flash: 0,
-    attackT: 0, cd: 0, moveSpeed: 0, anim: Math.random() * 10, hitDir: 0, ...extra,
+    attackT: 0, cd: 0, moveSpeed: 0, anim: (((x * 12.9898 + z * 78.233) % 1) + 1) % 1 * 10, hitDir: 0, ...extra,
   };
 }
 
@@ -209,43 +209,78 @@ function enforcer(world, e, dt) {
   }
 }
 
-// ── 리치: 플레이어 무시하고 코어로 → 접속 → 흡수 ─────────────
+// ── 수리 로봇: 아군 뒤에 숨어 가장 많이 다친 로봇을 고친다. 맞으면 잠깐 끊긴다 ──
+function woundedAlly(world, e, range) {
+  let best = null, bf = 0.999;
+  for (const o of world.enemies) {
+    if (!o.alive || o === e || o.type === 'boss' || o.type === 'drone') continue;
+    const f = o.hp / o.maxHp;
+    if (f >= bf) continue;
+    if (range && Math.hypot(o.x - e.x, o.z - e.z) > range) continue;
+    best = o; bf = f;
+  }
+  return best;
+}
+
 function leech(world, e, dt) {
-  const c = e.c;
+  const c = e.c, p = world.player;
   e.t += dt;
-  const dCore = Math.hypot(e.x, e.z) - CORE.radius;
+  if (e.interrupt > 0) e.interrupt -= dt;
   if (e.state === 'spawn') e.state = 'move';
-  if (e.state === 'attach') {
-    physics(world, e, 0, 0, dt, 60);
-    e.yaw = turn(e.yaw, angTo(e.x, e.z, 0, 0), 6 * dt);
-    if (e.interrupt > 0) e.interrupt -= dt;
-    else world.damageCore(c.drain * e.dmgMul * dt, e, 'drain');
+  const dP = Math.hypot(p.x - e.x, p.z - e.z);
+  if (e.state === 'heal') {
+    const o = e.healTarget;
+    physics(world, e, 0, 0, dt, 40);
+    if (!o || !o.alive || o.hp >= o.maxHp || Math.hypot(o.x - e.x, o.z - e.z) > c.healRange + 1 || !world.geom.los(e.x, e.y + 1, e.z, o.x, o.y + 0.8, o.z)) {
+      e.state = 'move'; e.healTarget = null; e.healId = 0; return;
+    }
+    e.yaw = turn(e.yaw, angTo(e.x, e.z, o.x, o.z), 6 * dt);
+    e.healing = e.interrupt <= 0;
+    if (e.healing) o.hp = Math.min(o.maxHp, o.hp + c.heal * dt);
+    if (dP < c.keepDist * 0.5) { e.state = 'move'; e.healTarget = null; e.healId = 0; }
     return;
   }
-  if (dCore <= c.attachDist) {
-    if (world.leechSlotsFree() > 0) { e.state = 'attach'; e.interrupt = 0; world.events.push({ t: 'leechAttach', id: e.id }); return; }
-    // 자리가 없으면 코어 주변을 맴돈다
-    const a = Math.atan2(e.z, e.x) + 0.6;
-    const tx = Math.cos(a) * 4.0, tz = Math.sin(a) * 4.0;
-    const l = Math.hypot(tx - e.x, tz - e.z) || 1;
-    physics(world, e, ((tx - e.x) / l) * 2, ((tz - e.z) / l) * 2, dt);
-    faceMove(e, dt);
+  e.healing = false;
+  // 고칠 아군이 근처에 있으면 수리 시작
+  const near = woundedAlly(world, e, c.healRange);
+  if (near && dP > c.keepDist * 0.5 && world.geom.los(e.x, e.y + 1, e.z, near.x, near.y + 0.8, near.z)) {
+    e.state = 'heal'; e.healTarget = near; e.healId = near.id; e.interrupt = 0;
+    world.events.push({ t: 'medicLink', id: e.id, target: near.id });
     return;
   }
-  const v = steer(world, e, world.fieldCore, c.speed);
-  physics(world, e, v.x, v.z, dt);
-  faceMove(e, dt);
+  // 지켜 줄 아군이 하나도 없으면 숨지 않고 플레이어 쪽으로 나온다(웨이브가 끝나지 않는 교착 방지)
+  const allies = world.enemies.some((o) => o.alive && o !== e && o.type !== 'leech' && o.type !== 'drone');
+  if (!allies) {
+    const v = dP > 7 ? steer(world, e, world.fieldPlayer, c.speed * 0.7) : { x: 0, z: 0 };
+    physics(world, e, v.x, v.z, dt);
+    if (dP > 7) faceMove(e, dt); else e.yaw = turn(e.yaw, angTo(e.x, e.z, p.x, p.z), 4 * dt);
+    return;
+  }
+  // 아니면: 다친 아군 쪽으로 / 플레이어와 거리를 유지(가까우면 물러나고 멀면 다가감)
+  const far = woundedAlly(world, e, 0);
+  let vx = 0, vz = 0;
+  if (far && dP > c.keepDist * 0.6) {
+    const dx = far.x - e.x, dz = far.z - e.z, l = Math.hypot(dx, dz) || 1;
+    vx = (dx / l) * c.speed; vz = (dz / l) * c.speed;
+  } else if (dP < c.keepDist) {
+    const v = steer(world, e, world.fieldPlayer, c.speed);
+    vx = -v.x; vz = -v.z;                       // 거리장 반대 = 플레이어에게서 멀어짐
+  } else if (dP > c.keepDist + 6) {
+    const v = steer(world, e, world.fieldPlayer, c.speed * 0.8);
+    vx = v.x; vz = v.z;
+  }
+  physics(world, e, vx, vz, dt);
+  if (Math.hypot(vx, vz) > 0.3) faceMove(e, dt); else e.yaw = turn(e.yaw, angTo(e.x, e.z, p.x, p.z), 4 * dt);
 }
 
 // ── 스웜 드론: 무리 비행 → 깜빡임(예고) → 돌진 자폭 ─────────────
 function drone(world, e, dt) {
   const c = e.c, p = world.player;
   e.t += dt;
-  const tgtCore = e.target === 'core';
-  const tx = tgtCore ? 0 : p.x, tz = tgtCore ? 0 : p.z, ty = tgtCore ? 1.8 : p.y + 1.1;
+  const tx = p.x, tz = p.z, ty = p.y + 1.1;
   const dx = tx - e.x, dz = tz - e.z, dy = ty - e.y;
   const dh = Math.hypot(dx, dz);
-  const dist3 = tgtCore ? Math.max(0, dh - CORE.radius) : Math.hypot(dx, dy, dz);
+  const dist3 = Math.hypot(dx, dy, dz);
   if (e.state === 'spawn') e.state = 'fly';
   let wvx, wvy, wvz;
   if (e.state === 'fly') {
@@ -287,25 +322,31 @@ function drone(world, e, dt) {
   e.yaw = turn(e.yaw, Math.atan2(-dx, -dz), 6 * dt);
 }
 
-// ── 메크: 코어로 전진하며 방패를 플레이어 쪽으로 → 주먹 / 미사일(레이저 예고) ──
+// ── 무인 전투차량: 플레이어에게 다가가 장갑판을 돌려 대고, 가까우면 들이받기 / 멀면 미사일(레이저 예고) ──
 function mech(world, e, dt) {
   const c = e.c, p = world.player;
   e.t += dt; e.cd -= dt; e.mcd = (e.mcd ?? 3) - dt; e.shieldOff = Math.max(0, (e.shieldOff || 0) - dt);
   e.attackT -= dt;
   if (e.state === 'spawn') e.state = 'advance';
   const dP = Math.hypot(p.x - e.x, p.z - e.z);
-  const dCore = Math.hypot(e.x, e.z) - CORE.radius;
-  // 방패(몸통)는 플레이어를 향해 돈다(돌아 들어가면 등을 칠 수 있다)
-  const faceTarget = dP < 32 ? angTo(e.x, e.z, p.x, p.z) : angTo(e.x, e.z, 0, 0);
-  e.yaw = turn(e.yaw, faceTarget, c.turnRate * dt);
+  // 장갑판(정면)은 플레이어를 향해 천천히 돈다(돌아 들어가면 뒤 엔진을 칠 수 있다)
+  e.yaw = turn(e.yaw, angTo(e.x, e.z, p.x, p.z), c.turnRate * dt);
+  const sees = world.geom.los(e.x, e.y + 2, e.z, p.x, p.y + 1.2, p.z);
   if (e.state === 'advance') {
-    if (dCore <= c.punchRange - 0.6) { e.state = 'punch'; e.cd = 0.8; }
-    else { const v = steer(world, e, world.fieldCore, c.speed); physics(world, e, v.x, v.z, dt, 8); }
+    if (dP <= c.punchRange) { e.state = 'punch'; e.cd = 0.8; }
+    else if (dP > c.holdDist || !sees) { const v = steer(world, e, world.fieldPlayer, c.speed); physics(world, e, v.x, v.z, dt, 8); }
+    else physics(world, e, 0, 0, dt, 8);
   } else if (e.state === 'punch') {
-    physics(world, e, 0, 0, dt, 20);
-    if (dCore > c.punchRange + 0.5) e.state = 'advance';
+    // 들이받기: 짧게 돌진
+    const fx = -Math.sin(e.yaw), fz = -Math.cos(e.yaw);
+    physics(world, e, fx * (e.cd < 0.3 ? 5 : 0), fz * (e.cd < 0.3 ? 5 : 0), dt, 20);
+    if (dP > c.punchRange + 1.5) e.state = 'advance';
     if (e.cd <= 0.6 && e.cd + dt > 0.6) world.events.push({ t: 'tele', kind: 'punch', id: e.id });
-    if (e.cd <= 0) { e.cd = c.punchEvery; e.attackT = 0.5; world.damageCore(c.punchDmg * e.dmgMul, e, 'punch'); world.events.push({ t: 'punch', id: e.id }); }
+    if (e.cd <= 0) {
+      e.cd = c.punchEvery; e.attackT = 0.5;
+      if (dP <= c.punchRange + 0.4 && Math.abs(p.y - e.y) < 1.5) world.hurtPlayer(c.punchDmg * e.dmgMul, e, 'ram');
+      world.events.push({ t: 'punch', id: e.id });
+    }
   }
   // 미사일
   if (e.missileWarn > 0) {
@@ -356,10 +397,8 @@ function boss(world, e, dt) {
     } else if (e.phase === 'missiles') {
       e.targets = [];
       for (let i = 0; i < c.missileCount; i++) {
-        const onCore = i >= c.missileCount - 2;
-        const r = onCore ? 3 : 1 + world.rng.next() * 4, a = world.rng.next() * Math.PI * 2;
-        const bx = onCore ? 0 : p.x, bz = onCore ? 0 : p.z;
-        const x = bx + Math.cos(a) * r, z = bz + Math.sin(a) * r;
+        const r = i === 0 ? 0.5 : 1 + world.rng.next() * 5, a = world.rng.next() * Math.PI * 2;
+        const x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
         e.targets.push({ x, z, y: Math.max(0, world.geom.heightAt(x, z)), t: c.missileWarn + i * 0.12 });
       }
       world.events.push({ t: 'tele', kind: 'mortar', id: e.id, targets: e.targets.map((q) => ({ ...q })) });
@@ -377,7 +416,6 @@ function boss(world, e, dt) {
         const y = world.geom.heightAt(x, z);
         e.gunY = y;
         if (Math.hypot(p.x - x, p.z - z) < c.gatlingWidth + 0.35 && Math.abs(p.y - y) < 2.5) world.hurtPlayer(c.gatlingDps * e.dmgMul * dt, e, 'gatling', false, true);
-        if (Math.hypot(x, z) < CORE.radius + c.gatlingWidth) world.damageCore(c.gatlingDps * e.dmgMul * dt, e, 'gatling');
         if (f >= 1) { e.phase = null; e.firing = false; e.cd = rage ? c.patternGapRage : c.patternGap; }
       }
     } else if (e.phase === 'missiles') {

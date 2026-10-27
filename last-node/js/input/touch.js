@@ -23,7 +23,6 @@ export class Touch {
       <button class="tbtn small" data-a="emp">EMP</button>
       <button class="tbtn small" data-a="cycle">무기</button>
       <button class="tbtn small" data-a="pause">II</button>
-      <button class="tbtn ctx hidden" data-a="interact">상점 열기</button>
       <button class="tbtn ctx hidden" data-a="ready">준비 완료</button>`;
     root.appendChild(this.el);
     this.stick = this.el.querySelector('.stick');
@@ -43,8 +42,8 @@ export class Touch {
     pos('crouch', 196, 70); pos('reload', 112, 22); pos('melee', 270, 106); pos('emp', 270, 40);
     pos('cycle', 16, 190);
     const p = this.btn.pause; p.style.left = `calc(${118 * s}px + env(safe-area-inset-left, 0px))`; p.style.top = `${8 * s}px`; p.style.transform = `scale(${s})`; p.style.transformOrigin = 'top left';
-    for (const a of ['interact', 'ready']) { const b = this.btn[a]; b.style.left = '50%'; b.style.transform = `translateX(-50%) scale(${s})`; }
-    this.btn.interact.style.bottom = `${150 * s}px`; this.btn.ready.style.bottom = `${96 * s}px`;
+    for (const a of ['ready']) { const b = this.btn[a]; b.style.left = '50%'; b.style.transform = `translateX(-50%) scale(${s})`; }
+    this.btn.ready.style.bottom = `${96 * s}px`;
     void W;
   }
 
@@ -111,9 +110,7 @@ export class Touch {
 
   // 컨텍스트 버튼(상점·준비)
   context(world) {
-    const shopOk = world.canShop() && !world.shopOpen;
-    this.btn.interact.classList.toggle('hidden', !(shopOk && world.nearTerminal()));
-    this.btn.ready.classList.toggle('hidden', !shopOk);
+    this.btn.ready.classList.toggle('hidden', !(world.state === 'prep' || world.state === 'intermission'));
     // 슬라이드는 숙이기 토글을 다시 누르면 풀린다 — 달리다 누르면 슬라이드
   }
 

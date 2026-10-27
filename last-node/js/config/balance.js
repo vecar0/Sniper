@@ -1,4 +1,4 @@
-// LAST NODE — 모든 게임 수치. 값마다 이유를 짧게 적는다. (기획서 design/plan.md 와 같은 숫자)
+// NORTHLIGHT — 모든 게임 수치. 값마다 이유를 짧게 적는다. (기획서 design/plan.md 와 같은 숫자)
 
 export const TICK = 1 / 60; // 고정 타임스텝(초)
 
@@ -37,32 +37,33 @@ export const PLAYER = {
   respawn: { x: 0, y: 0, z: 9 },
   empMax: 3,
   empStart: 1,
+  dashDamageMulSlide: 0.5, // 강화 '낮은 자세': 슬라이드 중 피해 배수
 };
 
 // 무기: dmg=1발(산탄은 펠릿 1개) 피해, rate=초당 발사, spread=도(°)
 export const WEAPONS = {
   pistol: {
-    name: 'K-9 스마트 권총', slot: 1, price: 0,
+    name: 'P9 권총', slot: 1,
     dmg: 28, pellets: 1, rate: 6.5, auto: false, mag: 14, reserve: Infinity,
     reload: 1.1, spreadHip: 1.1, spreadAds: 0.25, recoil: 1.3, range: 120,
     falloffStart: 25, falloffEnd: 50, falloffMin: 0.65,
     homing: 2.0,           // ADS 때 약점 쪽으로 최대 2° 휜다
   },
   shotgun: {
-    name: '브레이커 산탄총', slot: 2, price: 1000,
+    name: 'M12 산탄총', slot: 2,
     dmg: 11, pellets: 10, rate: 1.6, auto: true, mag: 8, reserve: 48,
     reload: 0.45, reloadStart: 0.3, perShell: true, spreadHip: 5.0, spreadAds: 3.6, recoil: 5.5, range: 40,
     falloffStart: 10, falloffEnd: 28, falloffMin: 0.35, knockback: 3.5,
   },
   rifle: {
-    name: 'VX-7 펄스 라이플', slot: 3, price: 1600,
+    name: 'AR-7 소총', slot: 3,
     dmg: 22, pellets: 1, rate: 11, auto: true, mag: 36, reserve: 216,
     reload: 1.6, spreadHip: 1.6, spreadAds: 0.35, recoil: 0.9, range: 150,
     falloffStart: 25, falloffEnd: 50, falloffMin: 0.65,
     sustainTime: 3.0, sustainBonus: 0.2, // 3초 연사하면 피해 +20%
   },
   rail: {
-    name: '랜스 레일건', slot: 4, price: 3200,
+    name: 'XM-1 레일건', slot: 4,
     dmg: 240, pellets: 1, rate: 0.8, auto: false, mag: 5, reserve: 25,
     reload: 2.2, spreadHip: 0.6, spreadAds: 0.0, recoil: 7, range: 220,
     charge: 0.35, pierce: 3, weakMul: 1.5,
@@ -70,65 +71,59 @@ export const WEAPONS = {
 };
 export const WEAPON_ORDER = ['pistol', 'shotgun', 'rifle', 'rail'];
 
-// 강화 3단계: 1=피해 +15%, 2=탄창 +30%, 3=재장전 −25%. 가격 = 무기 가격(권총은 600 기준) × 배수
-export const UPGRADE = { dmg: 0.15, mag: 0.3, reload: 0.25, priceMul: [0.5, 0.75, 1.0], pistolBase: 600 };
+// 무기 강화 3단계(카드): 1=피해 +15%, 2=탄창 +30%, 3=재장전 −25%
+export const UPGRADE = { dmg: 0.15, mag: 0.3, reload: 0.25 };
 
 export const WEAK_MUL = 2.0;
 
 export const EMP = {
   fuse: 1.6, throwSpeed: 15, upSpeed: 4, radius: 5, damage: 25, // 리퍼(50)를 죽이지 않고 기절만 → 근접 마무리 기회
-  stun: 2.5, shieldOff: 4, restitution: 0.35, price: 200,
+  stun: 2.5, shieldOff: 4, restitution: 0.35,
 };
 
-// 적. targets: 'player' | 'core'. hp는 웨이브 배수 적용 전 값
+// 적(북천 기지 방어 로봇). 내부 키는 이전 이름 그대로: reaper=하운드, enforcer=보병 로봇, leech=수리 로봇, drone=FPV 드론, mech=무인 전투차량, boss=틸트로터 건십.
+// hp는 웨이브 배수 적용 전 값, points=처치 점수
 export const ENEMIES = {
   reaper: {
-    name: '리퍼', hp: 50, speed: 6.2, radius: 0.32, height: 1.8, target: 'player', credits: 50,
+    name: '하운드', hp: 50, speed: 6.2, radius: 0.38, height: 1.0, target: 'player', points: 50,
     meleeDmg: 14, meleeRate: 0.8, leapRange: 3.0, leapWindup: 0.3, leapTime: 0.35, leapStagger: 0.6, hitRange: 1.5,
-    parts: [ // [오른쪽, 위, 앞, 반지름, 배수]
-      [0, 1.62, 0.05, 0.2, 'weak'], [0, 1.22, 0, 0.32, 1], [0, 0.85, 0, 0.28, 1], [0, 0.42, 0, 0.26, 1],
+    parts: [ // [오른쪽, 위, 앞, 반지름, 배수] — 4족: 앞쪽 센서 머리가 약점
+      [0, 0.74, 0.52, 0.17, 'weak'], [0, 0.62, 0.18, 0.3, 1], [0, 0.6, -0.24, 0.3, 1], [0, 0.3, 0, 0.26, 1],
     ],
   },
   enforcer: {
-    name: '집행관', hp: 120, speed: 3.4, radius: 0.36, height: 1.9, target: 'player', credits: 80,
+    name: '보병 로봇', hp: 120, speed: 3.4, radius: 0.36, height: 1.9, target: 'player', points: 80,
     burst: 3, burstGap: 0.11, dmg: 4, fireEvery: 2.3, aimTime: 0.4, accuracy: 0.3,
     rangeMin: 10, rangeMax: 26, repositionMin: 5, repositionMax: 8, tooClose: 5, bulletSpeed: 70,
     parts: [[0, 1.72, 0.04, 0.21, 'weak'], [0, 1.3, 0, 0.36, 1], [0, 0.9, 0, 0.32, 1], [0, 0.45, 0, 0.3, 1]],
   },
   leech: {
-    name: '리치', hp: 70, speed: 4.0, radius: 0.32, height: 1.7, target: 'core', credits: 90,
-    drain: 18, attachDist: 2.2, interrupt: 0.4,
-    parts: [[0, 1.4, 0.25, 0.2, 'weak'], [0, 1.1, 0.05, 0.32, 1], [0, 0.7, 0, 0.28, 1], [0, 0.32, 0, 0.24, 1]],
+    name: '수리 로봇', hp: 70, speed: 4.0, radius: 0.5, height: 1.2, target: 'ally', points: 90,
+    heal: 18, healRange: 10, keepDist: 14, interrupt: 0.4, // 다친 아군에게 초당 18 회복, 맞으면 0.4초 끊김
+    parts: [[0, 1.02, -0.1, 0.2, 'weak'], [0, 0.55, 0, 0.42, 1], [0, 0.5, 0.42, 0.3, 1], [0, 0.5, -0.42, 0.3, 1]],
   },
   drone: {
-    name: '스웜 드론', hp: 25, speed: 8.0, radius: 0.35, height: 0.5, target: 'mixed', credits: 30,
+    name: 'FPV 드론', hp: 25, speed: 8.0, radius: 0.35, height: 0.5, target: 'player', points: 30,
     flyMin: 2, flyMax: 5, triggerDist: 4, windup: 0.5, boomDmg: 18, boomRadius: 2, chain: 1.5,
     parts: [[0, 0, 0.1, 0.18, 'weak'], [0, 0, 0, 0.36, 1]],
   },
   mech: {
-    name: '브레이커 메크', hp: 600, speed: 2.2, radius: 1.0, height: 3.4, target: 'core', credits: 350,
-    punchDmg: 60, punchEvery: 2, punchRange: 3.6, missileDmg: 25, missileRadius: 3, missileEvery: 6,
-    missileRange: 25, missileWarn: 1, missileSpeed: 18, turnRate: 1.0, shieldMul: 0.3, backMul: 2.5,
-    parts: [
-      [0, 3.0, 0.35, 0.36, 'weak'], [0, 2.25, 0, 0.95, 1], [0.62, 1.0, 0, 0.45, 1], [-0.62, 1.0, 0, 0.45, 1],
-      [0, 2.35, -0.85, 0.42, 'back'],
+    name: '무인 전투차량', hp: 600, speed: 2.2, radius: 1.1, height: 2.4, target: 'player', points: 350,
+    punchDmg: 30, punchEvery: 2.5, punchRange: 3.2, missileDmg: 25, missileRadius: 3, missileEvery: 6, // punch = 들이받기
+    missileRange: 25, missileWarn: 1, missileSpeed: 18, turnRate: 1.0, shieldMul: 0.3, backMul: 2.5, holdDist: 9,
+    parts: [ // 정면 장갑판 ×0.3, 뒤 엔진 덮개 ×2.5
+      [0, 2.15, 0.15, 0.3, 'weak'], [0, 1.0, 0.1, 0.95, 1], [0.75, 0.55, 0, 0.5, 1], [-0.75, 0.55, 0, 0.5, 1],
+      [0, 1.15, -1.0, 0.45, 'back'],
     ],
   },
   boss: {
-    name: '무장 수송기 카론', hp: 4000, perAppear: 0.25, radius: 3, credits: 2500,
+    name: '틸트로터 건십', hp: 4000, perAppear: 0.25, radius: 3, points: 2500,
     orbitR: 17, altMin: 13, altMax: 17, orbitSpeed: 0.18, engineHp: 900, cockpitMul: 3,
     patternGap: 3, patternGapRage: 2, gatlingWarn: 1, gatlingTime: 2.5, gatlingDps: 30, gatlingWidth: 1.2,
     missileCount: 6, missileWarn: 1.2, missileDmg: 25, missileRadius: 3,
     drop: ['enforcer', 'enforcer', 'leech'], engineAltLoss: 4,
   },
 };
-
-export const CORE = {
-  hp: 1500, radius: 1.6, repairBetween: 150, shieldLevels: [300, 600, 900],
-  pulseEvery: 15, pulseRadius: 6, pulseStun: 1.5,
-};
-
-export const TURRET = { dmg: 9, rate: 6, range: 22, turn: 6 };
 
 export const WAVES = {
   count: (w) => Math.min(80, 10 + 4 * w),
@@ -137,35 +132,26 @@ export const WAVES = {
   hpMul: (w) => Math.min(2.2, 1 + 0.07 * (w - 1)),
   dmgMul: (w) => Math.min(2.2, 1 + 0.04 * (w - 1)),
   bossEvery: 5,
-  intermission: 20,
-  firstDelay: 8,
+  intermission: 5,        // 카드를 고른 뒤 다음 웨이브까지
+  firstDelay: 6,
   stairsEvery: [0.6, 1.0],
   elevatorFrom: 2, elevatorEvery: 12, elevatorGroup: [4, 6],
   dropshipFrom: 4, dropshipEvery: 18, dropshipGroup: 3, dropshipWarn: 1.5,
   droneFrom: 3, leechFrom: 2, mechFrom: 6,
   mix: { reaper: 40, enforcer: 25, leech: 12, drone: 15 },
-  leechSlots: (w) => 1 + Math.floor(w / 4),
+  medicMax: (w) => 1 + Math.floor(w / 4), // 동시에 있을 수 있는 수리 로봇
   mechMax: (w) => Math.floor(w / 3),
   mechChance: 0.06,
   swarm: [3, 5],
 };
 
-export const ECONOMY = {
+// 점수: 처치 점수 × 연속 처치 배수(2.5초 안 다음 처치마다 +0.1, 최대 2.0) · 기준 시간 보너스
+export const SCORE = {
   weakBonus: 0.5, meleeBonus: 0.3,
-  comboWindow: 2.5, combo2: 0.1, combo5: 0.25,
-  waveBonus: (w) => 200 + 50 * w,
-  perfectBonus: 300,
-};
-
-export const SHOP = {
-  armor: { price: 400, amount: 25 },
-  heal: { price: (w) => 250 + 20 * w },
-  emp: { price: 200 },
-  ammo: { price: 200 },
-  coreRepair: { price: 400, amount: 300 },
-  coreShield: { price: [800, 1400, 2200] },
-  turret: { price: [1200, 1800] },
-  corePulse: { price: 2000 },
+  comboWindow: 2.5, comboStep: 0.1, comboMax: 2.0,
+  par: (w) => 30 + 4 * w,   // 웨이브 기준 시간(초)
+  parPerSec: 20, parHeal: 15,
+  waveHeal: 25,             // 웨이브를 정리하면 기본 회복(상점 회복 대신)
 };
 
 export const DROPS = {
@@ -175,8 +161,6 @@ export const DROPS = {
 export const BATTERY = { damage: 70, radius: 4.5 };
 
 export const BROADCAST = {
-  waveStart: ['헬릭스 보안 통신: 자산 회수를 시작합니다.', '헬릭스: 무단 점유자를 제거하십시오.', '헬릭스: 노드 접근 권한을 회수합니다.', '헬릭스: 저항은 비용만 늘릴 뿐입니다.'],
-  boss: '헬릭스: 무장 수송기 카론 투입. 옥상을 정리하라.',
-  core50: '헬릭스: 노드 방화벽 50% 붕괴.',
-  core25: '헬릭스: 노드 장악 임박. 러너, 항복하십시오.',
+  waveStart: ['기지 방어 체계: 침입자 확인. 제거 절차를 시작합니다.', '기지 방어 체계: 예비 병력 가동.', '기지 방어 체계: 격리 구역 봉쇄. 표적을 추적합니다.', '기지 방어 체계: 손실 허용. 계속 진행합니다.'],
+  boss: '경고: 무인 틸트로터 건십 출격.',
 };

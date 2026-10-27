@@ -1,5 +1,26 @@
-// 메뉴 화면: 메인 · 설정 · 조작법 · 일시정지 · 상점 · 게임 오버
-// 디자인: 신서울 간판 거리. 메인의 세로 네온 간판 하나만 대담하게, 나머지는 상자 없이 조용한 한글 글줄.
+// 메뉴 화면: 메인 · 설정 · 조작법 · 일시정지 · 강화 카드 · 게임 오버
+// 디자인: 극지 기지의 작전 문서. 좁은 고딕 숫자·제목 + 조용한 한글 글줄, 상자는 카드에만.
+import { CARDS } from '../config/cards.js';
+import { WEAPONS } from '../config/balance.js';
+
+// 카드 아이콘(24×24 선 그림)
+const ICON = {
+  shotgun: '<path d="M2 11h15l3-2h2v4h-5l-2 3H9l-1 3H5l1-4H2z"/>',
+  rifle: '<path d="M2 10h12l2-2h6v3h-4l-2 2h-3l-1 5h-3l1-5H8l-1 3H4l1-3H2z"/>',
+  rail: '<path d="M2 10h20v4H2z"/><path d="M6 10v4M10 10v4M14 10v4M18 10v4"/>',
+  up: '<path d="M12 4l7 7h-4v9H9v-9H5z"/>',
+  heart: '<path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>',
+  shield: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>',
+  cross: '<path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/>',
+  dash: '<path d="M3 12h10M6 8h9M6 16h9"/><path d="M15 6l6 6-6 6"/>',
+  slide: '<path d="M3 18h18"/><path d="M5 14l5-2 4 2 5-1"/><circle cx="17" cy="8" r="2"/>',
+  target: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
+  emp: '<circle cx="12" cy="13" r="6"/><path d="M12 3v4M9 4h6"/><path d="M11 10l-2 3h3l-1 3 3-4h-3l1-2z"/>',
+  bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  skull: '<path d="M12 3a8 8 0 0 0-5 14v3h10v-3a8 8 0 0 0-5-14z"/><circle cx="9" cy="11" r="1.5"/><circle cx="15" cy="11" r="1.5"/>',
+};
+const KIND = { weapon: '무기', upgrade: '개량', perk: '능력', rare: '희귀' };
+const icon = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k] || ICON.up}</svg>`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export class Menus {
@@ -18,13 +39,13 @@ export class Menus {
 
   main() {
     const b = this.save.best;
-    const record = b.wave ? `최고 기록은 ${b.wave}웨이브, ${b.score.toLocaleString()}점입니다.` : '아직 기록이 없습니다.';
+    const record = b.wave ? `최고 기록 ${b.wave}웨이브 · ${b.score.toLocaleString()}점` : '아직 기록이 없습니다';
     this.root.innerHTML = `
       <div class="menu-main">
-        <div class="sign" aria-hidden="true"><span>라</span><span>스</span><span class="flicker">트</span><span class="gap"></span><span>노</span><span>드</span></div>
         <div class="col">
-          <h1 class="title">LAST NODE</h1>
-          <p class="lede">2089년 신서울, 아케론 타워 옥상 320미터.<br>헬릭스가 도시의 마지막 자유 노드를 가져가려 합니다.<br>코어와 당신, 둘 중 하나라도 쓰러지면 끝입니다.</p>
+          <p class="kicker">북천 기지 · 69°42′N · 영하 31도</p>
+          <h1 class="title">NORTHLIGHT</h1>
+          <p class="lede">연락이 끊긴 극지 연구 기지에서 무인 방어 체계가 폭주했습니다.<br>지킬 것은 없습니다. 빠르게 쓸어 담고, 강해지고, 살아남으세요.</p>
           <div class="actions">
             <button class="btn primary" data-a="start">작전 시작</button>
             <button class="btn quiet" data-a="howto">조작법과 규칙</button>
@@ -40,19 +61,19 @@ export class Menus {
 
   howto(back) {
     const rows = this.touch
-      ? [['왼쪽 화면 끌기', '이동'], ['오른쪽 화면 끌기', '둘러보기'], ['발사', '누른 채 끌면 조준까지'], ['조준', '정조준 켜고 끄기'], ['대시, 점프', '공중에서 한 번 더 점프'], ['앉기', '달리다 누르면 슬라이드'], ['근접', '기절한 적은 즉시 처치하고 체력 25 회복'], ['EMP', '주변 기계 적을 2.5초 기절'], ['상점 열기, 준비 완료', '웨이브 사이 단말 근처에서']]
-      : [['W A S D', '이동'], ['마우스', '둘러보기'], ['왼쪽 클릭', '사격'], ['오른쪽 클릭', '정조준'], ['Shift', '대시, 두 번까지 충전'], ['Space', '점프, 공중에서 한 번 더'], ['C', '앉기, 달리다 누르면 슬라이드'], ['V', '근접, 기절한 적은 즉시 처치하고 체력 25 회복'], ['G', 'EMP 수류탄, 떼면 던짐'], ['R', '재장전'], ['1 2 3 4, 휠, Q', '무기 바꾸기, Q는 이전 무기'], ['F', '상점 열기'], ['Enter', '정비 시간 건너뛰기'], ['Esc', '일시정지']];
+      ? [['왼쪽 화면 끌기', '이동'], ['오른쪽 화면 끌기', '둘러보기'], ['발사', '누른 채 끌면 조준까지'], ['조준', '정조준 켜고 끄기'], ['대시, 점프', '공중에서 한 번 더 점프'], ['앉기', '달리다 누르면 슬라이드'], ['근접', '기절한 적은 즉시 처치하고 체력 25 회복'], ['EMP', '주변 로봇을 2.5초 기절'], ['준비 완료', '카드를 고른 뒤 바로 다음 웨이브']]
+      : [['W A S D', '이동'], ['마우스', '둘러보기'], ['왼쪽 클릭', '사격'], ['오른쪽 클릭', '정조준'], ['Shift', '대시, 두 번까지 충전'], ['Space', '점프, 공중에서 한 번 더'], ['C', '앉기, 달리다 누르면 슬라이드'], ['V', '근접, 기절한 적은 즉시 처치하고 체력 25 회복'], ['G', 'EMP 수류탄, 떼면 던짐'], ['R', '재장전'], ['1 2 3 4, 휠, Q', '무기 바꾸기, Q는 이전 무기. 카드 화면에서는 1 2 3으로 고르기'], ['Enter', '다음 웨이브 바로 시작'], ['Esc', '일시정지']];
     this.root.innerHTML = `<div class="screen dim"><div class="sheet wide">
       <h2>조작법과 규칙</h2>
       <div class="two">
         <dl class="keys">${rows.map(([k, v]) => `<dt>${k.split(', ').map((x) => `<kbd>${esc(x)}</kbd>`).join(' ')}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
         <div class="rules">
-          <p><b>두 목숨을 지킵니다.</b> 당신의 체력이나 코어 내구도가 0이 되면 작전이 끝납니다.</p>
-          <p><b>체력은 저절로 차지 않습니다.</b> 적을 처치하면 떨어지는 파란 구슬을 주우세요. 숨어 있으면 회복할 수 없습니다.</p>
-          <p><b>리치를 먼저 잡으세요.</b> 머리 위에 빨간 마름모가 있는 해커는 당신을 무시하고 코어에 붙어 내구도를 빨아들입니다. 화면 밖에 있으면 가장자리에 화살표가 뜹니다.</p>
-          <p><b>메크는 뒤에서.</b> 정면 방패가 피해를 70% 막습니다. EMP로 방패를 끄거나 등의 주황색 냉각 코어를 쏘세요.</p>
-          <p><b>빨간 선과 원은 경고입니다.</b> 모든 공격은 빛과 소리로 먼저 알립니다. 보이면 대시로 피하세요.</p>
-          <p><b>웨이브 사이에 정비합니다.</b> 상점 단말에서 무기를 강화할지, 코어 실드와 포탑에 투자할지 고르세요.</p>
+          <p><b>빨리 잡을수록 강해집니다.</b> 2.5초 안에 다음 적을 처치하면 점수 배수가 0.1씩 올라 최대 2배가 됩니다. 기준 시간 안에 웨이브를 끝내면 보너스 점수와 체력을 받습니다.</p>
+          <p><b>체력은 저절로 차지 않습니다.</b> 처치할 때 떨어지는 구슬을 주우세요. 웨이브를 끝내도 조금 회복합니다.</p>
+          <p><b>웨이브마다 카드 한 장.</b> 새 무기, 무기 개량, 능력 중 하나를 고릅니다. 보스를 잡으면 희귀 카드가 섞입니다.</p>
+          <p><b>수리 로봇을 먼저.</b> 뒤에 숨어 다른 로봇을 고칩니다. 레이더의 속 빈 마름모, 화면 밖이면 가장자리 화살표로 보입니다.</p>
+          <p><b>전투차량은 옆이나 뒤에서.</b> 앞 장갑판이 피해를 70% 막습니다. EMP로 잠시 무력화하거나 뒤 엔진 덮개를 쏘세요.</p>
+          <p><b>빨간 레이저와 원은 경고입니다.</b> 모든 공격은 빛과 소리로 먼저 알립니다. 대시로 피하세요.</p>
         </div>
       </div>
       <div class="actions end"><button class="btn primary" data-a="back">돌아가기</button></div></div></div>`;
@@ -99,73 +120,37 @@ export class Menus {
     this.wire({ resume: () => this.emit('resume'), howto: () => this.howto('pause'), settings: () => this.settings('pause'), quit: () => this.emit('quit') });
   }
 
-  // 상점: 자판기처럼 줄 목록. 무기 · 장비 · 코어 방어 세 열(좁은 화면에서는 위아래로)
-  shop(world) {
-    this.current = 'shop';
-    this.root.innerHTML = `<div class="screen dim shop-screen"><div class="shop">
-      <div class="shop-head"><h2>정비 단말</h2><span class="shop-timer"></span><span class="shop-credits"></span></div>
-      <div class="shop-cols">
-        <section data-tab="weapon"><h3>무기</h3><div class="list"></div></section>
-        <section data-tab="gear"><h3>장비</h3><div class="list"></div></section>
-        <section data-tab="core"><h3>코어 방어</h3><div class="list"></div></section>
-      </div>
-      <div class="shop-foot"><span class="tip">${this.touch ? '항목을 눌러 구매합니다.' : '항목을 누르거나 번호 키로 구매합니다. F나 Esc로 닫습니다.'}</span>
-        <span class="actions"><button class="btn quiet" data-a="close">닫기</button><button class="btn primary" data-a="ready">바로 다음 웨이브</button></span></div></div></div>`;
-    this.wire({ close: () => this.emit('closeShop'), ready: () => this.emit('ready') });
-    this.renderShop(world);
-  }
-
-  renderShop(world) {
-    if (this.current !== 'shop') return;
-    const items = world.shopItems();
-    let k = 0;
-    const label = (i) => i.state === 'owned' ? '보유 중' : i.state === 'max' ? '최대' : i.state === 'locked' ? '무기 먼저' : `₵${i.price.toLocaleString()}`;
-    for (const sec of this.root.querySelectorAll('.shop-cols section')) {
-      const list = items.filter((i) => i.tab === sec.dataset.tab);
-      sec.querySelector('.list').innerHTML = list.map((i) => {
-        const n = ++k;
-        const can = i.state === 'ok' || i.state === 'poor';
-        return `<button class="card ${i.state}" data-id="${i.id}" ${can ? '' : 'disabled'}>
-          <span class="key">${n <= 9 ? n : ''}</span><span class="nm">${esc(i.name)}</span><span class="pr">${label(i)}</span><span class="ds">${esc(i.desc)}</span></button>`;
-      }).join('');
-    }
-    for (const c of this.root.querySelectorAll('.card')) c.addEventListener('click', () => this.buy(world, c.dataset.id, c));
-    this.updateShop(world);
-  }
-
-  buy(world, id, el) {
-    const r = world.buy(id);
-    if (r.ok) { this.audio.buy(); this.renderShop(world); const n = this.root.querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (n) n.classList.add('bought'); }
-    else {
-      this.audio.deny();
-      if (el && r.reason === 'poor') { el.classList.remove('nope'); void el.offsetWidth; el.classList.add('nope'); }
-    }
-  }
-  buyIndex(world, k) {
-    const c = this.root.querySelectorAll('.card')[k];
-    if (c && !c.disabled) this.buy(world, c.dataset.id, c);
-  }
-  updateShop(world) {
-    if (this.current !== 'shop') return;
-    const c = this.root.querySelector('.shop-credits'), t = this.root.querySelector('.shop-timer');
-    if (c) c.textContent = `₵${world.credits.toLocaleString()}`;
-    if (t) t.textContent = `다음 웨이브까지 ${Math.ceil(world.timer)}초`;
+  // 강화 카드 3장: 클릭·탭 또는 1 2 3 키
+  cards(world, onPick) {
+    this.current = 'cards';
+    const offer = world.offer.map((id) => world.cardInfo(id));
+    const pips = (c) => (c.max > 1 ? `<span class="pips">${Array.from({ length: c.max }, (_, i) => `<i class="${i < c.level ? 'on' : i === c.level ? 'next' : ''}"></i>`).join('')}</span>` : '');
+    this.root.innerHTML = `<div class="screen dim cards-screen"><div class="cards">
+      <div class="cards-head"><p class="kicker">${world.wave}웨이브 정리</p><h2>강화 하나를 고르세요</h2></div>
+      <div class="cards-row">${offer.map((c, i) => `
+        <button class="pick ${c.kind}" data-i="${i}">
+          <span class="top"><span class="kind">${KIND[c.kind]}</span><kbd>${i + 1}</kbd></span>
+          ${icon(c.icon)}
+          <span class="nm">${esc(c.name)}</span>
+          <span class="ds">${esc(c.desc)}</span>
+          ${pips(c)}
+        </button>`).join('')}</div>
+      <p class="tip">${this.touch ? '카드를 눌러 고릅니다.' : '카드를 누르거나 1 2 3 키로 고릅니다.'} 고르는 동안 시간이 멈춥니다.</p></div></div>`;
+    for (const b of this.root.querySelectorAll('.pick')) b.addEventListener('click', () => { this.audio.buy(); onPick(+b.dataset.i); });
+    this.root.querySelector('.pick')?.focus({ preventScroll: true });
   }
 
   gameOver(world, newBest) {
     const s = world.stats, acc = s.shots ? Math.round((s.hits / s.shots) * 100) : 0, weak = s.hits ? Math.round((s.weakHits / s.hits) * 100) : 0;
-    const core = world.overReason === 'core';
-    const reason = core ? '코어 함락' : '러너 사망';
-    const sub = core
-      ? '헬릭스가 오로라 코어를 가져갔습니다. 다음에는 빨간 마름모의 리치를 먼저 잡고, 웨이브 사이에 코어 실드나 포탑을 사 두세요.'
-      : '체력이 바닥났습니다. 처치할 때 떨어지는 파란 구슬로 회복하고, 빨간 경고가 보이면 대시로 피하세요.';
-    const rows = [['도달한 웨이브', world.wave], ['점수', world.score.toLocaleString()], ['처치', s.kills], ['명중률', `${acc}%`], ['약점 명중', `${weak}%`], ['코어가 받은 피해', Math.round(s.coreDamage).toLocaleString()]];
+    const names = s.cards.map((id) => { const c = CARDS.find((q) => q.id === id); return c.name || `${WEAPONS[c.weapon].name} 개량`; });
+    const rows = [['도달한 웨이브', world.wave], ['점수', world.score.toLocaleString()], ['처치', s.kills], ['최고 연속 처치', s.bestCombo], ['명중률', `${acc}%`], ['약점 명중', `${weak}%`]];
     this.root.innerHTML = `<div class="screen dim"><div class="sheet over">
-      <h2 class="reason">${reason}</h2>
+      <p class="kicker">작전 종료</p>
+      <h2 class="reason">요원 전투 불능</h2>
       ${newBest ? '<p class="newbest">새 최고 기록입니다.</p>' : ''}
-      <p class="sub">${sub}</p>
       <dl class="stats">${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>
-      <p class="best">최고 기록 ${this.save.best.wave}웨이브, ${this.save.best.score.toLocaleString()}점</p>
+      ${names.length ? `<p class="took"><span>고른 카드</span>${names.map((n) => esc(n)).join(' · ')}</p>` : ''}
+      <p class="best">최고 기록 ${this.save.best.wave}웨이브 · ${this.save.best.score.toLocaleString()}점</p>
       <div class="actions"><button class="btn primary" data-a="retry">다시 하기</button><button class="btn quiet" data-a="menu">처음 화면으로</button></div></div></div>`;
     this.current = 'over';
     this.wire({ retry: () => this.emit('retry'), menu: () => this.emit('quit') });

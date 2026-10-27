@@ -1,9 +1,10 @@
-// 게임 월드: 웨이브 · 경제 · 코어 · 포탑 · 투사체 · 드롭 · 상점 · 승패. Three.js 없음.
+// 게임 월드: 웨이브 · 강화 카드 · 점수(연속 처치·기준 시간) · 투사체 · 드롭 · 승패. Three.js 없음.
 import {
-  TICK, PLAYER, WEAPONS, WEAPON_ORDER, UPGRADE, WEAK_MUL, EMP, ENEMIES, CORE, TURRET, WAVES,
-  ECONOMY, SHOP, DROPS, BATTERY, BROADCAST,
+  TICK, PLAYER, WEAPONS, WEAPON_ORDER, UPGRADE, WEAK_MUL, EMP, ENEMIES, WAVES,
+  SCORE, DROPS, BATTERY, BROADCAST,
 } from '../config/balance.js';
-import { BOXES, SPAWNS, TURRET_SLOTS, TERMINALS, BATTERIES, ROOF } from '../config/map.js';
+import { CARDS, CARD_RULES, UPGRADE_STEP } from '../config/cards.js';
+import { BOXES, SPAWNS, BATTERIES, ROOF } from '../config/map.js';
 import { Geometry, raySphere } from './geom.js';
 import { Rng } from './rng.js';
 import { makePlayer, updatePlayer, forward, spreadDir } from './player.js';
@@ -16,10 +17,10 @@ export function emptyInput() {
   return {
     moveX: 0, moveZ: 0, fire: false, ads: false, crouch: false,
     jump: false, dash: false, melee: false, reload: false, slot: null, cycle: 0, lastWeapon: false,
-    throwEmp: false, interact: false, ready: false,
+    throwEmp: false, ready: false, pick: null,
   };
 }
-const EDGES = ['jump', 'dash', 'melee', 'reload', 'lastWeapon', 'throwEmp', 'interact', 'ready'];
+const EDGES = ['jump', 'dash', 'melee', 'reload', 'lastWeapon', 'throwEmp', 'ready'];
 
 export class World {
   constructor({ seed = 1, startWave = 0 } = {}) {
@@ -33,34 +34,24 @@ export class World {
     this.projectiles = [];
     this.grenades = [];
     this.pickups = [];
-    this.core = { hp: CORE.hp, max: CORE.hp, shield: 0, shieldLevel: 0, pulse: false, pulseT: CORE.pulseEvery, hurtT: 9, said50: false, said25: false };
-    this.turrets = TURRET_SLOTS.map((s) => ({ ...s, built: false, yaw: 0, pitch: 0, cd: 0, target: null, fireT: 0 }));
     this.batteries = BATTERIES.map((b) => ({ ...b, alive: true }));
     this.wave = startWave;
-    this.state = 'prep';                // prep → wave ⇄ intermission → over
+    this.state = 'prep';                // prep → wave → pick(카드) → intermission → wave … → over
     this.timer = WAVES.firstDelay;
-    this.credits = 0;
     this.score = 0;
-    this.combo = 0; this.comboT = 99;
+    this.combo = 0; this.comboT = 99; this.comboMul = 1;
     this.bossCount = 0;
-    this.shopOpen = false;
     this.overReason = null;
-    this.stats = { kills: 0, shots: 0, hits: 0, weakHits: 0, coreDamage: 0, wavesCleared: 0, meleeKills: 0, time: 0 };
+    this.stats = { kills: 0, shots: 0, hits: 0, weakHits: 0, wavesCleared: 0, meleeKills: 0, time: 0, bestCombo: 0, cards: [] };
     this.spawn = null;
-    this.waveCoreDamage = 0;
+    this.parT = 0;                      // 이번 웨이브 기준 시간 남은 초
+    this.offer = null;                  // 지금 보여 주는 카드 3장(id)
+    this.taken = {};                    // 카드 id → 고른 횟수
+    this.weaponOffered = false;
     this.noEnd = false;                 // 테스트: 승패 판정 끄기
     this.fieldPlayer = new Float32Array(this.geom.n * this.geom.n);
     this.fieldPlayerCell = -2;
     this.fieldPlayerT = 0;
-    // 코어 거리장: 코어 링 안쪽 둘레 칸
-    const tgts = [];
-    for (let k = 0; k < this.geom.n * this.geom.n; k++) {
-      if (!this.geom.clear[k]) continue;
-      const c = this.geom.cellCenter(k);
-      const d = Math.hypot(c.x, c.z);
-      if (d < CORE.radius + 1.9 && c.y < 0.3) tgts.push(k);
-    }
-    this.fieldCore = this.geom.field(tgts);
     this._parts = [];
     this.updatePlayerField(true);
   }
@@ -72,27 +63,25 @@ export class World {
     this.stats.time += dt;
     const inp = this.input;
 
-    if (inp.interact) this.toggleShop();
-    if (this.shopOpen) {
-      // 상점이 열려 있으면 이동·사격 무시
-      const keep = { ...inp };
-      Object.assign(inp, emptyInput());
-      updatePlayer(this, this.player, inp, dt);
-      Object.assign(inp, keep);
-    } else updatePlayer(this, this.player, inp, dt);
+    if (this.state === 'pick') {
+      // 카드 고르는 동안은 시간이 멈춘다(플레이어도 그대로)
+      if (inp.pick != null) this.pickCard(inp.pick);
+      this.clearEdges();
+      return;
+    }
+    updatePlayer(this, this.player, inp, dt);
 
     this.updatePlayerField(false, dt);
     this.updateWaves(dt, inp.ready);
     for (const e of this.enemies) if (e.alive) updateEnemy(this, e, dt);
     this.enemies = this.enemies.filter((e) => e.alive);
     this.resolveCrowd();
-    this.updateTurrets(dt);
     this.updateProjectiles(dt);
     this.updateGrenades(dt);
     this.updatePickups(dt);
-    this.updateCore(dt);
     this.comboT += dt;
-    this.core.hurtT += dt;
+    if (this.comboT > SCORE.comboWindow && this.combo) { this.combo = 0; this.comboMul = 1; }
+    if (this.state === 'wave') this.parT = Math.max(0, this.parT - dt);
     this.clearEdges();
   }
 
@@ -127,7 +116,7 @@ export class World {
 
   clearEdges() {
     for (const k of EDGES) this.input[k] = false;
-    this.input.slot = null; this.input.cycle = 0;
+    this.input.slot = null; this.input.cycle = 0; this.input.pick = null;
   }
 
   drainEvents() { const e = this.events; this.events = []; return e; }
@@ -215,35 +204,117 @@ export class World {
       boss, bossSpawned: false, mechs: mechTotal, mechTotal, mechNext: 1 / (mechTotal + 1),
     };
     this.state = 'wave';
-    this.shopOpen = false;
-    this.waveCoreDamage = 0;
-    this.core.shield = this.core.shieldLevel ? CORE.shieldLevels[this.core.shieldLevel - 1] : 0;
+    this.parT = SCORE.par(w);
     for (const b of this.batteries) b.alive = true;
     this.events.push({ t: 'waveStart', wave: w, boss, total });
     this.broadcast(boss ? BROADCAST.boss : BROADCAST.waveStart[(w - 1) % BROADCAST.waveStart.length]);
   }
 
   clearWave() {
-    const w = this.wave;
-    const bonus = ECONOMY.waveBonus(w);
-    const perfect = this.waveCoreDamage < 0.5;
-    const total = bonus + (perfect ? ECONOMY.perfectBonus : 0);
-    this.credits += total; this.score += total;
-    this.core.hp = Math.min(this.core.max, this.core.hp + CORE.repairBetween);
+    const w = this.wave, p = this.player;
+    const parLeft = Math.floor(this.parT);
+    const parBonus = parLeft * SCORE.parPerSec;
+    const heal = Math.min(SCORE.waveHeal + (parLeft > 0 ? SCORE.parHeal : 0), p.maxHp - p.hp);
+    this.score += parBonus;
+    p.hp += heal;
     this.stats.wavesCleared++;
+    this.offer = this.drawCards(this.isBossWave(w));
+    this.state = 'pick';
+    this.events.push({ t: 'waveClear', wave: w, parBonus, parLeft, heal, offer: this.offer.slice() });
+  }
+
+  // ── 강화 카드 ─────────────────────────────────────────
+  cardAvailable(c) {
+    const p = this.player, n = this.taken[c.id] || 0;
+    if (c.kind === 'weapon') return !p.owned[c.id.slice(4)] && this.wave + 1 >= (c.minWave || 0);
+    if (c.kind === 'upgrade') return p.owned[c.weapon] && p.levels[c.weapon] < 3;
+    return n < (c.max || 1);
+  }
+
+  drawCards(rare) {
+    const pool = CARDS.filter((c) => this.cardAvailable(c) && (c.kind !== 'rare' || rare));
+    const out = [];
+    const take = (c) => { out.push(c.id); pool.splice(pool.indexOf(c), 1); };
+    if (rare) { const r = pool.filter((c) => c.kind === 'rare'); if (r.length) take(r[this.rng.int(0, r.length - 1)]); }
+    const weapons = pool.filter((c) => c.kind === 'weapon');
+    // 무기 카드: W3 정리 전까지 최소 한 번은 보장, 그 뒤엔 다른 카드보다 조금 더 자주
+    if (weapons.length && (!this.weaponOffered && this.wave >= CARD_RULES.weaponBy - 1 || this.rng.chance(0.45))) take(weapons[this.rng.int(0, weapons.length - 1)]);
+    while (out.length < CARD_RULES.choices && pool.length) {
+      const rest = pool.filter((c) => c.kind !== 'rare');
+      if (!rest.length) break;
+      take(rest[this.rng.int(0, rest.length - 1)]);
+    }
+    if (out.some((id) => id.startsWith('get:'))) this.weaponOffered = true;
+    return out;
+  }
+
+  cardInfo(id) {
+    const c = CARDS.find((q) => q.id === id), p = this.player;
+    if (c.kind === 'upgrade') {
+      const lv = p.levels[c.weapon];
+      return { ...c, name: `${WEAPONS[c.weapon].name} 개량 ${lv + 1}단계`, desc: UPGRADE_STEP[lv], level: lv, max: 3 };
+    }
+    return { ...c, level: this.taken[id] || 0 };
+  }
+
+  pickCard(i) {
+    if (this.state !== 'pick' || !this.offer || !this.offer[i]) return false;
+    const id = this.offer[i];
+    this.applyCard(id);
+    this.taken[id] = (this.taken[id] || 0) + 1;
+    this.stats.cards.push(id);
+    this.offer = null;
     this.state = 'intermission';
     this.timer = WAVES.intermission;
-    this.events.push({ t: 'waveClear', wave: w, bonus, perfect, perfectBonus: perfect ? ECONOMY.perfectBonus : 0 });
+    this.events.push({ t: 'card', id });
+    return true;
+  }
+
+  applyCard(id) {
+    const p = this.player, R = CARD_RULES;
+    if (id.startsWith('get:')) {
+      const w = id.slice(4);
+      p.owned[w] = true;
+      p.ammo[w] = { mag: WEAPONS[w].mag, reserve: WEAPONS[w].reserve };
+      p.lastWeapon = p.weapon; p.weapon = w; p.switchT = 0.3; p.reloadT = -1;
+      this.events.push({ t: 'switch', w });
+      return;
+    }
+    if (id.startsWith('up:')) {
+      const w = id.slice(3);
+      p.levels[w]++;
+      if (p.levels[w] === 2) p.ammo[w].mag = Math.round(WEAPONS[w].mag * (1 + UPGRADE.mag));
+      return;
+    }
+    const k = p.perks;
+    switch (id) {
+      case 'maxhp': p.maxHp += 25; p.hp = Math.min(p.maxHp, p.hp + 25); break;
+      case 'armor': p.armor = Math.min(PLAYER.armorMax, p.armor + 25); break;
+      case 'vamp': k.vamp = (k.vamp || 0) + R.vampBonus; break;
+      case 'dash+': p.dashMax++; p.dashCharges++; break;
+      case 'dashcd': p.dashCdMul *= R.dashCdMul; break;
+      case 'slide': k.slide = true; break;
+      case 'weak': k.weak = (k.weak || 0) + R.weakBonus; break;
+      case 'emp': p.empMax++; p.emp = Math.min(p.empMax, p.emp + 1); break;
+      case 'shock': k.shock = true; break;
+      case 'dashstun': k.dashStun = true; break;
+      case 'berserk': k.berserk = true; break;
+    }
   }
 
   pickType() {
     const w = this.wave, m = WAVES.mix;
-    const opts = [['reaper', m.reaper], ['enforcer', m.enforcer]];
+    const opts = [['reaper', m.reaper], ['enforcer', Math.min(m.enforcer, 10 + 5 * (w - 1))]]; // 초반엔 사격형이 적게
     if (w >= WAVES.leechFrom) opts.push(['leech', m.leech]);
     if (w >= WAVES.droneFrom) opts.push(['drone', m.drone]);
     let sum = 0; for (const o of opts) sum += o[1];
     let r = this.rng.next() * sum;
-    for (const o of opts) { r -= o[1]; if (r <= 0) return o[0]; }
+    for (const o of opts) {
+      r -= o[1];
+      if (r > 0) continue;
+      if (o[0] === 'leech' && this.enemies.filter((e) => e.type === 'leech').length >= WAVES.medicMax(w)) return 'reaper';
+      return o[0];
+    }
     return 'reaper';
   }
 
@@ -266,7 +337,7 @@ export class World {
     const n = Math.min(s.left, this.rng.int(...WAVES.swarm));
     const a = this.rng.next() * Math.PI * 2;
     const cx = Math.cos(a) * (ROOF + 8), cz = Math.sin(a) * (ROOF + 8), cy = this.rng.range(7, 10);
-    const target = this.rng.chance(0.7) ? 'player' : 'core';
+    const target = 'player';
     for (let i = 0; i < n; i++) {
       this.spawnEnemy('drone', cx + this.rng.range(-1.5, 1.5), cy + this.rng.range(-1, 1), cz + this.rng.range(-1.5, 1.5), 'sky',
         { target, slot: i, alt: this.rng.range(ENEMIES.drone.flyMin, ENEMIES.drone.flyMax) });
@@ -314,6 +385,7 @@ export class World {
     const p = this.player;
     if (!p.alive || this.state === 'over') return;
     if (p.dashT > 0) dmg *= PLAYER.dashDamageMul;
+    else if (p.slideT > 0 && p.perks.slide) dmg *= PLAYER.dashDamageMulSlide;
     if (!ignoreArmor && p.armor > 0) {
       const a = Math.min(p.armor, dmg * PLAYER.armorAbsorb);
       p.armor -= a; dmg -= a;
@@ -327,31 +399,10 @@ export class World {
     if (p.hp <= 0) { p.hp = 0; p.alive = false; this.gameOver('player'); }
   }
 
-  damageCore(dmg, src, kind) {
-    if (this.state === 'over') return;
-    const c = this.core;
-    if (c.shield > 0) {
-      const s = Math.min(c.shield, dmg);
-      c.shield -= s; dmg -= s;
-      if (s > 0 && c.hurtT > 0.12) this.events.push({ t: 'shieldHit', kind, fx: src ? src.x : 0, fz: src ? src.z : 0 });
-    }
-    if (dmg <= 0) return;
-    dmg = Math.min(dmg, c.hp);
-    c.hp -= dmg;
-    this.waveCoreDamage += dmg;
-    this.stats.coreDamage += dmg;
-    if (c.hurtT > 0.25) this.events.push({ t: 'coreHurt', dmg, kind, fx: src ? src.x : 0, fz: src ? src.z : 0 });
-    c.hurtT = 0;
-    if (!c.said50 && c.hp < c.max * 0.5) { c.said50 = true; this.broadcast(BROADCAST.core50); }
-    if (!c.said25 && c.hp < c.max * 0.25) { c.said25 = true; this.broadcast(BROADCAST.core25); }
-    if (c.hp <= 0) { c.hp = 0; this.gameOver('core'); }
-  }
-
   gameOver(reason) {
     if (this.noEnd || this.state === 'over') return;
     this.state = 'over';
     this.overReason = reason;
-    this.shopOpen = false;
     this.events.push({ t: 'gameOver', reason });
   }
 
@@ -363,7 +414,9 @@ export class World {
     const c = e.c;
     let mul = 1;
     if (e.type === 'boss') return this.damageBoss(e, dmg, info);
-    if (info.kind === 'weak') mul = info.weakMul || WEAK_MUL;
+    const pk = this.player.perks;
+    if (info.kind === 'weak') mul = (info.weakMul || WEAK_MUL) + (pk.weak || 0);
+    if (pk.berserk && !info.emp && !info.chain && this.player.hp < this.player.maxHp * CARD_RULES.berserkHp) mul *= CARD_RULES.berserkMul;
     if (e.type === 'mech') {
       if (info.kind === 'back') mul = c.backMul;
       else if (!(e.shieldOff > 0) && info.dir && !info.emp) {
@@ -375,7 +428,7 @@ export class World {
     const d = dmg * mul;
     e.hp -= d;
     e.flash = 1;
-    if (e.type === 'leech' && e.state === 'attach') e.interrupt = c.interrupt;
+    if (e.type === 'leech') e.interrupt = c.interrupt;
     if (e.type !== 'mech' && !info.emp && e.type !== 'drone') e.stagger = Math.max(e.stagger, info.melee ? 0.3 : 0.1);
     if (info.knock && e.type !== 'mech') { e.vx += info.dir.x * info.knock; e.vz += info.dir.z * info.knock; }
     if (e.hp <= 0) this.killEnemy(e, info);
@@ -391,6 +444,7 @@ export class World {
       if (e.engines[i] <= 0) { e.engines[i] = 0; this.events.push({ t: 'engineDown', id: e.id, idx: i }); this.events.push({ t: 'explode', x: info.part.x, y: info.part.y, z: info.part.z, r: 3, kind: 'big' }); }
     }
     if (info.part && info.part.kind === 'cockpit' && e.engines[0] <= 0 && e.engines[1] <= 0) mul = c.cockpitMul;
+    if (this.player.perks.berserk && this.player.hp < this.player.maxHp * CARD_RULES.berserkHp) mul *= CARD_RULES.berserkMul;
     const d = dmg * mul;
     e.hp -= d; e.flash = 1;
     if (e.hp <= 0) this.killEnemy(e, info);
@@ -402,25 +456,26 @@ export class World {
     e.alive = false;
     e.hp = 0;
     const weak = info.kind === 'weak' || info.kind === 'back' || (info.part && info.part.kind === 'cockpit');
-    let cr = e.c.credits;
     let mul = 1;
-    if (weak) mul += ECONOMY.weakBonus;
-    if (info.melee) mul += ECONOMY.meleeBonus;
-    if (this.comboT <= ECONOMY.comboWindow) this.combo++; else this.combo = 1;
+    if (weak) mul += SCORE.weakBonus;
+    if (info.melee) mul += SCORE.meleeBonus;
+    if (this.comboT <= SCORE.comboWindow && this.combo > 0) this.combo++; else this.combo = 1;
     this.comboT = 0;
-    if (this.combo >= 5) mul += ECONOMY.combo5; else if (this.combo >= 2) mul += ECONOMY.combo2;
-    cr = Math.round(cr * mul);
-    if (!info.noCredit) { this.credits += cr; this.score += cr; }
+    this.comboMul = Math.min(SCORE.comboMax, 1 + SCORE.comboStep * (this.combo - 1));
+    this.stats.bestCombo = Math.max(this.stats.bestCombo, this.combo);
+    const cr = info.noCredit ? 0 : Math.round(e.c.points * mul * this.comboMul);
+    this.score += cr;
     this.stats.kills++;
     if (info.melee) this.stats.meleeKills++;
-    this.events.push({ t: 'kill', id: e.id, type: e.type, x: e.x, y: e.y, z: e.z, weak, melee: !!info.melee, credits: info.noCredit ? 0 : cr, combo: this.combo, yaw: e.yaw, dir: info.dir || null });
+    this.events.push({ t: 'kill', id: e.id, type: e.type, x: e.x, y: e.y, z: e.z, weak, melee: !!info.melee, points: cr, combo: this.combo, mul: this.comboMul, yaw: e.yaw, dir: info.dir || null });
     if (e.type === 'drone') this.droneExplode(e, false);
     if (e.type === 'boss') {
       this.boss = null;
       this.events.push({ t: 'explode', x: e.x, y: e.y, z: e.z, r: 8, kind: 'boss' });
       for (let i = 0; i < 6; i++) this.dropOrb(e.x + this.rng.range(-4, 4), 4, e.z + this.rng.range(-4, 4));
     }
-    if (e.type === 'mech') this.events.push({ t: 'explode', x: e.x, y: e.y + 2, z: e.z, r: 3.5, kind: 'big' });
+    if (e.type === 'mech') this.events.push({ t: 'explode', x: e.x, y: e.y + 1.2, z: e.z, r: 3.5, kind: 'big' });
+    if (this.player.perks.shock && !info.shock && e.type !== 'boss') this.shockBlast(e);
     // 드롭
     if (e.type !== 'boss') {
       const groundY = Math.max(0, this.geom.heightAt(e.x, e.z));
@@ -432,6 +487,16 @@ export class World {
 
   removeEnemy(e) { e.alive = false; }
 
+  // 강화 '과부하 회로': 처치 지점 주변 전기 폭발(연쇄는 한 번만)
+  shockBlast(src) {
+    const R = CARD_RULES;
+    this.events.push({ t: 'shock', x: src.x, y: src.y + 0.8, z: src.z, r: R.shockRadius });
+    for (const o of this.enemies) {
+      if (!o.alive || o === src || o.type === 'boss') continue;
+      if (Math.hypot(o.x - src.x, o.z - src.z) < R.shockRadius + o.r) this.damageEnemy(o, R.shockDmg, { kind: 'body', shock: true, dir: { x: o.x - src.x, z: o.z - src.z } });
+    }
+  }
+
   dropOrb(x, y, z, heal = DROPS.orbHeal) {
     const a = this.rng.next() * Math.PI * 2, s = this.rng.range(1, 3);
     this.pickups.push({ kind: 'orb', x, y, z, vx: Math.cos(a) * s, vy: this.rng.range(3, 5), vz: Math.sin(a) * s, life: DROPS.orbLife, heal, id: this.rng.next() });
@@ -439,14 +504,12 @@ export class World {
 
   droneExplode(e, contact) {
     const c = ENEMIES.drone;
-    if (e.alive) { e.alive = false; this.events.push({ t: 'kill', id: e.id, type: 'drone', x: e.x, y: e.y, z: e.z, weak: false, credits: 0, self: true }); }
+    if (e.alive) { e.alive = false; this.events.push({ t: 'kill', id: e.id, type: 'drone', x: e.x, y: e.y, z: e.z, weak: false, points: 0, self: true }); }
     this.events.push({ t: 'explode', x: e.x, y: e.y, z: e.z, r: c.boomRadius, kind: 'drone' });
     if (contact) {
       const p = this.player;
       const d = Math.hypot(p.x - e.x, p.y + 1 - e.y, p.z - e.z);
       if (d < c.boomRadius) this.hurtPlayer(c.boomDmg * e.dmgMul, e, 'drone');
-      const dc = Math.hypot(e.x, e.z) - CORE.radius;
-      if (dc < c.boomRadius && e.y < 7) this.damageCore(c.boomDmg * e.dmgMul, e, 'drone');
     }
     // 연쇄
     for (const o of this.enemies) {
@@ -575,7 +638,7 @@ export class World {
     const dir = { x: fx, z: fz };
     if (stunned) {
       // 기절한 적 근접 = 즉시 처치 + 회복
-      p.hp = Math.min(PLAYER.hp, p.hp + PLAYER.meleeHeal);
+      p.hp = Math.min(p.maxHp, p.hp + PLAYER.meleeHeal);
       this.events.push({ t: 'melee', hit: true, finisher: true, id: best.id, x: best.x, y: best.y + 1, z: best.z });
       this.damageEnemy(best, 99999, { melee: true, dir, kind: 'body' });
     } else {
@@ -606,7 +669,7 @@ export class World {
 
   mechMissile(e) {
     const c = e.c;
-    const ox = e.x + Math.cos(e.yaw) * 0.9, oy = e.y + 3.3, oz = e.z - Math.sin(e.yaw) * 0.9;
+    const ox = e.x, oy = e.y + 2.3, oz = e.z;
     const dx = e.aimX - ox, dy = e.aimY - oy, dz = e.aimZ - oz, l = Math.hypot(dx, dy, dz) || 1;
     this.projectiles.push({ kind: 'missile', x: ox, y: oy, z: oz, vx: dx / l * c.missileSpeed, vy: dy / l * c.missileSpeed, vz: dz / l * c.missileSpeed, dmg: c.missileDmg * e.dmgMul, splash: c.missileRadius, life: 4, src: e, id: this.rng.next() });
     this.events.push({ t: 'missile', id: e.id, x: ox, y: oy, z: oz });
@@ -621,8 +684,6 @@ export class World {
     const p = this.player;
     const d = Math.hypot(p.x - x, p.y + 0.9 - y, p.z - z);
     if (d < r) this.hurtPlayer(dmg * (1 - 0.5 * d / r), { x, z }, kind);
-    const dc = Math.hypot(x, z) - CORE.radius;
-    if (dc < r && y < 7) this.damageCore(dmg * (1 - 0.5 * Math.max(0, dc) / r), src, kind);
     this.events.push({ t: 'explode', x, y, z, r, kind });
   }
 
@@ -645,7 +706,6 @@ export class World {
         const hx = b.x + dx * wall.t, hy = b.y + dy * wall.t, hz = b.z + dz * wall.t;
         if (b.splash) this.splash(hx, hy, hz, b.splash, b.dmg, b.src, b.kind);
         else {
-          if (wall.box && wall.box.kind === 'core') this.damageCore(b.dmg, b.src, 'bullet');
           this.events.push({ t: 'impact', x: hx, y: hy, z: hz, nx: wall.nx, ny: wall.ny, nz: wall.nz, kind: 'enemy' });
         }
         b.life = -1; continue;
@@ -695,7 +755,7 @@ export class World {
       if (e.type !== 'boss') {
         e.stun = Math.max(e.stun, EMP.stun);
         if (e.type === 'mech') e.shieldOff = EMP.shieldOff;
-        if (e.type === 'reaper' || e.type === 'enforcer' || e.type === 'leech') e.state = e.type === 'leech' ? 'move' : 'chase';
+        if (e.type === 'reaper' || e.type === 'leech') e.state = e.type === 'leech' ? 'move' : 'chase';
         if (e.type === 'enforcer') e.state = 'seek';
         if (e.type === 'drone') { e.state = 'fly'; e.vy = 0; }
       }
@@ -721,65 +781,13 @@ export class World {
     if (this._chainBattery) { const o = this._chainBattery; this._chainBattery = null; this.explodeBattery(o); }
   }
 
-  // ── 코어 · 포탑 · 드롭 ───────────────────────────────
-  updateCore(dt) {
-    const c = this.core;
-    if (c.pulse && this.state === 'wave') {
-      c.pulseT -= dt;
-      if (c.pulseT <= 0) {
-        c.pulseT = CORE.pulseEvery;
-        this.events.push({ t: 'corePulse' });
-        for (const e of this.enemies) {
-          if (e.alive && e.type !== 'boss' && Math.hypot(e.x, e.z) < CORE.pulseRadius + e.r) {
-            e.stun = Math.max(e.stun, CORE.pulseStun);
-            if (e.type === 'leech' && e.state === 'attach') e.state = 'move';
-          }
-        }
-      }
-    }
-  }
-
-  updateTurrets(dt) {
-    for (const t of this.turrets) {
-      if (!t.built) continue;
-      t.cd -= dt; t.fireT -= dt;
-      const mx = t.x, my = t.y + 1.0, mz = t.z;
-      // 목표: 리치 > 드론 > 가까운 적
-      let best = null, bs = Infinity;
-      for (const e of this.enemies) {
-        if (!e.alive || e.type === 'boss') continue;
-        const ty = e.type === 'drone' ? e.y : e.y + 1.1;
-        const d = Math.hypot(e.x - mx, ty - my, e.z - mz);
-        if (d > TURRET.range) continue;
-        const pri = e.type === 'leech' ? 0 : e.type === 'drone' ? 100 : 200;
-        const s = pri + d;
-        if (s < bs && this.geom.los(mx, my, mz, e.x, ty, e.z)) { bs = s; best = e; }
-      }
-      t.target = best;
-      if (!best) continue;
-      const ty = best.type === 'drone' ? best.y : best.y + 1.1;
-      const want = Math.atan2(-(best.x - mx), -(best.z - mz));
-      let d = want - t.yaw;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      t.yaw += Math.max(-TURRET.turn * dt, Math.min(TURRET.turn * dt, d));
-      t.pitch = Math.atan2(ty - my, Math.hypot(best.x - mx, best.z - mz));
-      if (Math.abs(d) < 0.15 && t.cd <= 0) {
-        t.cd = 1 / TURRET.rate; t.fireT = 0.06;
-        const parts = enemyParts(best, this._parts);
-        const q = parts[Math.min(1, parts.length - 1)];
-        this.events.push({ t: 'turretFire', x: mx, y: my, z: mz, tx: q.x, ty: q.y, tz: q.z });
-        this.damageEnemy(best, TURRET.dmg, { kind: 'body', dir: { x: best.x - mx, z: best.z - mz } });
-      }
-    }
-  }
-
+  // ── 드롭 ──────────────────────────────────────────────
   updatePickups(dt) {
     const p = this.player;
     for (const k of this.pickups) {
       k.life -= dt;
       const dx = p.x - k.x, dy = p.y + 1 - k.y, dz = p.z - k.z, d = Math.hypot(dx, dy, dz);
-      const want = k.kind === 'ammo' || p.hp < PLAYER.hp;
+      const want = k.kind === 'ammo' || p.hp < p.maxHp;
       if (p.alive && want && d < DROPS.magnet) {
         const s = 14 * dt / (d || 1);
         k.x += dx * Math.min(1, s); k.y += dy * Math.min(1, s); k.z += dz * Math.min(1, s);
@@ -800,7 +808,7 @@ export class World {
 
   collect(k) {
     const p = this.player;
-    if (k.kind === 'orb') { p.hp = Math.min(PLAYER.hp, p.hp + k.heal); }
+    if (k.kind === 'orb') { p.hp = Math.min(p.maxHp, p.hp + k.heal * (1 + (p.perks.vamp || 0))); }
     else {
       let id = p.weapon;
       if (id === 'pistol') id = WEAPON_ORDER.filter((w) => p.owned[w] && w !== 'pistol').sort((a, b) => this.ammoFrac(a) - this.ammoFrac(b))[0] || 'pistol';
@@ -810,73 +818,6 @@ export class World {
   }
 
   ammoFrac(id) { const w = WEAPONS[id]; return this.player.ammo[id].reserve / w.reserve; }
-
-  // ── 상점 ──────────────────────────────────────────────
-  canShop() { return this.state === 'prep' || this.state === 'intermission'; }
-
-  nearTerminal() {
-    const p = this.player;
-    return TERMINALS.some((t) => Math.hypot(p.x - t.x, p.z - t.z) < 2.6 && Math.abs(p.y - t.y) < 1.5);
-  }
-
-  toggleShop() {
-    if (this.shopOpen) { this.shopOpen = false; this.events.push({ t: 'shop', open: false }); return; }
-    if (this.canShop() && this.nearTerminal()) { this.shopOpen = true; this.events.push({ t: 'shop', open: true }); }
-  }
-
-  shopItems() {
-    const p = this.player, c = this.core, w = Math.max(1, this.wave), cr = this.credits;
-    const items = [];
-    const st = (price, extra = {}) => ({ price, state: price == null ? 'max' : cr >= price ? 'ok' : 'poor', ...extra });
-    for (const id of ['shotgun', 'rifle', 'rail']) {
-      const W = WEAPONS[id];
-      items.push({ id, tab: 'weapon', name: W.name, desc: weaponDesc(id), ...(p.owned[id] ? { price: null, state: 'owned' } : st(W.price)) });
-    }
-    for (const id of WEAPON_ORDER) {
-      const lv = p.levels[id], base = id === 'pistol' ? UPGRADE.pistolBase : WEAPONS[id].price;
-      const price = lv >= 3 ? null : Math.round(base * UPGRADE.priceMul[lv]);
-      const next = ['피해 +15%', '탄창 +30%', '재장전 −25%'][lv] || '최대';
-      items.push({ id: 'up:' + id, tab: 'weapon', name: `${WEAPONS[id].name} 강화 ${lv}/3`, desc: next, level: lv, ...(!p.owned[id] ? { price, state: 'locked' } : st(price)) });
-    }
-    items.push({ id: 'armor', tab: 'gear', name: '방어구 +25', desc: `피해의 60%를 대신 받음 (${Math.round(p.armor)}/50)`, ...(p.armor >= PLAYER.armorMax ? { price: null, state: 'max' } : st(SHOP.armor.price)) });
-    items.push({ id: 'heal', tab: 'gear', name: '체력 완전 회복', desc: `${Math.ceil(p.hp)}/100`, ...(p.hp >= PLAYER.hp ? { price: null, state: 'max' } : st(SHOP.heal.price(w))) });
-    items.push({ id: 'emp', tab: 'gear', name: 'EMP 수류탄 +1', desc: `기계 적 2.5초 기절 (${p.emp}/3)`, ...(p.emp >= PLAYER.empMax ? { price: null, state: 'max' } : st(SHOP.emp.price)) });
-    items.push({ id: 'ammo', tab: 'gear', name: '탄약 보충', desc: '모든 무기 예비탄 가득', ...st(SHOP.ammo.price) });
-    items.push({ id: 'coreRepair', tab: 'core', name: '코어 수리 +300', desc: `${Math.ceil(c.hp)}/${c.max}`, ...(c.hp >= c.max ? { price: null, state: 'max' } : st(SHOP.coreRepair.price)) });
-    const sl = c.shieldLevel;
-    items.push({ id: 'coreShield', tab: 'core', name: `코어 실드 ${sl}/3`, desc: sl < 3 ? `웨이브마다 실드 ${CORE.shieldLevels[sl]}` : '최대', level: sl, ...(sl >= 3 ? { price: null, state: 'max' } : st(SHOP.coreShield.price[sl])) });
-    const nt = this.turrets.filter((t) => t.built).length;
-    items.push({ id: 'turret', tab: 'core', name: `자동 포탑 ${nt}/2`, desc: '리치·드론 우선 사격', level: nt, ...(nt >= 2 ? { price: null, state: 'max' } : st(SHOP.turret.price[nt])) });
-    items.push({ id: 'corePulse', tab: 'core', name: '코어 EMP 펄스', desc: '15초마다 코어 주변 적 기절', ...(c.pulse ? { price: null, state: 'owned' } : st(SHOP.corePulse.price)) });
-    return items;
-  }
-
-  buy(id) {
-    if (!this.canShop()) return { ok: false, reason: 'closed' };
-    const item = this.shopItems().find((i) => i.id === id);
-    if (!item) return { ok: false, reason: 'unknown' };
-    if (item.state !== 'ok') return { ok: false, reason: item.state };
-    this.credits -= item.price;
-    const p = this.player, c = this.core;
-    if (WEAPONS[id]) {
-      p.owned[id] = true;
-      p.ammo[id] = { mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve };
-      p.lastWeapon = p.weapon; p.weapon = id; p.switchT = 0.3; p.reloadT = -1;
-    } else if (id.startsWith('up:')) {
-      const w = id.slice(3);
-      p.levels[w]++;
-      if (p.levels[w] === 2) p.ammo[w].mag = Math.round(WEAPONS[w].mag * (1 + UPGRADE.mag));
-    } else if (id === 'armor') p.armor = Math.min(PLAYER.armorMax, p.armor + SHOP.armor.amount);
-    else if (id === 'heal') p.hp = PLAYER.hp;
-    else if (id === 'emp') p.emp++;
-    else if (id === 'ammo') { for (const w of WEAPON_ORDER) if (p.owned[w] && w !== 'pistol') p.ammo[w].reserve = WEAPONS[w].reserve; }
-    else if (id === 'coreRepair') c.hp = Math.min(c.max, c.hp + SHOP.coreRepair.amount);
-    else if (id === 'coreShield') { c.shieldLevel++; c.shield = CORE.shieldLevels[c.shieldLevel - 1]; }
-    else if (id === 'turret') { const t = this.turrets.find((q) => !q.built); t.built = true; this.events.push({ t: 'turretBuilt', x: t.x, y: t.y, z: t.z }); }
-    else if (id === 'corePulse') c.pulse = true;
-    this.events.push({ t: 'buy', id, price: item.price });
-    return { ok: true };
-  }
 
   // 집행관 엄폐점: 플레이어와 10~26m, 시선 있음, 다른 집행관과 4m 이상, 가까울수록 좋음
   pickCover(e) {
@@ -905,14 +846,6 @@ export class World {
     }
     return best;
   }
-}
-
-function weaponDesc(id) {
-  return {
-    shotgun: '근거리 압도 · 10펠릿 · 맞은 적이 밀려남',
-    rifle: '만능 연사 · 3초 연사하면 피해 +20%',
-    rail: '0.35초 충전 · 적 3기 관통 · 한 방 240',
-  }[id];
 }
 
 // 엄폐점: 높이 1m 이상 장애물 옆의 통과 가능 칸
