@@ -176,7 +176,7 @@ test('대시: 2회 충전, 1.4초마다 1회 회복, 대시 중 피해 50%', () 
   const hp = p.hp; w.hurtPlayer(20, null, 'test', true); assert.equal(hp - p.hp, 10);
 });
 
-test('더블 점프로 상자 계단을 밟아 헬리패드(4m)에 오른다', () => {
+test('더블 점프로 블록 계단을 밟아 발전기 플랫폼(4m)에 오른다', () => {
   const w = sandbox(13);
   put(w, 21.25, 6.5);
   const p = w.player; p.yaw = 0; p.pitch = 0;
@@ -190,7 +190,7 @@ test('더블 점프로 상자 계단을 밟아 헬리패드(4m)에 오른다', (
   assert.ok(top >= 3.99, `최고 높이 ${top.toFixed(2)}`);
 });
 
-test('헬리패드 위에서 동쪽으로 달려도 난간에 막혀 떨어지지 않는다', () => {
+test('발전기 플랫폼 위에서 동쪽으로 달려도 난간에 막혀 떨어지지 않는다', () => {
   const w = sandbox(30);
   put(w, 20, -5, 4);
   const p = w.player; p.yaw = -Math.PI / 2; // +x(동쪽)
@@ -198,14 +198,15 @@ test('헬리패드 위에서 동쪽으로 달려도 난간에 막혀 떨어지�
   assert.ok(p.y > 3.9 && p.x < 25, `x=${p.x.toFixed(2)} y=${p.y.toFixed(2)}`);
 });
 
-test('난간 틈으로 떨어지면 다시 나타나고 체력 −30', () => {
-  const w = sandbox(14);
-  put(w, 6.5, 26);
-  const p = w.player; p.yaw = Math.PI; // +z(남쪽) = 틈
-  const ev = events(w, 4, (ww) => { ww.input.moveZ = 1; });
-  assert.ok(ev.some((e) => e.t === 'fall'), '추락 이벤트 없음');
-  assert.equal(p.hp, 100 - PLAYER.fallDamage);
-  assert.ok(p.y >= -0.01 && Math.abs(p.z - PLAYER.respawn.z) < 5);
+test('둘레 옹벽: 대시·더블 점프로 달려도 광장 밖으로 나가지 못한다', () => {
+  for (const [x, z, yaw] of [[6.5, 24, Math.PI], [0, -20, 0], [24, 8, -Math.PI / 2], [-24, 22, Math.PI / 2]]) {
+    const w = sandbox(14);
+    put(w, x, z);
+    const p = w.player; p.yaw = yaw; p.pitch = 0;
+    let t0 = -1;
+    run(w, 4, (ww, t) => { ww.input.moveZ = 1; if (p.grounded && t - t0 > 0.3) { ww.input.jump = true; ww.input.dash = true; t0 = t; } else if (!p.grounded && p.airJumps > 0 && p.vy < 0) ww.input.jump = true; });
+    assert.ok(Math.abs(p.x) < 27.6 && Math.abs(p.z) < 27.6 && p.y > -0.5, `밖으로 나감 ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)}`);
+  }
 });
 
 // ── 경제 ────────────────────────────────────────────────
