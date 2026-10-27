@@ -136,7 +136,7 @@ export class Renderer {
     const near = (x, z, r) => p ? Math.max(0, 1 - Math.hypot(p.x - x, p.z - z) / r) : 0;
     switch (ev.t) {
       case 'shot': {
-        this.vm.onShot(ev.w);
+        this.vm.onShot(ev.w, w ? w.player.ammo[ev.w].mag : 1);
         const muzzle = this.vm.muzzleWorld(this.camera);
         const W = WEAPONS[ev.w];
         const energy = ev.w === 'rifle' || ev.w === 'rail';
@@ -212,7 +212,9 @@ export class Renderer {
       case 'dash': this.fovKick = 9; this.dash = 1; break;
       case 'jump': if (ev.double && p) fx.energyBurst({ x: p.x, y: p.y + 0.1, z: p.z }, 14, [0.3, 1.8, 2.8], 2.5, 0.05, 0.35); break;
       case 'land': this.vm.onLand(ev.speed); this.camDip = Math.min(0.18, ev.speed * 0.012); break;
-      case 'reloadStart': this.vm.onReload(ev.w, ev.time); break;
+      case 'reloadStart': this.vm.onReload(ev.w, ev.time, w ? w.player.ammo[ev.w].mag === 0 : false); break;
+      case 'shell': this.vm.onShell(); break;
+      case 'reloadEnd': this.vm.onReloadEnd(ev.w); break;
       case 'switch': this.vm.onSwitch(ev.w); break;
       case 'throw': this.vm.onThrow(); break;
       case 'bounce': fx.sparkBurst(ev, 2, null, [0.5, 1.6, 3], 2, 0.03, 0.15); break;

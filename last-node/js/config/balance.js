@@ -132,7 +132,7 @@ export const WAVES = {
   hpMul: (w) => Math.min(2.2, 1 + 0.07 * (w - 1)),
   dmgMul: (w) => Math.min(2.2, 1 + 0.04 * (w - 1)),
   bossEvery: 5,
-  intermission: 5,        // 카드를 고른 뒤 다음 웨이브까지
+  intermission: 3,        // 보급 화면을 닫은 뒤 다음 웨이브까지
   firstDelay: 6,
   stairsEvery: [0.6, 1.0],
   elevatorFrom: 2, elevatorEvery: 12, elevatorGroup: [4, 6],
@@ -152,6 +152,16 @@ export const SCORE = {
   par: (w) => 30 + 4 * w,   // 웨이브 기준 시간(초)
   parPerSec: 20, parHeal: 15,
   waveHeal: 25,             // 웨이브를 정리하면 기본 회복(상점 회복 대신)
+};
+
+// 보급(상점): 웨이브 정리 화면에서 크레딧으로 산다. 크레딧 = 처치 점수(연속 배수 포함) + 기준 시간 보너스.
+// 카드는 운(무작위 3장), 보급은 확실히 필요한 것 — 회복 값은 웨이브마다 올라 '무기냐 회복이냐'를 고민하게 한다.
+export const SUPPLY = {
+  heal: { price: (w) => 200 + 30 * w, amount: 50 },
+  armor: { price: 350, amount: 25 },
+  ammo: { price: 150 },
+  emp: { price: 220 },
+  weapons: { shotgun: 900, rifle: 1400, rail: 2800 },
 };
 
 export const DROPS = {

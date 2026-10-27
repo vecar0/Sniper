@@ -97,8 +97,14 @@ class App {
   key(e) {
     // 카드 고르는 중(포인터 잠금 없음): 1 2 3
     if (this.state === 'play' && this.world.state === 'pick') {
-      const m = /^(?:Digit|Numpad)([1-3])$/.exec(e.code);
-      if (m) { this.pickCard(parseInt(m[1], 10) - 1); return true; }
+      const m = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n >= 1 && n <= 3) this.pickCard(n - 1);
+        else this.menus.buyIndex(this.world, (n + 6) % 10); // 4→0 … 9→5, 0→6
+        return true;
+      }
+      if (e.code === 'Enter' || e.code === 'NumpadEnter') { this.finishPick(); return true; }
       return true;
     }
     if (this.state === 'pause' && e.code === 'Escape') { this.resume(); return true; }
@@ -159,10 +165,18 @@ class App {
     this.input.reset();
     this.input.unlock();
     if (this.touch) this.touch.show(false);
-    this.menus.cards(this.world, (i) => this.pickCard(i));
+    this.cardHandlers = { pick: (i) => this.pickCard(i), go: () => this.finishPick(), bought: () => this.drainEvents() };
+    this.menus.cards(this.world, this.cardHandlers);
   }
   pickCard(i) {
     if (!this.world.pickCard(i)) return;
+    this.audio.buy();
+    this.drainEvents();
+    this.menus.cards(this.world, this.cardHandlers);     // 같은 화면을 '고른 상태'로 다시 그림
+    this.menus.root.querySelector('[data-a=go]')?.focus({ preventScroll: true });
+  }
+  finishPick() {
+    if (!this.world.finishPick()) return;
     this.drainEvents();
     this.menus.clear();
     if (this.touch) this.touch.show(true);
@@ -258,7 +272,7 @@ class App {
         case 'broadcast': H.broadcast(ev.text); break;
         case 'waveStart': A.waveStart(ev.boss); H.banner(`${ev.wave}웨이브`, ev.boss ? '무인 틸트로터 건십이 접근합니다' : `로봇 ${ev.total}기`, ev.boss); break;
         case 'waveClear': A.waveClear(); this.openCards(); break;
-        case 'card': H.banner('강화 완료', '곧 다음 웨이브가 시작됩니다'); break;
+        case 'pickDone': H.banner('작전 재개', '곧 다음 웨이브가 시작됩니다'); break;
         case 'engineDown': H.banner('로터 파괴', w.boss && w.boss.engines.every((x) => x <= 0) ? '동체가 드러났습니다. 피해 3배' : '로터가 하나 남았습니다'); break;
         case 'gameOver': this.gameOver(); break;
       }

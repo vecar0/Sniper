@@ -467,8 +467,12 @@ export class EnemyViews {
         m.userData.uStun.value = e.stun > 0 ? 1 : 0;
         m.userData.uTime.value = this.time;
       }
+      // 피격 반동: 새로 맞은 순간(번쩍임이 다시 1이 됨) 짧게 움찔
+      if (e.flash > (v.lastFlash || 0) + 0.3) v.hitK = 1;
+      v.lastFlash = e.flash;
+      v.hitK = Math.max(0, (v.hitK || 0) - dt * 7);
       if (v.boss) this.animBoss(v, e, dt);
-      else ANIM[e.type](v.rig.bones, e, this.time, dt, v, this);
+      else { ANIM[e.type](v.rig.bones, e, this.time, dt, v, this); if (v.hitK > 0) flinch(v.rig.bones, e.type, v.hitK); }
     }
     for (const [id, v] of this.views) {
       if (seen.has(id)) continue;
@@ -479,7 +483,7 @@ export class EnemyViews {
       v.deathT += dt;
       const k = Math.min(1, v.deathT / v.deathDur);
       // 쓰러진 뒤 잠깐 놓여 있다가(연기) 사라진다
-      for (const m of v.mats) { m.userData.uDissolve.value = Math.max(0, (k - 0.6) / 0.4); m.userData.uFlash.value *= 0.9; }
+      for (const m of v.mats) { m.userData.uDissolve.value = Math.max(0, (k - 0.6) / 0.4); m.userData.uFlash.value *= Math.exp(-dt * 12); }
       if (v.boss) {
         v.root.position.y -= dt * (6 + v.deathT * 14); v.root.rotation.z += dt * 0.8; v.root.rotation.x += dt * 0.3;
       } else if (v.type === 'drone') {
@@ -488,8 +492,13 @@ export class EnemyViews {
         const f = Math.min(1, v.deathT / 0.45);
         const b = v.rig.bones;
         if (v.type === 'enforcer') {
-          v.root.rotation.x = v.fallDir * f * (Math.PI / 2.3);
-          b[H.LKN].rotation.x = -0.6 * f; b[H.RKN].rotation.x = -0.4 * f; b[H.LSH].rotation.z = 0.8 * f; b[H.RSH].rotation.z = -0.8 * f;
+          // 무릎이 먼저 꺾이고(0~0.25초) 중력으로 점점 빨라지며 쓰러진 뒤 바닥에서 한 번 튄다
+          const kb = Math.min(1, v.deathT / 0.25), fallT = Math.max(0, v.deathT - 0.12) / 0.55;
+          const fall = fallT < 1 ? fallT * fallT : 1 + Math.sin(Math.min(1, (fallT - 1) * 4) * Math.PI) * 0.06 * Math.exp(-(fallT - 1) * 3);
+          v.root.rotation.x = v.fallDir * Math.min(1.06, fall) * (Math.PI / 2.15);
+          v.root.position.y = v.baseY - 0.25 * kb;
+          b[H.LKN].rotation.x = -1.1 * kb; b[H.RKN].rotation.x = -0.8 * kb; b[H.LHI].rotation.x = 0.6 * kb; b[H.RHI].rotation.x = 0.4 * kb;
+          b[H.LSH].rotation.z = 0.9 * kb; b[H.RSH].rotation.z = -0.7 * kb; b[H.HEAD].rotation.x = -0.4 * v.fallDir * kb;
         } else if (v.type === 'reaper') {
           // 다리가 풀리며 주저앉고 옆으로 기운다
           b[0].position.y = b[0].userData.rest.y - 0.4 * f;
@@ -511,13 +520,14 @@ export class EnemyViews {
     v.dyingStarted = true;
     v.deathT = 0;
     v.deathDur = v.boss ? 3.0 : v.type === 'mech' ? 2.6 : 1.8;
+    v.baseY = v.root.position.y;
     v.vy = 0; v.floorY = 0;
     v.fallDir = ev && ev.dir ? 1 : -1;
     if (ev && ev.dir) {
       const fx = -Math.sin(v.root.rotation.y), fz = -Math.cos(v.root.rotation.y);
       v.fallDir = ev.dir.x * fx + ev.dir.z * fz < 0 ? -1 : 1;
     }
-    for (const m of v.mats) { m.userData.uFlash.value = 1; m.userData.uStun.value = 0; }
+    for (const m of v.mats) { m.userData.uFlash.value = 0.45; m.userData.uStun.value = 0; }
     this.dying.push(v);
   }
 
@@ -574,7 +584,7 @@ function relYaw(e, p) { let a = Math.atan2(-(p.x - e.x), -(p.z - e.z)) - e.yaw; 
 
 const ANIM = {
   // 4족 속보: 대각선 다리 쌍(앞왼+뒤오 / 앞오+뒤왼)이 번갈아 딛는다
-  reaper(bones, e, t, dt, v) {
+  reaper(bones, e, t, dt, v, views) {
     reset(bones);
     v.ph = (v.ph || 0) + dt * e.moveSpeed * 2.6;
     const amt = Math.min(1, e.moveSpeed / 4);
@@ -587,7 +597,7 @@ const ANIM = {
     bones[0].position.y += Math.abs(Math.cos(v.ph)) * 0.035 * amt;
     bones[0].rotation.x = -0.05 * amt;
     bones[1].rotation.x = Math.sin(t * 1.3 + e.id) * 0.06;
-    bones[1].rotation.y = Math.sin(t * 0.9 + e.id * 2) * 0.12 * (1 - amt);
+    { const p = views.player; const a = p ? Math.max(-0.6, Math.min(0.6, relYaw(e, p))) : 0; bones[1].rotation.y = a * 0.8 + Math.sin(t * 0.9 + e.id * 2) * 0.06 * (1 - amt); }
     if (e.state === 'windup') {
       // 도약 준비: 몸을 낮추고 뒷다리를 접는다
       const k = Math.min(1, e.t / 0.3);
@@ -606,18 +616,31 @@ const ANIM = {
     }
     if (e.stun > 0) jitter(bones, t, 0.08);
   },
-  enforcer(bones, e, t, dt, v) {
+  enforcer(bones, e, t, dt, v, views) {
     reset(bones);
     v.ph = (v.ph || 0) + dt * e.moveSpeed * 1.9;
     const amt = Math.min(1, e.moveSpeed / 3.4);
     walk(bones, v.ph, amt, { noArms: true });
+    // 상체·머리는 플레이어를 따라 돈다(다리는 이동 방향) — 실제 보병처럼 걸으면서 겨눈다
+    const p = views.player;
+    if (p) {
+      const a = Math.max(-0.9, Math.min(0.9, relYaw(e, p)));
+      v.aimYaw = (v.aimYaw ?? 0) + (a - (v.aimYaw ?? 0)) * Math.min(1, dt * 6);
+      bones[H.SPINE].rotation.y += v.aimYaw * 0.45; bones[H.CHEST].rotation.y += v.aimYaw * 0.35; bones[H.HEAD].rotation.y += v.aimYaw * 0.2;
+      const pitch = Math.atan2(p.y + 1.3 - (e.y + 1.5), Math.hypot(p.x - e.x, p.z - e.z));
+      bones[H.CHEST].rotation.x += -pitch * 0.6;
+    }
     // 소총 거치 자세(팔은 가슴 앞)
     // 뼈 회전 +x = 팔이 앞(−z)으로 들림
     bones[H.RSH].rotation.x = 0.75; bones[H.RSH].rotation.z = -0.12; bones[H.REL].rotation.x = 0.85;
     bones[H.LSH].rotation.x = 1.05; bones[H.LSH].rotation.z = -0.45; bones[H.LEL].rotation.x = 0.7; bones[H.LEL].rotation.y = -0.3;
     const aiming = e.state === 'aim' || e.state === 'burst' || e.state === 'hold';
-    if (aiming) { bones[H.CHEST].rotation.x = 0.06; bones[H.HEAD].rotation.x = 0.08; bones[H.RSH].rotation.x += 0.15; bones[H.LSH].rotation.x += 0.15; }
-    else bones[H.HEAD].rotation.y = Math.sin(t * 0.7 + e.id) * 0.3;
+    v.aimK = (v.aimK || 0) + ((aiming ? 1 : 0) - (v.aimK || 0)) * Math.min(1, dt * 8);
+    const ak = v.aimK;
+    // 겨눌 때: 무릎을 굽혀 자세를 낮추고(전술 자세) 총을 어깨에 붙인다
+    bones[H.HIPS].position.y -= 0.06 * ak; bones[H.LHI].rotation.x += 0.25 * ak; bones[H.RHI].rotation.x += 0.1 * ak; bones[H.LKN].rotation.x -= 0.45 * ak; bones[H.RKN].rotation.x -= 0.3 * ak;
+    bones[H.CHEST].rotation.x += 0.06 * ak; bones[H.RSH].rotation.x += 0.18 * ak; bones[H.LSH].rotation.x += 0.18 * ak;
+    if (!aiming) bones[H.HEAD].rotation.y += Math.sin(t * 0.7 + e.id) * 0.2 * (1 - ak);
     if (e.attackT > 0) { const k = e.attackT / 0.15; bones[H.CHEST].rotation.x -= 0.08 * k; bones[H.CHEST].position.z += 0.03 * k; }
     if (e.state === 'evade') { bones[H.SPINE].rotation.z = 0.25; }
     if (e.stun > 0) jitter(bones, t);
@@ -668,6 +691,15 @@ const ANIM = {
     if (e.stun > 0) jitter(bones, t, 0.02);
   },
 };
+
+// 맞은 순간 움찔: 몸통이 뒤로 젖혀졌다 돌아온다
+function flinch(bones, type, k) {
+  const a = k * k;
+  if (type === 'enforcer') { bones[H.CHEST].rotation.x -= 0.22 * a; bones[H.HEAD].rotation.x -= 0.18 * a; bones[H.SPINE].rotation.z += 0.08 * a; }
+  else if (type === 'reaper') { bones[0].rotation.x += 0.12 * a; bones[1].rotation.x -= 0.25 * a; bones[0].position.y -= 0.03 * a; }
+  else if (type === 'leech') { bones[0].rotation.z += 0.05 * a; }
+  else if (type === 'mech') { bones[1].rotation.y += 0.06 * a; }
+}
 
 function jitter(bones, t, a = 0.12) {
   for (let i = 0; i < bones.length; i++) { const b = bones[i]; b.rotation.x += Math.sin(t * 53 + i * 7) * a; b.rotation.z += Math.cos(t * 47 + i * 3) * a; }

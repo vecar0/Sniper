@@ -1,7 +1,7 @@
 // 게임 월드: 웨이브 · 강화 카드 · 점수(연속 처치·기준 시간) · 투사체 · 드롭 · 승패. Three.js 없음.
 import {
   TICK, PLAYER, WEAPONS, WEAPON_ORDER, UPGRADE, WEAK_MUL, EMP, ENEMIES, WAVES,
-  SCORE, DROPS, BATTERY, BROADCAST,
+  SCORE, SUPPLY, DROPS, BATTERY, BROADCAST,
 } from '../config/balance.js';
 import { CARDS, CARD_RULES, UPGRADE_STEP } from '../config/cards.js';
 import { BOXES, SPAWNS, BATTERIES, ROOF } from '../config/map.js';
@@ -39,6 +39,7 @@ export class World {
     this.state = 'prep';                // prep → wave → pick(카드) → intermission → wave … → over
     this.timer = WAVES.firstDelay;
     this.score = 0;
+    this.credits = 0;                   // 보급용(처치·기준 시간 보너스로 쌓임)
     this.combo = 0; this.comboT = 99; this.comboMul = 1;
     this.bossCount = 0;
     this.overReason = null;
@@ -46,6 +47,7 @@ export class World {
     this.spawn = null;
     this.parT = 0;                      // 이번 웨이브 기준 시간 남은 초
     this.offer = null;                  // 지금 보여 주는 카드 3장(id)
+    this.picked = false;                // 이번 정리 화면에서 카드를 골랐는가
     this.taken = {};                    // 카드 id → 고른 횟수
     this.weaponOffered = false;
     this.noEnd = false;                 // 테스트: 승패 판정 끄기
@@ -64,8 +66,9 @@ export class World {
     const inp = this.input;
 
     if (this.state === 'pick') {
-      // 카드 고르는 동안은 시간이 멈춘다(플레이어도 그대로)
+      // 정리 화면(카드 + 보급) 동안은 시간이 멈춘다. 카드를 고른 뒤 '준비'로 닫는다
       if (inp.pick != null) this.pickCard(inp.pick);
+      if (inp.ready) this.finishPick();
       this.clearEdges();
       return;
     }
@@ -215,10 +218,11 @@ export class World {
     const parLeft = Math.floor(this.parT);
     const parBonus = parLeft * SCORE.parPerSec;
     const heal = Math.min(SCORE.waveHeal + (parLeft > 0 ? SCORE.parHeal : 0), p.maxHp - p.hp);
-    this.score += parBonus;
+    this.score += parBonus; this.credits += parBonus;
     p.hp += heal;
     this.stats.wavesCleared++;
     this.offer = this.drawCards(this.isBossWave(w));
+    this.picked = false;
     this.state = 'pick';
     this.events.push({ t: 'waveClear', wave: w, parBonus, parLeft, heal, offer: this.offer.slice() });
   }
@@ -258,16 +262,56 @@ export class World {
   }
 
   pickCard(i) {
-    if (this.state !== 'pick' || !this.offer || !this.offer[i]) return false;
+    if (this.state !== 'pick' || this.picked || !this.offer || !this.offer[i]) return false;
     const id = this.offer[i];
     this.applyCard(id);
     this.taken[id] = (this.taken[id] || 0) + 1;
     this.stats.cards.push(id);
+    this.picked = id;
+    this.events.push({ t: 'card', id });
+    return true;
+  }
+
+  // 정리 화면 닫기(카드를 골라야 닫힌다) → 짧은 카운트다운 뒤 다음 웨이브
+  finishPick() {
+    if (this.state !== 'pick' || !this.picked) return false;
     this.offer = null;
     this.state = 'intermission';
     this.timer = WAVES.intermission;
-    this.events.push({ t: 'card', id });
+    this.events.push({ t: 'pickDone' });
     return true;
+  }
+
+  // ── 보급 ──────────────────────────────────────────────
+  canShop() { return this.state === 'pick' || this.state === 'prep'; }
+
+  shopItems() {
+    const p = this.player, w = Math.max(1, this.wave), cr = this.credits;
+    const st = (price, full) => (full ? { price, state: 'max' } : { price, state: cr >= price ? 'ok' : 'poor' });
+    const items = [
+      { id: 'heal', name: `체력 +${SUPPLY.heal.amount}`, desc: `${Math.ceil(p.hp)}/${p.maxHp}`, ...st(SUPPLY.heal.price(w), p.hp >= p.maxHp) },
+      { id: 'armor', name: `방어구 +${SUPPLY.armor.amount}`, desc: `${Math.ceil(p.armor)}/${PLAYER.armorMax}`, ...st(SUPPLY.armor.price, p.armor >= PLAYER.armorMax) },
+      { id: 'ammo', name: '탄약 보충', desc: '가진 무기 예비탄 가득', ...st(SUPPLY.ammo.price, WEAPON_ORDER.every((k) => !p.owned[k] || k === 'pistol' || p.ammo[k].reserve >= WEAPONS[k].reserve)) },
+      { id: 'emp', name: 'EMP 수류탄 +1', desc: `${p.emp}/${p.empMax}`, ...st(SUPPLY.emp.price, p.emp >= p.empMax) },
+    ];
+    for (const k of ['shotgun', 'rifle', 'rail']) items.push({ id: 'buy:' + k, name: WEAPONS[k].name, desc: '무기 구매', ...(p.owned[k] ? { price: SUPPLY.weapons[k], state: 'owned' } : st(SUPPLY.weapons[k], false)) });
+    return items;
+  }
+
+  buy(id) {
+    if (!this.canShop()) return { ok: false, reason: 'closed' };
+    const item = this.shopItems().find((i) => i.id === id);
+    if (!item) return { ok: false, reason: 'unknown' };
+    if (item.state !== 'ok') return { ok: false, reason: item.state };
+    this.credits -= item.price;
+    const p = this.player;
+    if (id === 'heal') p.hp = Math.min(p.maxHp, p.hp + SUPPLY.heal.amount);
+    else if (id === 'armor') p.armor = Math.min(PLAYER.armorMax, p.armor + SUPPLY.armor.amount);
+    else if (id === 'ammo') { for (const k of WEAPON_ORDER) if (p.owned[k] && k !== 'pistol') p.ammo[k].reserve = WEAPONS[k].reserve; }
+    else if (id === 'emp') p.emp++;
+    else if (id.startsWith('buy:')) this.applyCard('get:' + id.slice(4));
+    this.events.push({ t: 'buy', id, price: item.price });
+    return { ok: true };
   }
 
   applyCard(id) {
@@ -464,7 +508,7 @@ export class World {
     this.comboMul = Math.min(SCORE.comboMax, 1 + SCORE.comboStep * (this.combo - 1));
     this.stats.bestCombo = Math.max(this.stats.bestCombo, this.combo);
     const cr = info.noCredit ? 0 : Math.round(e.c.points * mul * this.comboMul);
-    this.score += cr;
+    this.score += cr; this.credits += cr;
     this.stats.kills++;
     if (info.melee) this.stats.meleeKills++;
     this.events.push({ t: 'kill', id: e.id, type: e.type, x: e.x, y: e.y, z: e.z, weak, melee: !!info.melee, points: cr, combo: this.combo, mul: this.comboMul, yaw: e.yaw, dir: info.dir || null });

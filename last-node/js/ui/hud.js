@@ -18,7 +18,7 @@ export class Hud {
         </div>
       </div>
       <div class="hud-radar"><canvas width="300" height="300"></canvas></div>
-      <div class="hud-tr"><div class="hud-score"><span class="sc">0</span></div><div class="mult"><span class="x">×1.0</span><i><b></b></i></div></div>
+      <div class="hud-tr"><div class="hud-score"><span class="sc">0</span></div><div class="hud-cr"><span class="cr">0</span> 크레딧</div><div class="mult"><span class="x">×1.0</span><i><b></b></i></div></div>
       <div class="broadcast hidden"><span class="who">기지 방어 체계</span><span class="msg"></span></div>
       <div class="hud-hp">
         <div class="hp-row"><span class="hp">100</span><span class="hpmax">/100</span><span class="ar"></span></div>
@@ -45,7 +45,7 @@ export class Hud {
     this.el = {
       waveBox: q('.hud-wave'), waveLead: q('.wlead'), left: q('.left'), par: q('.par'), parFill: q('.par-bar .fill'), parT: q('.par-t'),
       boss: q('.hud-boss'), bossFill: q('.boss-bar .fill'), e0: q('.e0'), e1: q('.e1'),
-      radar: q('.hud-radar canvas'), sc: q('.sc'), mult: q('.mult'), multX: q('.mult .x'), multBar: q('.mult b'),
+      radar: q('.hud-radar canvas'), sc: q('.sc'), cr: q('.hud-cr .cr'), mult: q('.mult'), multX: q('.mult .x'), multBar: q('.mult b'),
       cast: q('.broadcast'), castMsg: q('.broadcast .msg'),
       hpBox: q('.hud-hp'), hp: q('.hp'), hpMax: q('.hpmax'), ar: q('.ar'), hpFill: q('.hp-bar .fill'), hpLag: q('.hp-bar .lag'), armorBar: q('.armor'), armorFill: q('.armor .fill'),
       pipBox: q('.dash-pips'), pips: [],
@@ -84,6 +84,7 @@ export class Hud {
     }
     // 점수 · 연속 처치 배수(남은 시간 막대)
     this.set('sc', E.sc, world.score.toLocaleString());
+    this.set('cr', E.cr, world.credits.toLocaleString());
     const multOn = world.combo >= 2 && world.comboT < SCORE.comboWindow;
     E.mult.classList.toggle('on', multOn);
     if (multOn) {

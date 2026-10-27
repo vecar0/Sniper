@@ -102,13 +102,19 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     assert(r.hits > 0, '명중 표시 없음');
   });
 
-  await check('웨이브 정리 → 강화 카드 3장 → 키 1로 고르기 → 무기 카드면 바꿔 쏘기', async () => {
+  await check('웨이브 정리 → 카드 3장 중 키 1로 고르기 → 보급 구매 → Enter로 닫기 → 새 무기로 쏘기', async () => {
     await W(page, () => { const w = __ln.world; for (const e of w.enemies) e.alive = false; w.enemies = []; w.state = 'wave'; w.wave = 2; w.parT = 10; w.spawn = { t: 9, total: 0, left: 0, stairsT: 1e9, elevT: 1e9, dropT: 1e9, boss: false, bossSpawned: true, mechs: 0, mechTotal: 0, mechNext: 1 }; });
     await page.waitForSelector('.cards .pick', { timeout: 8000 });
     assert((await page.$$('.cards .pick')).length === 3, '카드가 3장이 아님');
     // 첫 장을 무기 카드로 바꿔 끼워 시험(무작위 제시와 무관하게)
     await W(page, () => { __ln.world.offer[0] = 'get:rifle'; });
     await page.keyboard.press('Digit1');
+    await page.waitForSelector('.pick.taken', { timeout: 5000 });
+    // 보급: 크레딧을 주고 체력 회복을 산 뒤 Enter로 닫는다
+    await W(page, () => { __ln.world.credits = 5000; __ln.world.player.hp = 40; __ln.app.menus.renderSupply(__ln.world); });
+    await page.click('.supply [data-id=heal]');
+    assert(await W(page, () => __ln.world.player.hp) > 40, '보급 구매 실패');
+    await page.keyboard.press('Enter');
     const closed = await page.waitForFunction(() => !document.querySelector('.cards'), null, { timeout: 5000 }).then(() => true).catch(() => false);
     assert(closed, `카드 화면이 안 닫힘 ${JSON.stringify(await W(page, () => ({ app: __ln.app.state, st: __ln.world.state, offer: __ln.world.offer, cards: !!document.querySelector('.cards') })))}`);
     const st = await W(page, () => ({ state: __ln.world.state, owned: !!__ln.world.player.owned.rifle, weapon: __ln.world.player.weapon }));

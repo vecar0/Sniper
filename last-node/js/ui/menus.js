@@ -62,7 +62,7 @@ export class Menus {
   howto(back) {
     const rows = this.touch
       ? [['왼쪽 화면 끌기', '이동'], ['오른쪽 화면 끌기', '둘러보기'], ['발사', '누른 채 끌면 조준까지'], ['조준', '정조준 켜고 끄기'], ['대시, 점프', '공중에서 한 번 더 점프'], ['앉기', '달리다 누르면 슬라이드'], ['근접', '기절한 적은 즉시 처치하고 체력 25 회복'], ['EMP', '주변 로봇을 2.5초 기절'], ['준비 완료', '카드를 고른 뒤 바로 다음 웨이브']]
-      : [['W A S D', '이동'], ['마우스', '둘러보기'], ['왼쪽 클릭', '사격'], ['오른쪽 클릭', '정조준'], ['Shift', '대시, 두 번까지 충전'], ['Space', '점프, 공중에서 한 번 더'], ['C', '앉기, 달리다 누르면 슬라이드'], ['V', '근접, 기절한 적은 즉시 처치하고 체력 25 회복'], ['G', 'EMP 수류탄, 떼면 던짐'], ['R', '재장전'], ['1 2 3 4, 휠, Q', '무기 바꾸기, Q는 이전 무기. 카드 화면에서는 1 2 3으로 고르기'], ['Enter', '다음 웨이브 바로 시작'], ['Esc', '일시정지']];
+      : [['W A S D', '이동'], ['마우스', '둘러보기'], ['왼쪽 클릭', '사격'], ['오른쪽 클릭', '정조준'], ['Shift', '대시, 두 번까지 충전'], ['Space', '점프, 공중에서 한 번 더'], ['C', '앉기, 달리다 누르면 슬라이드'], ['V', '근접, 기절한 적은 즉시 처치하고 체력 25 회복'], ['G', 'EMP 수류탄, 떼면 던짐'], ['R', '재장전'], ['1 2 3 4, 휠, Q', '무기 바꾸기, Q는 이전 무기. 정리 화면에서는 1 2 3 카드, 4~0 보급'], ['Enter', '정리 화면 닫기, 다음 웨이브 바로 시작'], ['Esc', '일시정지']];
     this.root.innerHTML = `<div class="screen dim"><div class="sheet wide">
       <h2>조작법과 규칙</h2>
       <div class="two">
@@ -70,7 +70,7 @@ export class Menus {
         <div class="rules">
           <p><b>빨리 잡을수록 강해집니다.</b> 2.5초 안에 다음 적을 처치하면 점수 배수가 0.1씩 올라 최대 2배가 됩니다. 기준 시간 안에 웨이브를 끝내면 보너스 점수와 체력을 받습니다.</p>
           <p><b>체력은 저절로 차지 않습니다.</b> 처치할 때 떨어지는 구슬을 주우세요. 웨이브를 끝내도 조금 회복합니다.</p>
-          <p><b>웨이브마다 카드 한 장.</b> 새 무기, 무기 개량, 능력 중 하나를 고릅니다. 보스를 잡으면 희귀 카드가 섞입니다.</p>
+          <p><b>웨이브마다 카드 한 장 + 보급.</b> 정리 화면에서 새 무기·무기 개량·능력 카드 중 하나를 고르고, 처치로 모은 크레딧으로 회복·방어구·탄약·EMP·무기를 삽니다. 빨리 잡을수록 크레딧이 많이 쌓입니다. 보스를 잡으면 희귀 카드가 섞입니다.</p>
           <p><b>수리 로봇을 먼저.</b> 뒤에 숨어 다른 로봇을 고칩니다. 레이더의 속 빈 마름모, 화면 밖이면 가장자리 화살표로 보입니다.</p>
           <p><b>전투차량은 옆이나 뒤에서.</b> 앞 장갑판이 피해를 70% 막습니다. EMP로 잠시 무력화하거나 뒤 엔진 덮개를 쏘세요.</p>
           <p><b>빨간 레이저와 원은 경고입니다.</b> 모든 공격은 빛과 소리로 먼저 알립니다. 대시로 피하세요.</p>
@@ -120,24 +120,54 @@ export class Menus {
     this.wire({ resume: () => this.emit('resume'), howto: () => this.howto('pause'), settings: () => this.settings('pause'), quit: () => this.emit('quit') });
   }
 
-  // 강화 카드 3장: 클릭·탭 또는 1 2 3 키
-  cards(world, onPick) {
+  // 웨이브 정리 화면: 위 = 강화 카드 3장(공짜, 하나), 아래 = 보급(크레딧으로 구매). 카드를 고르면 '작전 재개'가 열린다
+  cards(world, h) {
     this.current = 'cards';
-    const offer = world.offer.map((id) => world.cardInfo(id));
+    this.cardWorld = world; this.cardH = h;
+    const offer = (world.offer || []).map((id) => world.cardInfo(id));
     const pips = (c) => (c.max > 1 ? `<span class="pips">${Array.from({ length: c.max }, (_, i) => `<i class="${i < c.level ? 'on' : i === c.level ? 'next' : ''}"></i>`).join('')}</span>` : '');
+    const picked = world.picked;
     this.root.innerHTML = `<div class="screen dim cards-screen"><div class="cards">
-      <div class="cards-head"><p class="kicker">${world.wave}웨이브 정리</p><h2>강화 하나를 고르세요</h2></div>
+      <div class="cards-head"><p class="kicker">${world.wave}웨이브 정리 · 시간이 멈춰 있습니다</p><h2>${picked ? '보급을 정비하고 작전을 재개하세요' : '강화 하나를 고르세요'}</h2></div>
       <div class="cards-row">${offer.map((c, i) => `
-        <button class="pick ${c.kind}" data-i="${i}">
-          <span class="top"><span class="kind">${KIND[c.kind]}</span><kbd>${i + 1}</kbd></span>
+        <button class="pick ${c.kind}${picked === c.id ? ' taken' : picked ? ' off' : ''}" data-i="${i}" ${picked ? 'disabled' : ''}>
+          <span class="top"><span class="kind">${picked === c.id ? '선택함' : KIND[c.kind]}</span><kbd>${i + 1}</kbd></span>
           ${icon(c.icon)}
           <span class="nm">${esc(c.name)}</span>
           <span class="ds">${esc(c.desc)}</span>
           ${pips(c)}
         </button>`).join('')}</div>
-      <p class="tip">${this.touch ? '카드를 눌러 고릅니다.' : '카드를 누르거나 1 2 3 키로 고릅니다.'} 고르는 동안 시간이 멈춥니다.</p></div></div>`;
-    for (const b of this.root.querySelectorAll('.pick')) b.addEventListener('click', () => { this.audio.buy(); onPick(+b.dataset.i); });
-    this.root.querySelector('.pick')?.focus({ preventScroll: true });
+      <div class="supply">
+        <div class="supply-head"><h3>보급</h3><span class="cr">${world.credits.toLocaleString()} 크레딧</span></div>
+        <div class="supply-list"></div>
+      </div>
+      <div class="cards-foot"><span class="tip">${this.touch ? '카드와 보급을 눌러 고릅니다.' : '카드 1 2 3 · 보급 4~0 · 작전 재개 Enter'}</span>
+        <button class="btn primary" data-a="go" ${picked ? '' : 'disabled'}>작전 재개</button></div></div></div>`;
+    for (const b of this.root.querySelectorAll('.pick')) b.addEventListener('click', () => h.pick(+b.dataset.i));
+    this.root.querySelector('[data-a=go]').addEventListener('click', () => h.go());
+    this.renderSupply(world);
+    if (!picked) this.root.querySelector('.pick')?.focus({ preventScroll: true });
+  }
+
+  renderSupply(world) {
+    const list = this.root.querySelector('.supply-list');
+    if (!list) return;
+    const items = world.shopItems();
+    const label = (i) => (i.state === 'owned' ? '보유 중' : i.state === 'max' ? '가득' : `${i.price.toLocaleString()}`);
+    list.innerHTML = items.map((i, k) => `<button class="sup ${i.state}" data-id="${i.id}" ${i.state === 'ok' || i.state === 'poor' ? '' : 'disabled'}>
+      <kbd>${(k + 4) % 10}</kbd><span class="nm">${esc(i.name)}</span><span class="ds">${esc(i.desc)}</span><span class="pr">${label(i)}</span></button>`).join('');
+    for (const b of list.querySelectorAll('.sup')) b.addEventListener('click', () => this.buy(world, b.dataset.id, b));
+    const cr = this.root.querySelector('.supply-head .cr'); if (cr) cr.textContent = `${world.credits.toLocaleString()} 크레딧`;
+  }
+
+  buy(world, id, el) {
+    const r = world.buy(id);
+    if (r.ok) { this.audio.buy(); this.renderSupply(world); this.root.querySelector(`.sup[data-id="${CSS.escape(id)}"]`)?.classList.add('bought'); if (this.cardH && this.cardH.bought) this.cardH.bought(); }
+    else { this.audio.deny(); if (el && r.reason === 'poor') { el.classList.remove('nope'); void el.offsetWidth; el.classList.add('nope'); } }
+  }
+  buyIndex(world, k) {
+    const b = this.root.querySelectorAll('.sup')[k];
+    if (b && !b.disabled) this.buy(world, b.dataset.id, b);
   }
 
   gameOver(world, newBest) {

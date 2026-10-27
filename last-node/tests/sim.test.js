@@ -22,11 +22,11 @@ function sandbox(seed = 1) {
 const put = (w, x, z, y = 0) => { const p = w.player; p.x = p.px = x; p.z = p.pz = z; p.y = p.py = y; p.vx = p.vy = p.vz = 0; w.updatePlayerField(true); };
 
 // ── 시작 상태 ───────────────────────────────────────────
-test('시작: 체력 100, 점수 0, 권총 14/∞, EMP 1, 웨이브 1. 코어·크레딧·상점은 없다', () => {
+test('시작: 체력 100, 점수 0, 크레딧 0, 권총 14/∞, EMP 1, 웨이브 1. 코어는 없다', () => {
   const w = new World({ seed: 1 });
   const p = w.player;
   assert.equal(p.hp, 100); assert.equal(w.score, 0);
-  assert.equal(w.core, undefined); assert.equal(w.credits, undefined); assert.equal(w.buy, undefined);
+  assert.equal(w.core, undefined); assert.equal(w.credits, 0);
   assert.deepEqual(Object.keys(p.owned), ['pistol']);
   assert.equal(p.weapon, 'pistol'); assert.equal(p.ammo.pistol.mag, 14); assert.equal(p.ammo.pistol.reserve, Infinity);
   assert.equal(p.emp, 1);
@@ -272,8 +272,14 @@ test('웨이브 정리 → 기준 시간 보너스 → 카드 3장(중복 없음
   assert.equal(w.offer.length, 3); assert.equal(new Set(w.offer).size, 3);
   // 고르기 전에는 시간이 흐르지 않는다
   run(w, 3); assert.equal(w.state, 'pick'); assert.equal(w.wave, 1);
+  w.input.ready = true; w.step(DT);
+  assert.equal(w.state, 'pick', '카드를 고르기 전엔 닫히지 않는다');
   w.input.pick = 1; w.step(DT);
-  assert.equal(w.state, 'intermission'); assert.equal(w.stats.cards.length, 1);
+  assert.equal(w.state, 'pick'); assert.equal(w.stats.cards.length, 1);
+  w.input.pick = 0; w.step(DT);
+  assert.equal(w.stats.cards.length, 1, '카드는 한 장만');
+  w.input.ready = true; w.step(DT);
+  assert.equal(w.state, 'intermission');
   run(w, WAVES.intermission + 0.1);
   assert.equal(w.wave, 2); assert.equal(w.state, 'wave');
 });
@@ -286,13 +292,35 @@ test('카드: 무기 카드는 W3 정리 전까지 최소 1번 나오고, 고르
       w.wave = wave; w.state = 'wave'; w.parT = 0;
       w.clearWave();
       seenWeapon = w.offer.find((id) => id.startsWith('get:'));
-      if (!seenWeapon) w.pickCard(0);
+      if (!seenWeapon) { w.pickCard(0); w.finishPick(); }
     }
     assert.ok(seenWeapon, `seed ${seed}: 무기 카드 없음`);
     w.pickCard(w.offer.indexOf(seenWeapon));
     const id = seenWeapon.slice(4);
     assert.equal(w.player.owned[id], true); assert.equal(w.player.weapon, id);
   }
+});
+
+test('보급: 크레딧은 처치·기준 시간 보너스로 쌓이고, 정리 화면에서만 사며, 부족하면 못 사고 음수가 되지 않는다', () => {
+  const w = sandbox(31);
+  const e = w.spawnEnemy('reaper', 0, 0, -10); w.damageEnemy(e, 1e6, { kind: 'body' });
+  assert.equal(w.credits, 50);
+  assert.equal(w.buy('heal').reason, 'closed');
+  w.state = 'wave'; w.parT = 10; w.clearWave();
+  assert.equal(w.credits, 50 + 10 * SCORE.parPerSec);
+  w.credits = 100;
+  assert.equal(w.buy('buy:rifle').reason, 'poor'); assert.equal(w.credits, 100);
+  w.credits = 5000; w.player.hp = 20;
+  assert.ok(w.buy('buy:rifle').ok); assert.equal(w.player.owned.rifle, true);
+  assert.equal(w.buy('buy:rifle').reason, 'owned');
+  assert.ok(w.buy('heal').ok); assert.equal(w.player.hp, 70);
+  assert.ok(w.buy('armor').ok); assert.equal(w.player.armor, 25);
+  w.player.ammo.rifle.reserve = 0; assert.ok(w.buy('ammo').ok); assert.equal(w.player.ammo.rifle.reserve, WEAPONS.rifle.reserve);
+  const before = w.player.emp; assert.ok(w.buy('emp').ok); assert.equal(w.player.emp, before + 1);
+  assert.ok(w.credits >= 0);
+  // 회복 값은 웨이브마다 오른다
+  const h1 = w.shopItems().find((i) => i.id === 'heal').price; w.wave = 8;
+  assert.ok(w.shopItems().find((i) => i.id === 'heal').price > h1);
 });
 
 test('카드: 효과 적용 · 최대 단계 카드는 다시 안 나옴', () => {

@@ -16,7 +16,7 @@ export class Bot {
     const w = this.w, p = w.player, inp = w.input;
     this.t += dt; this.dashCd -= dt;
     if (this.idle) return;
-    if (w.state === 'pick') { inp.pick = this.pickCard(); return; }
+    if (w.state === 'pick') { if (!w.picked) inp.pick = this.pickCard(); else { this.shop(); inp.ready = true; } return; }
     if (w.state === 'intermission' || w.state === 'prep') inp.ready = true;
     // 목표 고르기
     let best = null, bs = Infinity;
@@ -72,6 +72,16 @@ export class Bot {
     const danger = w.enemies.some((e) => e.alive && ((e.type === 'reaper' && e.state === 'windup') || (e.type === 'drone' && e.state !== 'fly') || e.missileWarn > 0) && Math.hypot(e.x - p.x, e.z - p.z) < 12);
     if (danger && this.dashCd <= 0 && p.dashCharges > 0) { inp.dash = true; this.dashCd = 0.6; }
     if (p.emp > 0 && w.enemies.filter((e) => e.alive && Math.hypot(e.x - p.x, e.z - p.z) < 6).length >= 3) inp.throwEmp = true;
+  }
+
+  // 보급: 체력이 낮으면 회복, 소총이 없으면 소총, 그다음 방어구·탄약
+  shop() {
+    const w = this.w, p = w.player;
+    if (p.hp < p.maxHp * 0.6) w.buy('heal');
+    if (!p.owned.rifle) w.buy('buy:rifle');
+    if (p.armor < 25) w.buy('armor');
+    if (p.owned.rifle && p.ammo.rifle.reserve < 100) w.buy('ammo');
+    if (p.emp < 1) w.buy('emp');
   }
 
   // 카드: 무기(소총 > 산탄 > 레일) > 체력 > 무기 강화 > 나머지 무작위
