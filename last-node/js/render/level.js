@@ -1,7 +1,8 @@
 // 옥상 레벨: 충돌 상자(map.js)를 재질별로 병합한 메시 + 장식(난간·네온·케이블·간판) + 코어 · 광고판 · 단말 · 포탑 · 배터리
 import * as THREE from 'three';
 import { mergeGeometries } from '../../vendor/three/addons/utils/BufferGeometryUtils.js';
-import { BOXES, ROOF, TERMINALS, TURRET_SLOTS, BILLBOARD, SPAWNS } from '../config/map.js';
+import { BOXES, ROOF, TERMINALS, TURRET_SLOTS, SPAWNS } from '../config/map.js';
+const BILLBOARD = { x0: -21.5, x1: -8.5, y0: 6, y1: 13.5, z: -24.5 }; // 임시(새 레벨로 교체 예정)
 import { loadSurface, wetMaterial, puddleTexture, neonSign, glowTexture } from './materials.js';
 import { PALETTE } from './env.js';
 
