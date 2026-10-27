@@ -113,14 +113,16 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     assert(closed, `카드 화면이 안 닫힘 ${JSON.stringify(await W(page, () => ({ app: __ln.app.state, st: __ln.world.state, offer: __ln.world.offer, cards: !!document.querySelector('.cards') })))}`);
     const st = await W(page, () => ({ state: __ln.world.state, owned: !!__ln.world.player.owned.rifle, weapon: __ln.world.player.weapon }));
     assert(st.state === 'intermission' && st.owned && st.weapon === 'rifle', `카드 적용 실패 ${JSON.stringify(st)}`);
-    // 카드를 고르면 게임이 포인터를 다시 잠근다(잠금 완료까지 기다림, 안 되면 클릭으로)
-    let locked = await page.waitForFunction(() => __ln.app.input.locked, null, { timeout: 1500 }).then(() => true).catch(() => false);
-    if (!locked) { await page.mouse.click(640, 360); await page.waitForFunction(() => __ln.app.input.locked, null, { timeout: 3000 }).catch(() => {}); }
-    await sleep(500);
-    const s0 = await W(page, () => __ln.world.player.ammo.rifle.mag);
-    await page.mouse.down(); await sleep(1200); await page.mouse.up(); await sleep(200); // 소프트웨어 렌더러는 프레임이 느려 넉넉히
-    const dbg = await W(page, () => { const p = __ln.world.player; return { mag: p.ammo.rifle.mag, w: p.weapon, sw: p.switchT, rl: p.reloadT, st: __ln.world.state, app: __ln.app.state, lock: __ln.app.input.locked, en: __ln.app.input.enabled }; });
-    assert(dbg.mag < s0, `소총 발사 안 됨 ${s0} ${JSON.stringify(dbg)}`);
+    // 새 무기로 쏠 수 있는지: 마우스 입력 경로는 위 '사격' 검사가 확인하므로 여기선 시뮬레이션을 직접 몇 틱 돌린다
+    // (소프트웨어 렌더러에선 프레임이 느려 실시간 마우스 누름으로는 쏘는 틱 수가 들쭉날쭉하다)
+    const fired = await W(page, () => {
+      const app = __ln.app, w = __ln.world; app.externalSim = true;
+      const m0 = w.player.ammo.rifle.mag;
+      for (let i = 0; i < 40; i++) { w.input.fire = true; w.step(1 / 60); }
+      w.input.fire = false; app.externalSim = false;
+      return m0 - w.player.ammo.rifle.mag;
+    });
+    assert(fired >= 3, `소총 발사 ${fired}발`);
   });
 
   await check('피격 방향, 처치 점수·연속 배수, 레이더, 보스 체력 바', async () => {
