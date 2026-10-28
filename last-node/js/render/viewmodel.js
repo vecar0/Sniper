@@ -3,7 +3,7 @@
 // · 왼손이 실제로 탄창을 빼고 끼우는 단계별 재장전(탄창이 비었으면 슬라이드·장전 손잡이 당김) · 교체 · 근접 · 투척 · 대시 기울기
 import * as THREE from 'three';
 import { WEAPONS } from '../config/balance.js';
-import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm, viewmodelLights, shadowGun } from './guns.js';
+import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm, viewmodelLights, shadowGun, settleHand } from './guns.js';
 
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _v1 = new THREE.Vector3();
 const easeIn = (t) => t * t * t;
@@ -26,7 +26,7 @@ export class ViewModel {
     this.ammoMat = new THREE.MeshBasicMaterial({ map: this.ammoTex, color: new THREE.Color(1.15, 1.15, 1.15) });
     this.reticleMat = new THREE.MeshBasicMaterial({ map: reticleTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: new THREE.Color(1.6, 1.6, 1.6) });
     this.scopeMat = new THREE.MeshBasicMaterial({ map: scopeTexture(), transparent: true, depthWrite: false });
-    const X = { ammoMat: this.ammoMat, reticleMat: this.reticleMat, scopeMat: this.scopeMat };
+    const X = { ammoMat: this.ammoMat, reticleMat: this.reticleMat, scopeMat: this.scopeMat, noFit: true };
 
     this.guns = {};
     for (const id of Object.keys(WEAPONS)) {
@@ -38,15 +38,25 @@ export class ViewModel {
       this.root.add(gun.group);
       this.guns[id] = gun;
     }
+    // 사람 관절 범위 맞춤: 허리 사격 자세·몸에 붙은 어깨 기준으로 손목이 가동 범위 안에 들도록 손 각도를 고르고 손가락을 다시 감싼다
     for (const [id, gun] of Object.entries(this.guns)) {
+      const H = HIP[id];
+      gun.group.position.set(H[0], H[1], H[2]); gun.group.rotation.set(0, H[3], H[4]);
+      this.root.updateMatrixWorld(true);
+      for (const [hand, arm, others] of [[gun.rightHand, gun.rightArm, []], [gun.leftHand, gun.leftArm, [gun.rightHand]]]) {
+        if (!arm) continue;
+        const mirror = arm.userData.mirror;
+        // 어깨: 눈 아래 20 cm · 좌우 16~17 cm. 권총은 두 어깨를 앞으로 내밀고(−3 cm), 소총류는 개머리를 어깨 안쪽에 대 오른 어깨가 안으로
+        arm.userData.Sroot = id === 'pistol' ? new THREE.Vector3(mirror ? -0.16 : 0.16, -0.2, -0.03) : mirror ? new THREE.Vector3(-0.17, -0.21, 0.04) : new THREE.Vector3(0.13, -0.2, 0.04);
+        arm.userData.poleRoot = new THREE.Vector3(mirror ? -0.6 : 0.6, -1, 0.25).normalize();
+        arm.parent.updateWorldMatrix(true, false);
+        const toP = _m2.copy(arm.parent.matrixWorld).invert().multiply(this.root.matrixWorld);
+        gun.wrist = gun.wrist || {};
+        gun.wrist[mirror ? 'L' : 'R'] = settleHand(gun.group, hand, arm, arm.userData.Sroot.clone().applyMatrix4(toP), arm.userData.poleRoot.clone().transformDirection(toP), others, mirror ? null : gun.trigger).map((r) => Math.round((r * 180) / Math.PI));
+      }
       gun.leftRest = { p: gun.leftHand.position.clone(), r: gun.leftHand.rotation.clone() };
       gun.rightRest = { p: gun.rightHand.position.clone(), q: gun.rightHand.quaternion.clone() };
-      // 어깨는 몸(카메라)에 고정된 뷰모델 공간 위치
-      for (const a of [gun.leftArm, gun.rightArm]) if (a) {
-        // 어깨: 눈 아래 21 cm, 좌우 16~17 cm, 4 cm 뒤(소총류는 개머리를 어깨 안쪽 주머니에 대 오른 어깨가 조금 안으로)
-        a.userData.Sroot = a.userData.mirror ? new THREE.Vector3(-0.17, -0.21, 0.04) : new THREE.Vector3(id === 'pistol' ? 0.16 : 0.13, -0.2, 0.04);
-        a.userData.poleRoot = new THREE.Vector3(a.userData.mirror ? -0.6 : 0.6, -1, 0.25).normalize();
-      }
+
       // 산탄: 손에 들고 넣을 탄 1발
       if (gun.pump) {
         const shell = new THREE.Group();
@@ -462,9 +472,9 @@ export class ViewModel {
 // 허리 사격 위치 [x, y, z, 좌우 비틀기, 기울기] — 총마다 길이·손잡이 위치가 다르다
 const HIP = {
   // 긴 총은 개머리를 어깨에 댄 자세: 앞손(왼손)과 손잡이 손(오른손)이 모두 화면 아래쪽에 보이게 조금 높고 멀리
-  pistol: [0.06, -0.068, -0.42, 0.05, -0.03],   // 팔을 뻗은 사격 자세: 눈에서 40 cm 남짓
+  pistol: [0.04, -0.085, -0.58, 0.03, -0.02],   // 아이소셀레스(두 팔을 거의 편 삼각형) 자세: 실제 팔 길이대로 눈에서 58 cm
   rifle: [0.115, -0.055, -0.27, 0.13, -0.06],
-  shotgun: [0.115, -0.07, -0.28, 0.13, -0.06],
+  shotgun: [0.115, -0.075, -0.33, 0.13, -0.06],
   rail: [0.115, -0.06, -0.26, 0.13, -0.06],
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));

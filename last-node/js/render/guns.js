@@ -301,16 +301,20 @@ export function makeHand(M, { mirror = false, curls, thumb = { dir: [-0.6, 0.45,
   const grip = curls || FINGERS.map(() => [0.6, 1.0, 0.7]);
   const OPEN = [0.1, 0.14, 0.08], TRIG = [0.35, 0.45, 0.25];
   const rot = (b, ax, a) => b.quaternion.copy(b.userData.bindQ).multiply(_q.setFromAxisAngle(ax, a));
+  // 손가락 관절 한계: MCP −20°~90°, PIP 0~105°, DIP 0~80°이고 DIP는 PIP가 굽은 만큼만(힘줄로 이어져 혼자 크게 못 굽힌다)
+  const clampF = (k, v, pip) => k === 0 ? THREE.MathUtils.clamp(v, LIMIT.mcp[0], LIMIT.mcp[1]) : k === 1 ? THREE.MathUtils.clamp(v, LIMIT.pip[0], LIMIT.pip[1])
+    : THREE.MathUtils.clamp(v, LIMIT.dip[0], Math.min(LIMIT.dip[1], pip * LIMIT.dipPerPip + 0.15));
+  const finger = (js, vals) => { const v0 = clampF(0, vals[0]), v1 = clampF(1, vals[1]), v2 = clampF(2, vals[2], v1); rot(js[0].b, js[0].ax, v0); rot(js[1].b, js[1].ax, v1); rot(js[2].b, js[2].ax, v2); return [v0, v1, v2]; };
   let last = '';
   g.userData.pose = (open = 0, trig = 0) => {
     const key = open.toFixed(3) + trig.toFixed(3);
     if (key === last) return; last = key;
-    joints.forEach((js, f) => js.forEach(({ b, ax }, k) => rot(b, ax, grip[f][k] + (OPEN[k] + f * 0.02 - grip[f][k]) * open + (f === 0 ? TRIG[k] * trig : 0))));
+    joints.forEach((js, f) => finger(js, [0, 1, 2].map((k) => grip[f][k] + (OPEN[k] + f * 0.02 - grip[f][k]) * open + (f === 0 ? TRIG[k] * trig : 0))));
     for (const { b, ax, cup } of metas) rot(b, ax, cup * (1 - open * 0.7));            // 쥘 때 약지·소지 쪽 손바닥이 오므라든다
     const q = new THREE.Quaternion().slerp(aimQ, 1 - open * 0.8);
     tMeta.quaternion.copy(wristQinv).multiply(q).multiply(tMeta.userData.Wq);            // 엄지 뿌리(손목 기준)
-    rot(tProx, tAx[0], (thumb.curl ?? 0.3) * 0.5 * (1 - open));
-    rot(tDist, tAx[1], (thumb.curl ?? 0.3) * (1 - open) + 0.1);
+    rot(tProx, tAx[0], THREE.MathUtils.clamp((thumb.curl ?? 0.3) * 0.5 * (1 - open), LIMIT.thumbMcp[0], LIMIT.thumbMcp[1]));
+    rot(tDist, tAx[1], THREE.MathUtils.clamp((thumb.curl ?? 0.3) * (1 - open) + 0.1, LIMIT.thumbIp[0], LIMIT.thumbIp[1]));
   };
   g.userData.pose(0, 0);
   // 손바닥 중심(뼈 선 위)과 손바닥 법선(우리 손 좌표) — 총 표면에 손바닥을 붙일 때 쓴다
@@ -344,22 +348,22 @@ export function makeHand(M, { mirror = false, curls, thumb = { dir: [-0.6, 0.45,
         const pad = new THREE.Vector3(), t1 = new THREE.Vector3();
         g.updateMatrixWorld(true);
         const tryA = (m, p) => {
-          rot(js[0].b, js[0].ax, m); rot(js[1].b, js[1].ax, p); rot(js[2].b, js[2].ax, p * 0.45);
+          finger(js, [m, p, p * 0.45]);
           js[0].b.updateWorldMatrix(false, true);                     // 손가락 사슬만 다시 계산
           js[2].b.getWorldPosition(pad); tips[0].getWorldPosition(t1); pad.lerp(t1, 0.55);
           const d = pad.distanceTo(trigger);
           if (d < best) { best = d; bv = [m, p]; }
         };
-        for (let m = -0.35; m <= 1.4; m += 0.1) for (let p = 0; p <= 1.6; p += 0.1) tryA(m, p);     // 거칠게
+        for (let m = LIMIT.mcp[0]; m <= LIMIT.mcp[1]; m += 0.1) for (let p = 0; p <= LIMIT.pip[1]; p += 0.1) tryA(m, p);     // 거칠게(관절 범위 안에서만)
         const [m0, p0] = bv;
-        for (let m = m0 - 0.1; m <= m0 + 0.1; m += 0.025) for (let p = Math.max(0, p0 - 0.1); p <= p0 + 0.1; p += 0.025) tryA(m, p); // 곱게
+        for (let m = Math.max(LIMIT.mcp[0], m0 - 0.1); m <= Math.min(LIMIT.mcp[1], m0 + 0.1); m += 0.025) for (let p = Math.max(0, p0 - 0.1); p <= Math.min(LIMIT.pip[1], p0 + 0.1); p += 0.025) tryA(m, p); // 곱게
         grip[0][0] = bv[0]; grip[0][1] = bv[1]; grip[0][2] = bv[1] * 0.45;
         return;
       }
-      const set = (k, v) => { grip[f][k] = v; rot(js[k].b, js[k].ax, v); };
+      const set = (k, v) => { grip[f][k] = clampF(k, v, grip[f][1]); rot(js[k].b, js[k].ax, grip[f][k]); };
       for (let k = 0; k < 3; k++) set(k, 0.05);
       for (let k = 0; k < 3; k++) {
-        const max = [1.55, 1.75, 1.3][k], want = grip[f][k];
+        const max = [LIMIT.mcp[1], LIMIT.pip[1], LIMIT.dip[1]][k], want = grip[f][k];
         let v = 0.05, touched = false;
         for (; v <= max; v += 0.15) { set(k, v); if (hit(chain.slice(k))) { touched = true; break; } }   // 거칠게 찾고
         if (touched) { let lo = Math.max(0.05, v - 0.15), hi = v; for (let i = 0; i < 4; i++) { const mid = (lo + hi) / 2; set(k, mid); if (hit(chain.slice(k))) hi = mid; else lo = mid; } v = lo; } // 이분 탐색
@@ -550,6 +554,10 @@ function makeArmMesh(M, a, b) {
   for (const m of meshes) { m.bind(skel, new THREE.Matrix4()); m.frustumCulled = false; }
   return { group: g, bones };
 }
+// 사람 관절 가동 범위(라디안): 손가락 MCP 굽힘 90° · 젖힘 20°, PIP 105°, DIP 80°(PIP를 따라서만), 엄지 MCP 50° · IP 80°,
+// 손목 굽힘 75° · 젖힘 65° · 새끼쪽 30° · 엄지쪽 20°, 팔꿈치 굽힘 145°(안쪽 각 35°) · 팔꿈치 방향은 자연 방향에서 ±60°
+const LIMIT = { mcp: [-0.35, 1.57], pip: [0, 1.83], dip: [0, 1.4], dipPerPip: 0.85, thumbMcp: [0, 0.87], thumbIp: [-0.1, 1.4], spread: 0.35,
+  wristFlex: 1.31, wristExt: 1.13, wristUlnar: 0.52, wristRadial: 0.35, elbowInner: (35 * Math.PI) / 180, elbowSwing: Math.PI / 3 };
 const _D = new THREE.Vector3(), _E = new THREE.Vector3(), _P = new THREE.Vector3(), _X = new THREE.Vector3(), _Z = new THREE.Vector3(), _B = new THREE.Matrix4(), _W = new THREE.Vector3(), _V = new THREE.Vector3(), _Yv = new THREE.Vector3(0, 1, 0), _Qi = new THREE.Quaternion();
 // S(어깨)·pole(팔꿈치가 향할 방향)은 arm.parent 공간. 생략하면 쉬는 자세 값
 export function aimArm(arm, S = arm.userData.S0, pole = arm.userData.pole0) {
@@ -564,10 +572,38 @@ export function aimArm(arm, S = arm.userData.S0, pole = arm.userData.pole0) {
   const reach = (u.a + u.b) * 0.985;
   const D = _P.copy(W).sub(S); let d = D.length();
   if (d > reach) { S = S.clone().addScaledVector(D, 1 - reach / d); D.copy(W).sub(S); d = reach; }
+  // 팔꿈치 최대 굽힘 145°: 손이 어깨에 너무 가까우면 어깨가 뒤로 물러난다(팔꿈치가 그 이상 접히지 않게)
+  const dMin = Math.sqrt(u.a * u.a + u.b * u.b - 2 * u.a * u.b * Math.cos(LIMIT.elbowInner));
+  if (d < dMin) { S = W.clone().addScaledVector(D, -dMin / (d || 1)); D.copy(W).sub(S); d = dMin; }
   const n = D.divideScalar(d || 1), a = u.a, b = u.b;
   const x = (a * a - b * b + d * d) / (2 * d), h = Math.sqrt(Math.max(0, a * a - x * x));
-  const pp = pole.clone().addScaledVector(n, -pole.dot(n)).normalize();
-  const E = _E.copy(S).addScaledVector(n, x).addScaledVector(pp, h);
+  // 팔꿈치는 어깨–손목 축 둘레 원 위 어디든 될 수 있다. 손목이 관절 한계(굽힘 75° · 젖힘 65° · 새끼쪽 30° · 엄지쪽 20°)를
+  // 넘지 않으면서 자연스러운 방향(아래·바깥)에 가까운 곳을 고른다. 매 프레임 17곳을 재 보고, 직전 위치에서 크게 튀지 않게
+  const p0 = pole.clone().addScaledVector(n, -pole.dot(n)).normalize(), p1 = new THREE.Vector3().crossVectors(n, p0);
+  const hq = _Qi.copy(u.hand.quaternion).invert(), side = u.mirror ? 1 : -1;     // 손바닥 쪽: 오른손 −x, 왼손 +x
+  const wristAt = (psi, out) => {
+    out.copy(S).addScaledVector(n, x).addScaledVector(p0, Math.cos(psi) * h).addScaledVector(p1, Math.sin(psi) * h);
+    const f = _V.copy(out).sub(W).normalize().applyQuaternion(hq);                // 손 좌표에서 본 아래팔 방향(곧으면 +z)
+    return [Math.atan2(side * f.x, f.z), Math.atan2(f.y, f.z)];   // [굽힘(+)/젖힘(−), 새끼쪽(+)/엄지쪽(−)]
+  };
+  const over = ([fl, dv]) => Math.max(0, fl - LIMIT.wristFlex) + Math.max(0, -fl - LIMIT.wristExt) + Math.max(0, dv - LIMIT.wristUlnar) + Math.max(0, -dv - LIMIT.wristRadial);
+  let best = 0, bestC = Infinity; const prev = u.psi ?? 0, tmp = new THREE.Vector3();
+  // 팔꿈치는 자연 방향(아래·바깥)에서 ±60°까지만 — 어깨 구조상 팔을 뻗은 채 팔꿈치를 위·안쪽으로 크게 돌릴 수 없다
+  for (let i = 0; i <= 16; i++) {
+    const psi = -LIMIT.elbowSwing + (i / 16) * LIMIT.elbowSwing * 2, w = wristAt(psi, tmp);
+    let dp = psi - prev; dp = Math.atan2(Math.sin(dp), Math.cos(dp));
+    const c = 40 * over(w) ** 2 + 2.5 * (1 - Math.cos(psi)) + 0.08 * (w[0] * w[0] + w[1] * w[1]) + 0.25 * dp * dp;
+    if (c < bestC) { bestC = c; best = psi; }
+  }
+  // 고른 근처를 한 번 더 곱게
+  for (let psi = Math.max(-LIMIT.elbowSwing, best - 0.13); psi <= Math.min(LIMIT.elbowSwing, best + 0.13); psi += 0.026) {
+    const w = wristAt(psi, tmp); let dp = psi - prev; dp = Math.atan2(Math.sin(dp), Math.cos(dp));
+    const c = 40 * over(w) ** 2 + 2.5 * (1 - Math.cos(psi)) + 0.08 * (w[0] * w[0] + w[1] * w[1]) + 0.25 * dp * dp;
+    if (c < bestC) { bestC = c; best = psi; }
+  }
+  u.psi = best;
+  const E = _E; u.wristAngles = wristAt(best, E);
+  const pp = E.clone().sub(S).addScaledVector(n, -E.clone().sub(S).dot(n)).normalize();
   // 위팔 뼈: +y가 어깨→팔꿈치, +x(팔꿈치 끝)가 바깥(pole) 쪽
   const up = _D.copy(E).sub(S).normalize();
   _X.copy(pp).addScaledVector(up, -pp.dot(up)).normalize(); _Z.crossVectors(_X, up);
@@ -575,6 +611,44 @@ export function aimArm(arm, S = arm.userData.S0, pole = arm.userData.pole0) {
   // 아래팔 뼈: 위팔 기준에서 팔꿈치→손목 방향으로(굽힘 평면 안에서만 돈다)
   _V.copy(W).sub(E).normalize().applyQuaternion(_Qi.copy(g.quaternion).invert());
   u.rig.bones[1].quaternion.setFromUnitVectors(_Yv, _V);
+}
+
+// 손목 한계를 넘은 양(라디안 합)
+export function wristOver([fl, dv]) {
+  return Math.max(0, fl - LIMIT.wristFlex) + Math.max(0, -fl - LIMIT.wristExt) + Math.max(0, dv - LIMIT.wristUlnar) + Math.max(0, -dv - LIMIT.wristRadial);
+}
+// 쥔 채로 손 각도를 바꿔 보며(손바닥 중심을 축으로) 손목이 사람 관절 범위 안에 들어오고
+// 원래 파지에서 가장 덜 벗어나는 각을 고른 뒤, 손바닥을 다시 붙이고 손가락을 다시 감싼다. S·pole: arm.parent 공간 어깨·팔꿈치 방향
+export function settleHand(gunGroup, hand, arm, S, pole, others = [], trigger = null) {
+  const q0 = hand.quaternion.clone(), p0 = hand.position.clone();
+  hand.updateMatrix();
+  const pivot = hand.userData.palm.clone().applyMatrix4(hand.matrix);
+  const e = new THREE.Euler(), dq = new THREE.Quaternion(), wq = new THREE.Quaternion();
+  let best = [0, 0, 0], bestC = Infinity;
+  const tryR = (x, y, z) => {
+    dq.setFromEuler(e.set(x, y, z));
+    hand.quaternion.copy(q0).multiply(dq);
+    wq.copy(hand.quaternion).multiply(q0.clone().invert());                       // 부모 공간에서의 회전(손바닥 중심 둘레)
+    hand.position.copy(p0).sub(pivot).applyQuaternion(wq).add(pivot);
+    arm.userData.psi = undefined; aimArm(arm, S, pole);
+    const w = arm.userData.wristAngles;
+    // 비용: 한계 초과(크게) + 원래 파지에서 벗어난 각(손바닥 면 안 회전은 싸게 — 손잡이는 원래 손바닥을 비스듬히 가로지른다)
+    //       + 편한 범위(굽힘 ±35° · 옆 ±12°) 밖으로 갈수록
+    const o = wristOver(w), cf = Math.max(0, Math.abs(w[0]) - 0.6), cd = Math.max(0, Math.abs(w[1]) - 0.2);
+    const c = 60 * o * o + 8 * o + 0.35 * x * x + 1.0 * (y * y + z * z) + 0.8 * (cf * cf + cd * cd);
+    if (c < bestC) { bestC = c; best = [x, y, z]; }
+  };
+  // x = 손바닥 법선 둘레(대각선 파지) ±46°, y·z ±23° — 거칠게 찾고 근처를 곱게
+  for (let x = -0.8; x <= 0.801; x += 0.2) for (let y = -0.4; y <= 0.401; y += 0.2) for (let z = -0.4; z <= 0.401; z += 0.2) tryR(x, y, z);
+  const [bx, by, bz] = best;
+  for (let x = bx - 0.15; x <= bx + 0.151; x += 0.05) for (let y = by - 0.15; y <= by + 0.151; y += 0.05) for (let z = bz - 0.15; z <= bz + 0.151; z += 0.05) tryR(x, y, z);
+  dq.setFromEuler(e.set(...best));
+  hand.quaternion.copy(q0).multiply(dq);
+  wq.copy(hand.quaternion).multiply(q0.clone().invert());
+  hand.position.copy(p0).sub(pivot).applyQuaternion(wq).add(pivot);
+  fitHand(gunGroup, hand, others, trigger);
+  arm.userData.psi = undefined; aimArm(arm, S, pole);
+  return arm.userData.wristAngles;
 }
 
 // 각인(롤마크): 금속에 레이저로 새긴 듯한 옅은 회색 글자. 왼쪽 면(플레이어 쪽)에 붙인다
@@ -614,7 +688,7 @@ export function buildGun(id, M, extras) {
   else buildRail(g, add, M, out, extras);
   out.magRest = out.mag ? out.mag.position.clone() : null;
   // 실제 파지처럼: 손바닥을 손잡이·핸드가드 표면에 붙이고 손가락을 닿을 때까지 감는다(왼손은 오른손도 피해서 감싼다)
-  if (out.rightHand && out.rightHand.userData.fit) {
+  if (out.rightHand && out.rightHand.userData.fit && !(extras && extras.noFit)) {   // 게임에서는 뷰모델이 관절 범위 맞춤과 함께 한 번에 한다
     fitHand(g, out.rightHand, [], out.trigger);
     if (out.leftHand) fitHand(g, out.leftHand, [out.rightHand]);
     for (const a of [out.rightArm, out.leftArm]) if (a) aimArm(a);
@@ -742,7 +816,7 @@ function buildPistol(g, add, M, out, X) {
   // 동작 기준점: 탄피 배출구 · 왼손이 탄창을 끼우는 곳(손잡이 밑) · 슬라이드를 당기는 곳
   out.eject = new THREE.Vector3(0.013, 0.038, -0.02); out.casing = 'pistol';
   out.magHand = new THREE.Vector3(0.05, -0.13, 0.07); out.rackPt = new THREE.Vector3(-0.034, 0.0, 0.01); out.slideTravel = 0.036;  // 슬라이드 뒤쪽 톱니를 왼손으로 집어 당김
-  out.sightY = 0.0505; out.adsZ = -0.4;
+  out.sightY = 0.0505; out.adsZ = -0.58;
   // 손: 오른손 손잡이, 왼손 감싸쥠
   const tilt = 0.27;
   // 엄지 앞으로(thumbs-forward) 파지: 오른손은 손잡이 높이 잡고 엄지를 프레임 왼쪽 위로 뻗어 표적을 가리킨다.

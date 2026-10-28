@@ -266,7 +266,8 @@ export class Renderer {
     const vfov = (2 * Math.atan(Math.tan((h * Math.PI) / 360) * (9 / 16)) * 180) / Math.PI;
     if (Math.abs(this.camera.fov - vfov) > 0.01) { this.camera.fov = vfov; this.camera.updateProjectionMatrix(); }
     // 허리 사격은 넓게(양손이 다 보이게), 조준하면 좁혀 조준경을 크게
-    { const base = p.weapon === "pistol" ? 58 : 66, aimF = p.weapon === "rail" ? 32 : 44; this.vm.camera.fov = base - ads * (base - aimF); this.vm.camera.updateProjectionMatrix(); }
+    // 권총은 팔 길이만큼 멀리(58 cm) 있어 뷰모델 시야각을 좁혀 화면 크기를 맞춘다
+    { const base = p.weapon === "pistol" ? 47 : 66, aimF = p.weapon === "rail" ? 32 : p.weapon === "pistol" ? 36 : 44; this.vm.camera.fov = base - ads * (base - aimF); this.vm.camera.updateProjectionMatrix(); }
 
     // 장면 갱신
     this.level.update(dt, t, w, this.camera.position);
