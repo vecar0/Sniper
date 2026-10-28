@@ -25,7 +25,7 @@ const ammo = new THREE.MeshBasicMaterial({ color: 0x223322 });
 const gun = buildGun(q.get('gun') || 'rifle', M, { ammoMat: ammo, reticleMat: ammo, scopeMat: ammo });
 scene.add(gun.group); shadowGun(gun.group);
 if (q.get('noarm')) gun.group.traverse((o) => { if (o.isMesh && [M.sleeve, M.glove, M.knuckle].includes(o.material)) o.visible = false; });
-const box = new THREE.Box3(); gun.group.updateMatrixWorld(true); gun.group.traverse((o) => { if (o.isMesh && o.visible && o.parent.visible) box.expandByObject(o); }); const c = box.getCenter(new THREE.Vector3());
+const box = new THREE.Box3(); gun.group.updateMatrixWorld(true); gun.group.traverse((o) => { if (o.isMesh && o.visible && o.parent.visible) box.expandByObject(o); }); const c = q.get("tgt") ? new THREE.Vector3(...q.get("tgt").split(",").map(Number)) : box.getCenter(new THREE.Vector3());
 const cam = new THREE.PerspectiveCamera(q.get('fp') ? 54 : 30, innerWidth / innerHeight, 0.01, 20);
 const yaw = +(q.get('yaw') ?? 1.2), pitch = +(q.get('pitch') ?? 0.15), dist = +(q.get('dist') ?? 1.4);
 if (q.get('fp')) { // 플레이어 눈: 허리 사격 위치의 반대(fp=x,y,z)

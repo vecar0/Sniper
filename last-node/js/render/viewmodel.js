@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { WEAPONS } from '../config/balance.js';
 import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm, viewmodelLights, shadowGun } from './guns.js';
 
+const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _v1 = new THREE.Vector3();
+const easeIn = (t) => t * t * t;
+
 export class ViewModel {
   constructor(renderer, aspect) {
     this.scene = new THREE.Scene();
@@ -37,6 +40,8 @@ export class ViewModel {
     }
     for (const gun of Object.values(this.guns)) {
       gun.leftRest = { p: gun.leftHand.position.clone(), r: gun.leftHand.rotation.clone() };
+      gun.rightRest = { p: gun.rightHand.position.clone(), q: gun.rightHand.quaternion.clone() };
+      for (const a of [gun.leftArm, gun.rightArm]) if (a) a.userData.elbow0 = a.userData.elbow.clone();
       // 산탄: 손에 들고 넣을 탄 1발
       if (gun.pump) {
         const shell = new THREE.Group();
@@ -82,6 +87,7 @@ export class ViewModel {
   }
 
   setWeapon(id, instant = false) {
+    if (this.state && this.state.meleeK > 0 && this.guns[this.cur]) { this.state.meleeK = 0; this.meleeEnd(this.guns[this.cur]); }
     for (const k of Object.keys(this.guns)) this.guns[k].group.visible = k === id;
     this.cur = id;
     const gun = this.guns[id];
@@ -126,7 +132,10 @@ export class ViewModel {
     c.v.set(sp * (0.8 + Math.random() * 0.4), sp * (0.7 + Math.random() * 0.4), sp * (0.15 + Math.random() * 0.2));
     c.w.set((Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30);
   }
-  onMelee() { this.state.meleeK = 0.0001; }
+  onMelee() {
+    if (this.state.meleeK > 0) this.meleeEnd(this.guns[this.cur]);
+    this.state.meleeK = 0.0001; this.meleeSnap = null;
+  }
   onThrow() { this.state.throwK = 0.0001; }
   onLand(speed) { this.state.landV -= Math.min(0.08, speed * 0.004); }
 
@@ -201,6 +210,8 @@ export class ViewModel {
       s.swayX * 1.2 + H[3] * (1 - ads) + s.kickYaw * 0.012,
       s.roll + s.swayX * 0.5 + H[4] * (1 - ads) - s.velX * 0.006 * inert - sw * 0.3 + s.kickYaw * 0.01,
     );
+    // 걸음마다 총이 디딘 발 쪽으로 살짝 눕고(롤) 내려앉을 때 총구가 끄덕인다 — 위치만 흔들 때보다 몸에 들린 느낌
+    rot.z += bx * 2.2; rot.x += by * 1.6; rot.y -= bx * 0.8;
 
     // ── 슬라이드·노리쇠 왕복(쏠 때 빠르게 뒤로 → 돌아옴) ──
     s.slideT += dt; s.boltT += dt;
@@ -288,27 +299,28 @@ export class ViewModel {
     // 레일건 충전: 코일이 차오르며 빛남
     for (const c of gun.coils) c.material.emissiveIntensity = 0.15 + p.charge * 9;
     // 근접(칼) · 투척: 왼손을 총에서 떼어 앞으로
-    let knifeK = 0;
-    if (s.meleeK > 0) { s.meleeK += dt / 0.32; knifeK = Math.sin(Math.min(1, s.meleeK) * Math.PI); if (s.meleeK >= 1) s.meleeK = 0; }
     let throwK = 0;
     if (s.throwK > 0) { s.throwK += dt / 0.42; throwK = Math.sin(Math.min(1, s.throwK) * Math.PI); if (s.throwK >= 1) s.throwK = 0; }
-    const freeK = Math.max(knifeK, throwK);
+    const freeK = throwK;
     pos.y -= freeK * 0.05; pos.x += freeK * 0.04; rot.z -= freeK * 0.25;
     gun.group.position.copy(pos);
     gun.group.rotation.copy(rot);
     if (gun.ret) gun.ret.visible = ads > 0.85;
-    const freeOn = s.meleeK > 0 || s.throwK > 0;
+    // 근접: 총으로 친다(긴 총 = 개머리판 수평 타격 후 공중에 던져 돌려 다시 잡기, 권총 = 손가락에 걸고 돌려 거꾸로 쥔 손잡이 밑으로 찍기)
+    if (s.meleeK > 0) {
+      s.meleeK += dt / (this.cur === 'pistol' ? 0.58 : 0.66);
+      if (s.meleeK >= 1) { s.meleeK = 0; this.meleeEnd(gun); }
+      else this.meleeAnim(gun, s.meleeK, pos, rot);
+    }
+    const freeOn = s.throwK > 0;
     gun.leftHand.visible = !freeOn; if (gun.leftArm) gun.leftArm.visible = !freeOn;
     const F = this.free;
     F.group.visible = freeOn;
     if (freeOn) {
       const k = freeK;
-      for (const m of F.blade) m.visible = s.meleeK > 0;
-      for (const m of F.nade) m.visible = s.throwK > 0 && s.throwK < 0.55;
-      if (s.meleeK > 0) { // 왼쪽 아래에서 오른쪽 위로 베기: 칼날이 앞을 보게 눕힘
-        F.group.position.set(-0.16 + k * 0.2, -0.17 + k * 0.08, -0.26 - k * 0.12);
-        F.group.rotation.set(-1.35 + k * 0.2, 0.6 - k * 1.3, -0.5 + k * 0.4);
-      } else { // 투척: 어깨 위로 올렸다 앞으로
+      for (const m of F.blade) m.visible = false;
+      for (const m of F.nade) m.visible = s.throwK < 0.55;
+      { // 투척: 어깨 위로 올렸다 앞으로
         F.group.position.set(-0.12 + k * 0.05, -0.16 + k * 0.14, -0.22 - k * 0.12);
         F.group.rotation.set(-0.4 - k * 0.6, 0.3, -0.2);
       }
@@ -329,6 +341,95 @@ export class ViewModel {
     this.muzzleLight.intensity = fv ? 2.2 : 0;
     this.muzzleLight.position.copy(gun.muzzle.clone().applyEuler(rot).add(pos));
     this.rim.intensity = 0.55 + Math.sin(t * 2) * 0.05;
+  }
+
+  // ── 근접 동작 ──────────────────────────────────────────
+  // 손을 '붙잡아 두기': 총이 돌거나 날아가는 동안 손은 뷰모델 공간의 목표 자세에 머문다(총 좌표로 역변환해 넣음)
+  rootOf(o) { o.updateWorldMatrix(true, false); return _m1.copy(this.root.matrixWorld).invert().multiply(o.matrixWorld).clone(); }
+  pin(hand, target) {
+    hand.parent.updateWorldMatrix(true, false);
+    _m2.copy(hand.parent.matrixWorld).invert().multiply(this.root.matrixWorld).multiply(target);
+    _m2.decompose(hand.position, hand.quaternion, _v1);
+  }
+  pinElbow(arm, rootPos) {
+    arm.parent.updateWorldMatrix(true, false);
+    arm.userData.elbow.copy(rootPos).applyMatrix4(_m2.copy(this.root.matrixWorld)).applyMatrix4(_m3.copy(arm.parent.matrixWorld).invert());
+  }
+  meleeEnd(gun) {
+    gun.rightHand.position.copy(gun.rightRest.p); gun.rightHand.quaternion.copy(gun.rightRest.q);
+    for (const a of [gun.leftArm, gun.rightArm]) if (a) { a.userData.elbow.copy(a.userData.elbow0); aimArm(a); }
+    this.meleeSnap = null;
+  }
+  meleeAnim(gun, k, pos, rot) {
+    const G = gun.group, R = gun.rightHand, L = gun.leftHand;
+    const restQ = new THREE.Quaternion().setFromEuler(rot);
+    // 1) 쉬는 자세에서 손·팔꿈치의 뷰모델 공간 자세(목표의 기준)
+    G.position.copy(pos); G.quaternion.copy(restQ);
+    R.position.copy(gun.rightRest.p); R.quaternion.copy(gun.rightRest.q);
+    for (const a of [gun.leftArm, gun.rightArm]) if (a) a.userData.elbow.copy(a.userData.elbow0);
+    const restR = this.rootOf(R), restL = this.rootOf(L);
+    const elbowRest = [gun.leftArm, gun.rightArm].map((a) => a && new THREE.Vector3().copy(a.userData.elbow0).applyMatrix4(this.rootOf(a.parent)));
+    let gp = pos.clone(), gq = restQ.clone(), tR = null, tL = null;
+    const off = (m, d, rq) => { const o = m.clone(); if (rq) o.premultiply(new THREE.Matrix4().makeRotationFromQuaternion(rq)); o.elements[12] = m.elements[12] + d.x; o.elements[13] = m.elements[13] + d.y; o.elements[14] = m.elements[14] + d.z; return o; };
+    const camQ = (x, y, z) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'YXZ'));
+    if (this.cur === 'pistol') {
+      // 검지에 방아쇠울을 걸고 한 바퀴 반 뒤로 돌려 손잡이 밑(탄창 바닥)이 앞을 보게 → 내리찍기 → 계속 돌려 원래대로 잡는다
+      const phi = k < 0.2 ? ease(k / 0.2) * (Math.PI * 2.5) : k < 0.4 ? Math.PI * 2.5 : k < 0.86 ? Math.PI * 2.5 + ease((k - 0.4) / 0.46) * Math.PI * 1.5 : Math.PI * 4;
+      const up = new THREE.Vector3(0.0, 0.02, 0.02), hit = new THREE.Vector3(-0.045, -0.02, -0.13);
+      const d = k < 0.16 ? lerpV(new THREE.Vector3(), up, ease(k / 0.16)) : k < 0.28 ? lerpV(up, hit, easeIn((k - 0.16) / 0.12)) : k < 0.36 ? hit.clone() : lerpV(hit, new THREE.Vector3(), ease(Math.min(1, (k - 0.36) / 0.5)));
+      const swing = camQ(k < 0.28 ? -0.5 * smooth(0.16, 0.28, k) + 0.25 * smooth(0, 0.16, k) : -0.25 * (1 - smooth(0.36, 0.86, k)), 0, 0);
+      const P = new THREE.Vector3(0, -0.012, 0.0);           // 방아쇠울(검지) 축
+      const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), phi);
+      // 총 = (쉬는 자세 + 이동) · 휘두름 · [P 둘레 회전]
+      gq = swing.clone().multiply(restQ).multiply(spinQ);
+      const pivotW = P.clone().applyQuaternion(swing.clone().multiply(restQ));
+      gp = pos.clone().add(d).add(pivotW).sub(P.clone().applyQuaternion(gq));
+      tR = off(restR, d.clone().add(pivotW).sub(P.clone().applyQuaternion(restQ)), null);
+      // 오른손도 휘두름만큼 돌린다(손목 스냅)
+      { const c = new THREE.Vector3().setFromMatrixPosition(tR); tR = off(restR, new THREE.Vector3(), swing); tR.setPosition(c); }
+      const away = Math.min(smooth(0, 0.12, k), 1 - smooth(0.8, 0.97, k));
+      tL = off(restL, new THREE.Vector3(-0.05 * away, -0.22 * away, 0.0), camQ(0.3 * away, 0, 0.3 * away));
+      if (k > 0.97) tL = null;
+    } else {
+      // 긴 총: 개머리판을 뒤로 젖혔다가(감기) 왼쪽 앞으로 수평 타격 → 손을 놓아 총이 위로 뜨며 긴 축으로 한 바퀴 돌고 → 원래 자세로 받아 쥔다
+      const wind = { p: new THREE.Vector3(0.05, -0.03, 0.04), q: camQ(0.1, 0.45, -0.3) };
+      const hitP = { p: new THREE.Vector3(-0.03, 0.01, -0.21), q: camQ(-0.12, -1.5, 0.45) };
+      const rest = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
+      let a, b, u;
+      if (k < 0.13) { a = rest; b = wind; u = ease(k / 0.13); }
+      else if (k < 0.27) { a = wind; b = hitP; u = easeIn((k - 0.13) / 0.14); }
+      else if (k < 0.36) { a = hitP; b = hitP; u = 0; }
+      else { a = hitP; b = rest; u = ease(Math.min(1, (k - 0.36) / 0.52)); }
+      const dq = a.q.clone().slerp(b.q, u), dp = lerpV(a.p, b.p, u);
+      const shake = k > 0.27 && k < 0.36 ? Math.sin((k - 0.27) * 220) * 0.006 * (1 - (k - 0.27) / 0.09) : 0;
+      dp.y += shake;
+      // 던져 돌리기: 위로 포물선 + 긴 축(총열) 둘레 한 바퀴
+      let roll = 0;
+      if (k >= 0.36) { const t = Math.min(1, (k - 0.36) / 0.52), arc = Math.sin(t * Math.PI); dp.y += arc * 0.07; dp.z -= arc * 0.32; dp.x -= arc * 0.02; roll = ease(t) * Math.PI * 2; }
+      // 받아 쥘 때 손 무게로 살짝 처짐
+      if (k > 0.88) dp.y -= Math.sin(((k - 0.88) / 0.12) * Math.PI) * 0.012;
+      gq = dq.clone().multiply(restQ).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll));
+      gp = pos.clone().add(dp);
+      if (k >= 0.36 && k < 0.88) {
+        // 놓는 순간의 손 자세를 기억했다가 쉬는 자세 쪽으로(살짝 아래로 벌려) 옮긴다
+        if (!this.meleeSnap) { G.position.copy(pos).add(hitP.p); G.quaternion.copy(hitP.q.clone().multiply(restQ)); this.meleeSnap = { R: this.rootOf(R), L: this.rootOf(L) }; }
+        const t = ease(Math.min(1, (k - 0.36) / 0.42)), dip = Math.sin(Math.min(1, (k - 0.36) / 0.52) * Math.PI) * 0.05;
+        const blend = (A, B) => { const pa = new THREE.Vector3(), qa = new THREE.Quaternion(), pb = new THREE.Vector3(), qb = new THREE.Quaternion(), sc = new THREE.Vector3();
+          A.decompose(pa, qa, sc); B.decompose(pb, qb, sc); return new THREE.Matrix4().compose(pa.lerp(pb, t).add(new THREE.Vector3(0, -dip, 0)), qa.slerp(qb, t), new THREE.Vector3(1, 1, 1)); };
+        tR = blend(this.meleeSnap.R, restR); tL = blend(this.meleeSnap.L, restL);
+      }
+    }
+    G.position.copy(gp); G.quaternion.copy(gq);
+    if (tR) this.pin(R, tR); else { R.position.copy(gun.rightRest.p); R.quaternion.copy(gun.rightRest.q); }
+    if (tL) this.pin(L, tL);
+    // 팔꿈치: 손이 움직인 만큼 함께 옮긴다(팔 방향은 거의 그대로) — 팔꿈치를 몸에 고정하면 손이 들릴 때 아래팔이 얼굴 앞을 덮는다
+    const restHand = [restL, restR];
+    [gun.leftArm, gun.rightArm].forEach((a, i) => {
+      if (!a) return;
+      const now = new THREE.Vector3().setFromMatrixPosition(this.rootOf(i ? R : L)), was = new THREE.Vector3().setFromMatrixPosition(restHand[i]);
+      this.pinElbow(a, elbowRest[i].clone().addScaledVector(now.sub(was), 0.9));
+      aimArm(a);
+    });
   }
 
   muzzleWorld(mainCamera) {
