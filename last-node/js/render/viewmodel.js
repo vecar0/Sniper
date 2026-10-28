@@ -2,11 +2,10 @@
 // 흔들림(8자 걷기·관성·숨쉬기·시점 회전 지연) · 조준 정렬 · 반동 스프링 · 슬라이드/노리쇠 왕복 · 탄피 배출
 // · 왼손이 실제로 탄창을 빼고 끼우는 단계별 재장전(탄창이 비었으면 슬라이드·장전 손잡이 당김) · 교체 · 근접 · 투척 · 대시 기울기
 import * as THREE from 'three';
-import { WEAPONS } from '../config/balance.js';
+import { WEAPONS, PLAYER } from '../config/balance.js';
 import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm, viewmodelLights, shadowGun, fitHand } from './guns.js';
 
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _v1 = new THREE.Vector3();
-const easeIn = (t) => t * t * t;
 
 export class ViewModel {
   constructor(renderer, aspect) {
@@ -152,7 +151,7 @@ export class ViewModel {
   }
   onMelee() {
     if (this.state.meleeK > 0) this.meleeEnd(this.guns[this.cur]);
-    this.state.meleeK = 0.0001; this.meleeSnap = null;
+    this.state.meleeK = 0.0001;
   }
   onThrow() { this.state.throwK = 0.0001; }
   onLand(speed) { this.state.landV -= Math.min(0.08, speed * 0.004); }
@@ -301,6 +300,7 @@ export class ViewModel {
       } else if (gun.handShell) gun.handShell.visible = false;
       // 펌프: 쏜 뒤 앞뒤로, 뒤로 갈 때 빈 탄피가 튀어나간다
       this.pumpT = (this.pumpT ?? 9) + dt;
+      this.pumpEjected ??= true; // 처음 꺼낼 때는 쏜 적이 없으니 탄피를 내보내지 않는다
       const pk = this.pumpT > 0.08 && this.pumpT < 0.42 ? Math.sin(((this.pumpT - 0.08) / 0.34) * Math.PI) : 0;
       if (this.pumpT > 0.2 && !this.pumpEjected) { this.pumpEjected = true; this.eject(gun, 'shell'); }
       gun.pump.position.z = pk * 0.075;
@@ -326,7 +326,7 @@ export class ViewModel {
     if (gun.ret) gun.ret.visible = ads > 0.85;
     // 근접: 총으로 친다(긴 총 = 개머리판 수평 타격 후 공중에 던져 돌려 다시 잡기, 권총 = 손가락에 걸고 돌려 거꾸로 쥔 손잡이 밑으로 찍기)
     if (s.meleeK > 0) {
-      s.meleeK += dt / (this.cur === 'pistol' ? 0.58 : 0.66);
+      s.meleeK += dt / PLAYER.meleeDuration;
       if (s.meleeK >= 1) { s.meleeK = 0; this.meleeEnd(gun); }
       else this.meleeAnim(gun, s.meleeK, pos, rot);
     }
@@ -337,10 +337,7 @@ export class ViewModel {
       if (s.reloadK > 0 && !gun.pump) { const r = s.reloadK; oL = 0.2 + 0.5 * Math.min(1, Math.exp(-(((r - 0.1) / 0.04) ** 2)) + Math.exp(-(((r - 0.78) / 0.04) ** 2))); }
       if (gun.pump && (s.shellLoad || s.shellK > 0)) oL = 0.3;
       if (k > 0) {
-        if (this.cur === 'pistol') {
-          oL = 0.7 * Math.min(smooth(0, 0.12, k), 1 - smooth(0.8, 0.97, k));
-          oR = 0.45 * (smooth(0, 0.04, k) * (1 - smooth(0.16, 0.2, k)) + smooth(0.4, 0.44, k) * (1 - smooth(0.82, 0.86, k)));  // 검지에 걸고 돌리는 동안 나머지 손가락은 풀림
-        } else oL = oR = smooth(0.32, 0.4, k) * (1 - smooth(0.8, 0.88, k));
+        if (this.cur === 'pistol') oL = 0.6 * Math.min(smooth(0, 0.18, k), 1 - smooth(0.82, 0.98, k));   // 권총: 놓은 왼손은 살짝 펴짐(긴 총은 두 손 다 쥔 채)
       }
       gun.leftHand.userData.pose(oL, 0); gun.rightHand.userData.pose(oR, k > 0 ? 0 : trig);
     }
@@ -386,68 +383,49 @@ export class ViewModel {
   }
   meleeEnd(gun) {
     gun.rightHand.position.copy(gun.rightRest.p); gun.rightHand.quaternion.copy(gun.rightRest.q);
-    this.meleeSnap = null;
   }
+  // 근접: 천천히 총을 돌려(개머리판이 앞) → 개머리판으로 찍고(0.42초, 판정 순간) → 맞은 반동에 잠깐 멈췄다가 → 천천히 원래 자세로.
+  // 권총은 손목을 천천히 돌려 손잡이 밑(탄창 바닥)이 앞을 보게 한 뒤 내리찍는다. 키 자세 사이를 이음: 돌리기·복귀는 부드럽게, 타격만 빠르게(가속)
   meleeAnim(gun, k, pos, rot) {
     const G = gun.group, R = gun.rightHand, L = gun.leftHand;
     const restQ = new THREE.Quaternion().setFromEuler(rot);
-    // 1) 쉬는 자세에서 손·팔꿈치의 뷰모델 공간 자세(목표의 기준)
     G.position.copy(pos); G.quaternion.copy(restQ);
     R.position.copy(gun.rightRest.p); R.quaternion.copy(gun.rightRest.q);
-    const restR = this.rootOf(R), restL = this.rootOf(L);
-    let gp = pos.clone(), gq = restQ.clone(), tR = null, tL = null;
-    const off = (m, d, rq) => { const o = m.clone(); if (rq) o.premultiply(new THREE.Matrix4().makeRotationFromQuaternion(rq)); o.elements[12] = m.elements[12] + d.x; o.elements[13] = m.elements[13] + d.y; o.elements[14] = m.elements[14] + d.z; return o; };
-    const camQ = (x, y, z) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'YXZ'));
-    if (this.cur === 'pistol') {
-      // 검지에 방아쇠울을 걸고 한 바퀴 반 뒤로 돌려 손잡이 밑(탄창 바닥)이 앞을 보게 → 내리찍기 → 계속 돌려 원래대로 잡는다
-      const phi = k < 0.2 ? ease(k / 0.2) * (Math.PI * 2.5) : k < 0.4 ? Math.PI * 2.5 : k < 0.86 ? Math.PI * 2.5 + ease((k - 0.4) / 0.46) * Math.PI * 1.5 : Math.PI * 4;
-      const up = new THREE.Vector3(0.0, 0.02, 0.02), hit = new THREE.Vector3(-0.045, -0.02, -0.13);
-      const d = k < 0.16 ? lerpV(new THREE.Vector3(), up, ease(k / 0.16)) : k < 0.28 ? lerpV(up, hit, easeIn((k - 0.16) / 0.12)) : k < 0.36 ? hit.clone() : lerpV(hit, new THREE.Vector3(), ease(Math.min(1, (k - 0.36) / 0.5)));
-      const swing = camQ(k < 0.28 ? -0.5 * smooth(0.16, 0.28, k) + 0.25 * smooth(0, 0.16, k) : -0.25 * (1 - smooth(0.36, 0.86, k)), 0, 0);
-      const P = new THREE.Vector3(0, -0.012, 0.0);           // 방아쇠울(검지) 축
-      const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), phi);
-      // 총 = (쉬는 자세 + 이동) · 휘두름 · [P 둘레 회전]
-      gq = swing.clone().multiply(restQ).multiply(spinQ);
-      const pivotW = P.clone().applyQuaternion(swing.clone().multiply(restQ));
-      gp = pos.clone().add(d).add(pivotW).sub(P.clone().applyQuaternion(gq));
-      tR = off(restR, d.clone().add(pivotW).sub(P.clone().applyQuaternion(restQ)), null);
-      // 오른손도 휘두름만큼 돌린다(손목 스냅)
-      { const c = new THREE.Vector3().setFromMatrixPosition(tR); tR = off(restR, new THREE.Vector3(), swing); tR.setPosition(c); }
-      const away = Math.min(smooth(0, 0.12, k), 1 - smooth(0.8, 0.97, k));
-      tL = off(restL, new THREE.Vector3(-0.05 * away, -0.22 * away, 0.0), camQ(0.3 * away, 0, 0.3 * away));
-      if (k > 0.97) tL = null;
-    } else {
-      // 긴 총: 개머리판을 뒤로 젖혔다가(감기) 왼쪽 앞으로 수평 타격 → 손을 놓아 총이 위로 뜨며 긴 축으로 한 바퀴 돌고 → 원래 자세로 받아 쥔다
-      const wind = { p: new THREE.Vector3(0.05, -0.03, 0.04), q: camQ(0.1, 0.45, -0.3) };
-      const hitP = { p: new THREE.Vector3(-0.03, 0.01, -0.21), q: camQ(-0.12, -1.5, 0.45) };
-      const rest = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
-      let a, b, u;
-      if (k < 0.13) { a = rest; b = wind; u = ease(k / 0.13); }
-      else if (k < 0.27) { a = wind; b = hitP; u = easeIn((k - 0.13) / 0.14); }
-      else if (k < 0.36) { a = hitP; b = hitP; u = 0; }
-      else { a = hitP; b = rest; u = ease(Math.min(1, (k - 0.36) / 0.52)); }
-      const dq = a.q.clone().slerp(b.q, u), dp = lerpV(a.p, b.p, u);
-      const shake = k > 0.27 && k < 0.36 ? Math.sin((k - 0.27) * 220) * 0.006 * (1 - (k - 0.27) / 0.09) : 0;
-      dp.y += shake;
-      // 던져 돌리기: 위로 포물선 + 긴 축(총열) 둘레 한 바퀴
-      let roll = 0;
-      if (k >= 0.36) { const t = Math.min(1, (k - 0.36) / 0.52), arc = Math.sin(t * Math.PI); dp.y += arc * 0.07; dp.z -= arc * 0.32; dp.x -= arc * 0.02; roll = ease(t) * Math.PI * 2; }
-      // 받아 쥘 때 손 무게로 살짝 처짐
-      if (k > 0.88) dp.y -= Math.sin(((k - 0.88) / 0.12) * Math.PI) * 0.012;
-      gq = dq.clone().multiply(restQ).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll));
-      gp = pos.clone().add(dp);
-      if (k >= 0.36 && k < 0.88) {
-        // 놓는 순간의 손 자세를 기억했다가 쉬는 자세 쪽으로(살짝 아래로 벌려) 옮긴다
-        if (!this.meleeSnap) { G.position.copy(pos).add(hitP.p); G.quaternion.copy(hitP.q.clone().multiply(restQ)); this.meleeSnap = { R: this.rootOf(R), L: this.rootOf(L) }; }
-        const t = ease(Math.min(1, (k - 0.36) / 0.42)), dip = Math.sin(Math.min(1, (k - 0.36) / 0.52) * Math.PI) * 0.05;
-        const blend = (A, B) => { const pa = new THREE.Vector3(), qa = new THREE.Quaternion(), pb = new THREE.Vector3(), qb = new THREE.Quaternion(), sc = new THREE.Vector3();
-          A.decompose(pa, qa, sc); B.decompose(pb, qb, sc); return new THREE.Matrix4().compose(pa.lerp(pb, t).add(new THREE.Vector3(0, -dip, 0)), qa.slerp(qb, t), new THREE.Vector3(1, 1, 1)); };
-        tR = blend(this.meleeSnap.R, restR); tL = blend(this.meleeSnap.L, restL);
+    const restL = this.rootOf(L);
+    const V = (x, y, z) => new THREE.Vector3(x, y, z), Q = (x, y, z) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'YXZ'));
+    // [시각 k, 위치 이동, 카메라 기준 회전, 이 구간으로 들어오는 보간]
+    const keys = this.cur === 'pistol' ? [
+      [0, V(0, 0, 0), Q(0, 0, 0)],
+      [0.3, V(-0.02, 0.045, 0.03), Q(1.05, 0, 0.15), 'ease'],          // 천천히 손목을 돌려 손잡이 밑이 앞을 보게 들어 올림
+      [0.365, V(-0.035, -0.03, -0.13), Q(1.25, 0, 0.1), 'in'],          // 내리찍기(판정)
+      [0.45, V(-0.032, -0.022, -0.11), Q(1.2, 0, 0.1), 'ease'],         // 맞은 반동
+      [1, V(0, 0, 0), Q(0, 0, 0), 'ease'],                               // 천천히 복귀
+    ] : [
+      [0, V(0, 0, 0), Q(0, 0, 0)],
+      [0.09, V(0.05, -0.14, -0.04), Q(0.12, -0.08, 0.04), 'ease'],        // 먼저 총을 아래로 내린다(개머리판이 화면 밖 아래로)
+      [0.18, V(0.04, -0.11, -0.15), Q(0.02, -0.65, 0.16), 'ease'],      // 낮은 채로 천천히 돌린다
+      [0.3, V(0.01, -0.02, -0.05), Q(-0.06, -1.3, 0.3), 'ease'],        // 개머리판이 왼쪽 앞을 보게 다 돌림(살짝 당겨 힘을 모음)
+      [0.365, V(-0.02, 0.01, -0.19), Q(-0.12, -1.5, 0.42), 'in'],       // 개머리판으로 찌르듯 타격(판정)
+      [0.45, V(-0.02, 0.005, -0.165), Q(-0.1, -1.47, 0.4), 'ease'],     // 맞은 반동
+      [0.7, V(0.04, -0.11, -0.15), Q(0.02, -0.65, 0.16), 'ease'],       // 낮은 채로 천천히 되돌린다(개머리판이 얼굴을 피해서)
+      [0.84, V(0.05, -0.14, -0.04), Q(0.12, -0.08, 0.04), 'ease'],        // 다 돌린 뒤 아래에서 올려 온다
+      [1, V(0, 0, 0), Q(0, 0, 0), 'ease'],                               // 제자리
+    ];
+    let i = 1; while (i < keys.length - 1 && k > keys[i][0]) i++;
+    const [k0, p0, q0] = keys[i - 1], [k1, p1, q1, how] = keys[i];
+    const t = THREE.MathUtils.clamp((k - k0) / (k1 - k0), 0, 1), u = how === 'in' ? t * t : ease(t);
+    const dp = p0.clone().lerp(p1, u), dq = q0.clone().slerp(q1, u);
+    if (k > 0.365 && k < 0.45) dp.y += Math.sin((k - 0.365) * 180) * 0.004 * (1 - (k - 0.365) / 0.085);   // 맞는 순간 떨림
+    G.position.copy(pos).add(dp); G.quaternion.copy(dq).multiply(restQ);
+    // 권총: 왼손은 놓고 아래로 비켰다가 끝에 다시 감싼다(긴 총은 두 손 다 그대로 쥔 채 휘두른다)
+    if (this.cur === 'pistol' && L) {
+      const away = Math.min(smooth(0, 0.18, k), 1 - smooth(0.82, 0.98, k));
+      if (k < 0.98) {
+        const tL = restL.clone().premultiply(new THREE.Matrix4().makeRotationFromQuaternion(Q(0.3 * away, 0, 0.3 * away)));
+        const pL = new THREE.Vector3().setFromMatrixPosition(restL).add(V(-0.05 * away, -0.2 * away, 0));
+        tL.setPosition(pL); this.pin(L, tL);
       }
     }
-    G.position.copy(gp); G.quaternion.copy(gq);
-    if (tR) this.pin(R, tR); else { R.position.copy(gun.rightRest.p); R.quaternion.copy(gun.rightRest.q); }
-    if (tL) this.pin(L, tL);
   }
 
   // 팔 2관절 IK: 어깨(뷰모델 공간 고정) → 팔의 부모(총·펌프) 공간으로 옮겨 푼다

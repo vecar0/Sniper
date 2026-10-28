@@ -30,7 +30,9 @@ export const PLAYER = {
   meleeDamage: 35,
   meleeRange: 2.3,
   meleeCone: 0.75,       // cos(약 41°)
-  meleeCooldown: 0.55,
+  meleeCooldown: 1.15,   // 천천히 돌려 개머리판으로 치고 천천히 돌아오는 한 동작(1.15초)이 끝나야 다시
+  meleeWindup: 0.42,     // 총을 돌려 겨누는 시간 — 판정은 개머리판이 닿는 이 순간에
+  meleeDuration: 1.15,   // 동작 전체(이 동안은 쏠 수 없다: 두 손이 총을 휘두르는 중)
   meleeHeal: 25,         // 기절한 적을 근접 처치하면 회복
   fallY: -12,            // 이 높이 아래로 떨어지면 추락 처리
   fallDamage: 30,

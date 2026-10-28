@@ -186,7 +186,8 @@ test('EMP: 반경 5m 기계 적 2.5초 기절, 기절한 적 근접 처치 = 체
   w.empBlast(0, 1, 13);
   assert.ok(Math.abs(near.stun - EMP.stun) < 1e-6); assert.equal(far.stun, 0);
   w.player.hp = 50; w.player.yaw = 0; w.player.pitch = 0;
-  w.input.melee = true; w.step(DT);
+  w.input.melee = true; w.step(DT); w.input.melee = false;
+  for (let t = 0; t < 0.5; t += DT) w.step(DT);   // 총을 돌려 개머리판이 닿을 때(0.42초) 판정
   assert.equal(near.alive, false, '근접 처치 실패');
   assert.ok(w.player.hp >= 75, `회복 ${w.player.hp}`);
 });

@@ -204,8 +204,8 @@ export class Renderer {
       case 'shock': fx.emp(ev, ev.r); break;
       case 'dashStun': fx.sparkBurst(ev, 10, null, [0.6, 1.6, 3], 4, 0.04, 0.3); break;
       case 'pickup': fx.glowPuff(ev, 0.6, ev.kind === 'orb' ? [0.3, 2, 2.6] : [2.6, 1.5, 0.3], 0.18); break;
+      case 'meleeStart': this.vm.onMelee(); break;
       case 'melee':
-        this.vm.onMelee();
         if (ev.hit) { fx.sparkBurst(ev, ev.finisher ? 30 : 10, null, [3, 2, 1], 6, 0.06, 0.35); this.shake = Math.min(1, this.shake + (ev.finisher ? 0.35 : 0.15)); }
         if (ev.finisher) { fx.energyBurst(ev, 30, [0.3, 2.2, 3], 4, 0.07, 0.6); this.hitstop = 0.09; }
         break;

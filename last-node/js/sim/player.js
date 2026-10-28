@@ -17,7 +17,7 @@ export function makePlayer() {
     airJumps: 1, crouch: false, slideT: 0, slideCd: 0, eye: P.eye,
     weapon: 'pistol', lastWeapon: 'pistol', owned: { pistol: true }, levels: { pistol: 0, shotgun: 0, rifle: 0, rail: 0 }, ammo,
     fireCd: 0, reloadT: -1, switchT: 0, charge: 0, sustain: 0, lastShot: -9, recoilDebt: 0,
-    ads: 0, meleeCd: 0, meleeT: 0, emp: P.empStart, hurtT: 9, bob: 0, speed: 0,
+    ads: 0, meleeCd: 0, meleeT: 0, meleeHitT: 0, emp: P.empStart, hurtT: 9, bob: 0, speed: 0,
   };
 }
 
@@ -138,7 +138,11 @@ export function updatePlayer(world, p, inp, dt) {
 
   // 근접
   p.meleeCd -= dt; p.meleeT -= dt;
-  if (inp.melee && p.meleeCd <= 0) { p.meleeCd = P.meleeCooldown; p.meleeT = 0.3; world.melee(); }
+  if (inp.melee && p.meleeCd <= 0 && p.switchT <= 0 && p.reloadT < 0) {
+    p.meleeCd = P.meleeCooldown; p.meleeT = P.meleeDuration; p.meleeHitT = P.meleeWindup;
+    world.events.push({ t: 'meleeStart', w: p.weapon });
+  }
+  if (p.meleeHitT > 0) { p.meleeHitT -= dt; if (p.meleeHitT <= 0) world.melee(); }   // 개머리판이 닿는 순간 판정
 
   // EMP 투척(떼는 순간)
   if (inp.throwEmp && p.emp > 0) {
@@ -172,6 +176,7 @@ function updateWeapons(world, p, inp, dt) {
     return;
   }
   if (p.switchT > 0) { p.switchT -= dt; return; }
+  if (p.meleeT > 0) { p.charge = 0; return; }   // 근접 동작 중에는 쏘지도 재장전하지도 않는다
 
   // 재장전
   const canReload = am.mag < st.mag && am.reserve > 0;
