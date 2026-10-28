@@ -67,22 +67,31 @@ function picatinny(z0, z1, y, width = 0.021) {
 
 // ── 재질 ─────────────────────────────────────────────────
 // 거칠기 변화(지문 얼룩 · 두 방향 잔흠집 · 미세 결) + 모서리 마모(밝은 금속이 드러남)를 셰이더로
-function finishMaterial(params, { smear = 0.1, scratch = 0.18, grain = 0.03, wear = 0, bump = 0, bumpF = 900, key }) {
+function finishMaterial(params, { smear = 0.1, scratch = 0.18, grain = 0.03, wear = 0, bump = 0, bumpF = 900, camo = 0, key }) {
   const m = new THREE.MeshStandardMaterial(params);
   m.onBeforeCompile = (sh) => {
-    sh.uniforms.uSmear = { value: smear }; sh.uniforms.uScratch = { value: scratch }; sh.uniforms.uGrain = { value: grain }; sh.uniforms.uWear = { value: wear }; sh.uniforms.uBump = { value: bump }; sh.uniforms.uBumpF = { value: bumpF };
+    sh.uniforms.uSmear = { value: smear }; sh.uniforms.uScratch = { value: scratch }; sh.uniforms.uGrain = { value: grain }; sh.uniforms.uWear = { value: wear }; sh.uniforms.uBump = { value: bump }; sh.uniforms.uBumpF = { value: bumpF }; sh.uniforms.uCamo = { value: camo };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vOP; varying vec3 vON;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvOP = position; vON = normal;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-varying vec3 vOP; varying vec3 vON; uniform float uSmear, uScratch, uGrain, uWear, uBump, uBumpF;
+varying vec3 vOP; varying vec3 vON; uniform float uSmear, uScratch, uGrain, uWear, uBump, uBumpF, uCamo;
 float gh(vec3 p){ p = fract(p * 0.3183 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float gn(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
   return mix(mix(mix(gh(i), gh(i+vec3(1,0,0)), f.x), mix(gh(i+vec3(0,1,0)), gh(i+vec3(1,1,0)), f.x), f.y),
              mix(mix(gh(i+vec3(0,0,1)), gh(i+vec3(1,0,1)), f.x), mix(gh(i+vec3(0,1,1)), gh(i+vec3(1,1,1)), f.x), f.y), f.z); }
 float scr(vec3 p, vec3 dir, float freq){ float d = dot(p, dir) * freq; float line = abs(fract(d) - 0.5);
   float mask = step(0.72, gn(p * 40.0 + dir * 7.0)); return smoothstep(0.035, 0.0, line) * mask; }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+if (uCamo > 0.0) {   // 위장 무늬(어두운 올리브 바탕 + 모래색·검은 얼룩): 천 좌표에 붙은 덩어리 잡음
+  float c1 = gn(vOP * 34.0 + 1.3) + 0.45 * gn(vOP * 95.0), c2 = gn(vOP * 48.0 + 7.1) + 0.4 * gn(vOP * 120.0 + 2.0);
+  vec3 col = vec3(0.05, 0.055, 0.042);
+  col = mix(col, vec3(0.064, 0.072, 0.05), smoothstep(0.5, 0.56, gn(vOP * 22.0 + 5.0)));
+  col = mix(col, vec3(0.1, 0.092, 0.07), smoothstep(0.86, 0.9, c1));
+  col = mix(col, vec3(0.022, 0.024, 0.022), smoothstep(0.84, 0.88, c2));
+  diffuseColor.rgb = col * (0.95 + 0.1 * gn(vOP * 260.0));
+}`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 { vec3 p = vOP;
   float fw = max(length(dFdx(p)), length(dFdy(p)));
@@ -152,7 +161,10 @@ export function gunMaterials(envMap) {
     // 장갑(천) · 너클 보호판 · 소매
     glove: finishMaterial({ color: lin(0.03, 0.03, 0.032), metalness: 0, roughness: 0.82, envMapIntensity: 0.5 }, { smear: 0.05, scratch: 0, grain: 0.1, key: 'glove' }),
     knuckle: finishMaterial({ color: lin(0.035, 0.037, 0.04), metalness: 0, roughness: 0.5, envMapIntensity: 0.8 }, { smear: 0.08, scratch: 0.08, grain: 0.04, key: 'knuckle' }),
-    sleeve: finishMaterial({ color: lin(0.045, 0.05, 0.06), metalness: 0, roughness: 0.9, envMapIntensity: 0.4 }, { smear: 0.04, scratch: 0, grain: 0.08, key: 'sleeve' }),
+    // 전투복 소매(위장 무늬 면직 + 짠 결 요철) · 소매 끝단·벨크로(진한 단색) · 팔꿈치 패드(고무 코팅)
+    sleeve: finishMaterial({ color: lin(0.05, 0.055, 0.042), metalness: 0, roughness: 0.92, envMapIntensity: 0.35 }, { smear: 0.04, scratch: 0, grain: 0.08, bump: 0.0006, bumpF: 2600, camo: 1, key: 'sleeve' }),
+    cuff: finishMaterial({ color: lin(0.035, 0.038, 0.03), metalness: 0, roughness: 0.88, envMapIntensity: 0.35 }, { smear: 0.04, scratch: 0, grain: 0.12, bump: 0.0008, bumpF: 3000, key: 'cuff' }),
+    pad: finishMaterial({ color: lin(0.03, 0.032, 0.03), metalness: 0, roughness: 0.6, envMapIntensity: 0.6 }, { smear: 0.08, scratch: 0.05, grain: 0.06, bump: 0.0008, bumpF: 1200, key: 'pad' }),
     bore: new THREE.MeshBasicMaterial({ color: 0x050505 }),
     port: new THREE.MeshStandardMaterial({ color: 0x0a0a0b, metalness: 0.6, roughness: 0.6 }),
     // 발광은 의미 있는 곳에만: 야간 조준점(초록) · 탄수 표시 · 충전 코일
@@ -289,31 +301,35 @@ export function makeHand(M, { mirror = false, curls, thumb = { pos: [0.006, 0.03
   return g;
 }
 
-// 아래팔: 손목(a)에서 팔꿈치(b)까지 + 팔꿈치 너머로 조금 더(화면 밖까지 이어져 잘린 끝이 안 보이게).
-// 장갑 손목 끈 → 소매 끝단(접힌 단) → 근육 따라 굵어지는 소매 + 주름 몇 줄 · 바깥쪽 보호판
+// 아래팔: 손목(a)에서 팔꿈치(b)까지 + 팔꿈치 너머로 조금 더.
+// 장갑 손목 덮개(건틀릿, 벨크로 끈) → 전투복 소매 끝단(벨크로 탭) → 위장 무늬 소매(근육 따라 굵어짐 · 주름 · 바느질 솔기)
 export function makeForearm(M, a, b) {
   const g = new THREE.Group();
   const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
-  const len = A.distanceTo(B), ext = len + 0.16;
-  const prof = [[0, -0.004], [0.021, -0.004], [0.0225, 0.004]];
-  // 소매: 손목 0.024 → 팔꿈치 0.04, 주름은 반지름의 작은 물결
-  for (let i = 0; i <= 18; i++) {
-    const t = i / 18, z = 0.03 + t * (ext - 0.03);
-    const base = 0.0255 + 0.0165 * Math.sin(Math.min(1, z / (len * 0.8)) * Math.PI / 2);
-    const fold = z > 0.06 && z < len * 0.9 ? 0.0016 * Math.sin(z * 120) * (1 - t) : 0;
+  const len = A.distanceTo(B), ext = len + 0.05;
+  const parts = [];
+  // 장갑 건틀릿: 손목을 덮고 0.06까지, 끝이 살짝 벌어짐
+  const gl = [[0, -0.006], [0.021, -0.006], [0.0235, 0.01], [0.0245, 0.04], [0.027, 0.058], [0.0255, 0.062], [0, 0.062]];
+  parts.push([new THREE.LatheGeometry(gl.map(([r, z]) => new THREE.Vector2(r, z)), 16), 'glove']);
+  { const st = new THREE.CylinderGeometry(0.0255, 0.0255, 0.016, 16, 1, true); st.translate(0, 0.03, 0); parts.push([st, 'knuckle']); }  // 벨크로 끈
+  parts.push([rbox(0.009, 0.018, 0.022, 0.003, 0.024, 0.03, 0.006), 'knuckle']);                                                         // 끈 당김 탭
+  // 소매: 건틀릿 위를 덮는 끝단부터 시작
+  const prof = [[0, 0.045], [0.029, 0.045], [0.031, 0.05]];
+  for (let i = 0; i <= 20; i++) {
+    const t = i / 20, z = 0.05 + t * (ext - 0.05);
+    const base = 0.03 + 0.012 * Math.sin(Math.min(1, z / (len * 0.75)) * Math.PI / 2);
+    const fold = z > 0.09 ? 0.0018 * Math.sin(z * 110 + 0.7) * (0.4 + 0.6 * Math.sin(t * Math.PI)) : 0;  // 접힌 주름
     prof.push([base + fold, z]);
   }
-  prof.push([0.034, ext + 0.01], [0, ext + 0.012]);
-  const sleeve = new THREE.LatheGeometry(prof.map(([r, z]) => new THREE.Vector2(r, z)), 18);
-  const strap = new THREE.CylinderGeometry(0.0235, 0.0235, 0.014, 18); strap.translate(0, 0.012, 0);      // 장갑 손목 끈
-  const buckle = rbox(0.008, 0.012, 0.016, 0.002, 0.022, 0.012, 0.0);
-  const hem = new THREE.TorusGeometry(0.0265, 0.003, 6, 18); hem.rotateX(Math.PI / 2); hem.translate(0, 0.032, 0); // 소매 접힌 단
-  const plate = rbox(0.008, 0.09, 0.034, 0.004, 0.034, 0.15, 0.0);                                        // 팔 바깥 보호판
+  prof.push([0.04, ext + 0.006], [0, ext + 0.008]);
+  parts.push([new THREE.LatheGeometry(prof.map(([r, z]) => new THREE.Vector2(r, z)), 20), 'sleeve']);
+  { const hem = new THREE.CylinderGeometry(0.032, 0.0315, 0.024, 20, 1, true); hem.translate(0, 0.058, 0); parts.push([hem, 'cuff']); }  // 소매 끝단(두 겹)
+  parts.push([rbox(0.007, 0.03, 0.02, 0.003, 0.031, 0.062, -0.004), 'cuff']);                                                           // 끝단 벨크로 탭
+  // 솔기(바깥 아래쪽으로 길게 한 줄) + 소매 위 작은 펜 포켓
+  { const sm = new THREE.BoxGeometry(0.002, ext - 0.08, 0.002); sm.translate(0.0, 0.08 + (ext - 0.08) / 2, -0.035); parts.push([sm, 'cuff']); }
+  parts.push([rbox(0.006, 0.07, 0.03, 0.003, 0.036, 0.15, 0.004), 'cuff']);
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
-  for (const [geo, m] of [[sleeve, 'sleeve'], [strap, 'knuckle'], [buckle, 'knuckle'], [hem, 'sleeve'], [plate, 'knuckle']]) {
-    geo.applyQuaternion(q); geo.translate(A.x, A.y, A.z);
-    g.add(new THREE.Mesh(geo, M[m]));
-  }
+  for (const [geo, m] of parts) { geo.applyQuaternion(q); geo.translate(A.x, A.y, A.z); g.add(new THREE.Mesh(geo, M[m])); }
   return g;
 }
 
@@ -355,15 +371,18 @@ function armFrom(parent, M, hand, mirror, shoulderOff) {
   aimArm(arm);
   return arm;
 }
-// 위팔 소매(어깨 → 팔꿈치, +y 방향) + 팔꿈치 덧댐
+// 위팔 소매(어깨 → 팔꿈치, +y 방향): 위장 무늬 + 팔꿈치 보호대(고무 패드 + 끈) + 어깨 쪽 소매 주머니
 function makeUpperArm(M, L) {
   const g = new THREE.Group();
-  const prof = [[0, -0.02], [0.03, -0.02]];
-  for (let i = 0; i <= 10; i++) { const t = i / 10, z = t * (L + 0.05); prof.push([0.05 - 0.012 * t + 0.0015 * Math.sin(z * 90) * (1 - t), z]); }
-  prof.push([0.036, L + 0.06], [0, L + 0.062]);
-  g.add(new THREE.Mesh(new THREE.LatheGeometry(prof.map(([r, z]) => new THREE.Vector2(r, z)), 16), M.sleeve));
-  const pad = new THREE.SphereGeometry(1, 12, 8); pad.scale(0.03, 0.04, 0.03); pad.translate(0.02, L - 0.01, 0);
-  g.add(new THREE.Mesh(pad, M.knuckle));
+  const prof = [[0, -0.03], [0.048, -0.03]];
+  for (let i = 0; i <= 12; i++) { const t = i / 12, z = -0.02 + t * (L + 0.05); prof.push([0.049 - 0.009 * t + 0.0016 * Math.sin(z * 80) * (1 - t), z]); }
+  prof.push([0.04, L + 0.04], [0, L + 0.042]);
+  g.add(new THREE.Mesh(new THREE.LatheGeometry(prof.map(([r, z]) => new THREE.Vector2(r, z)), 18), M.sleeve));
+  // 팔꿈치 보호대: 바깥(+x) 쪽 둥근 패드 + 위아래 끈
+  const pad = new THREE.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2); pad.scale(0.036, 0.016, 0.042); pad.rotateZ(-Math.PI / 2); pad.translate(0.036, L - 0.01, 0);
+  g.add(new THREE.Mesh(pad, M.pad));
+  for (const y of [L - 0.045, L + 0.025]) { const st = new THREE.CylinderGeometry(0.0425, 0.0425, 0.012, 18, 1, true); st.translate(0, y, 0); g.add(new THREE.Mesh(st, M.knuckle)); }
+  g.add(new THREE.Mesh(rbox(0.014, 0.09, 0.06, 0.006, 0.045, 0.07, 0.0), M.cuff));    // 위팔 소매 주머니(벨크로 덮개)
   return g;
 }
 const _Y = new THREE.Vector3(0, 1, 0), _W = new THREE.Vector3(), _D = new THREE.Vector3(), _E = new THREE.Vector3(), _P = new THREE.Vector3(), _X = new THREE.Vector3(), _Z = new THREE.Vector3(), _B = new THREE.Matrix4();
@@ -381,14 +400,17 @@ export function aimArm(arm, S = arm.userData.S0, pole = arm.userData.pole0) {
   u.hand.updateMatrix();
   const W = _W.copy(u.wrist).applyMatrix4(u.hand.matrix);
   if (!u.a) {
-    const d = S.distanceTo(W), tot = d * 1.045;               // 쉬는 자세에서 팔꿈치가 조금만 굽어 있게(사격 자세는 팔을 뻗는다)
-    u.a = tot * 0.47; u.b = tot * 0.53;
+    // 실제 사람 비율로 고정: 위팔(어깨–팔꿈치) 0.29 m, 아래팔(팔꿈치–손목) 0.26 m
+    u.a = 0.29; u.b = 0.26;
     u.upper = makeUpperArm(u.M, u.a); u.fore = makeForearm(u.M, [0, 0, 0], [0, u.b, 0]);
     arm.add(u.upper, u.fore);
   }
-  const D = _P.copy(W).sub(S), d = D.length(), n = D.divideScalar(d || 1);
-  let a = u.a, b = u.b, k = 1;
-  if (d > (a + b) * 0.998) { k = d / ((a + b) * 0.998); a *= k; b *= k; }   // 닿지 않으면 아주 조금 늘린다(손이 총에서 떨어지지 않게)
+  // 손이 팔 길이보다 멀면 팔을 늘리지 않고 어깨가 손 쪽으로 따라 나간다(실제로도 앞손 쪽 어깨를 내민다). 어깨는 화면 밖
+  const reach = (u.a + u.b) * 0.97;
+  const D = _P.copy(W).sub(S); let d = D.length();
+  if (d > reach) { S = S.clone().addScaledVector(D, 1 - reach / d); D.copy(W).sub(S); d = reach; }
+  const n = D.divideScalar(d || 1);
+  const a = u.a, b = u.b, k = 1;
   const x = (a * a - b * b + d * d) / (2 * d), h = Math.sqrt(Math.max(0, a * a - x * x));
   const pp = pole.clone().addScaledVector(n, -pole.dot(n)).normalize();
   const E = _E.copy(S).addScaledVector(n, x).addScaledVector(pp, h);

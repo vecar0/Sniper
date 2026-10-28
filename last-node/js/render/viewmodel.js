@@ -41,13 +41,10 @@ export class ViewModel {
     for (const [id, gun] of Object.entries(this.guns)) {
       gun.leftRest = { p: gun.leftHand.position.clone(), r: gun.leftHand.rotation.clone() };
       gun.rightRest = { p: gun.rightHand.position.clone(), q: gun.rightHand.quaternion.clone() };
-      // 어깨는 몸(카메라)에 고정: 허리 사격 자세에서의 어깨 위치를 뷰모델 공간으로 기억해 둔다
-      const H = HIP[id];
-      gun.group.position.set(H[0], H[1], H[2]); gun.group.rotation.set(0, H[3], H[4]); gun.group.updateMatrix();
+      // 어깨는 몸(카메라)에 고정된 뷰모델 공간 위치
       for (const a of [gun.leftArm, gun.rightArm]) if (a) {
-        a.parent.updateMatrix();
-        const pm = a.parent === gun.group ? gun.group.matrix.clone() : gun.group.matrix.clone().multiply(a.parent.matrix);
-        a.userData.Sroot = a.userData.S0.clone().applyMatrix4(pm);
+        // 어깨: 눈 아래 21 cm, 좌우 16~17 cm, 4 cm 뒤(소총류는 개머리를 어깨 안쪽 주머니에 대 오른 어깨가 조금 안으로)
+        a.userData.Sroot = a.userData.mirror ? new THREE.Vector3(-0.17, -0.21, 0.04) : new THREE.Vector3(id === 'pistol' ? 0.16 : 0.13, -0.2, 0.04);
         a.userData.poleRoot = new THREE.Vector3(a.userData.mirror ? -0.6 : 0.6, -1, 0.25).normalize();
       }
       // 산탄: 손에 들고 넣을 탄 1발
