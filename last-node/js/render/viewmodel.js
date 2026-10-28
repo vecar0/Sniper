@@ -300,7 +300,7 @@ export class ViewModel {
       } else if (gun.handShell) gun.handShell.visible = false;
       // 펌프: 쏜 뒤 앞뒤로, 뒤로 갈 때 빈 탄피가 튀어나간다
       this.pumpT = (this.pumpT ?? 9) + dt;
-      this.pumpEjected ??= true; // 처음 꺼낼 때는 쏜 적이 없으니 탄피를 내보내지 않는다
+      if (this.pumpEjected === undefined) this.pumpEjected = true; // 처음 꺼낼 때는 쏜 적이 없으니 탄피를 내보내지 않는다
       const pk = this.pumpT > 0.08 && this.pumpT < 0.42 ? Math.sin(((this.pumpT - 0.08) / 0.34) * Math.PI) : 0;
       if (this.pumpT > 0.2 && !this.pumpEjected) { this.pumpEjected = true; this.eject(gun, 'shell'); }
       gun.pump.position.z = pk * 0.075;
