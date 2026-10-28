@@ -114,6 +114,7 @@ class App {
 
   start() {
     this.audio.init();
+    document.body.classList.remove('downed', 'result');
     this.world = new World({ seed: (Math.random() * 1e9) | 0 });
     this.r.attach(this.world);
     this.state = 'play';
@@ -148,6 +149,7 @@ class App {
   }
   toMenu() {
     this.state = 'menu';
+    document.body.classList.remove('downed', 'result');
     this.input.enabled = false;
     this.input.unlock();
     this.hud.show(false);
@@ -190,9 +192,12 @@ class App {
     this.audio.gatling(false);
     const newBest = recordRun(this.data, this.world.score, this.world.wave);
     save(this.data);
-    this.hud.banner('전투 불능', `${this.world.wave}웨이브에서 ${this.world.score.toLocaleString()}점`, true);
+    // 쓰러짐: HUD·총을 거두고 화면이 색을 잃으며 가라앉은 뒤 결과
+    document.querySelector('#veil .v-s').textContent = `${this.world.wave}웨이브, ${this.world.score.toLocaleString()}점`;
+    document.body.classList.add('downed');
     setTimeout(() => {
       if (this.state !== 'over') return;
+      document.body.classList.add('result');
       this.input.unlock();
       if (this.touch) this.touch.show(false);
       this.hud.show(false);

@@ -113,6 +113,15 @@ export class ViewModel {
     if (instant) this.state.switchK = 1;
   }
 
+  // 새 판: 지난 판의 총·동작 상태를 지우고 시작 무기(권총)를 든다
+  reset(id) {
+    const s = this.state;
+    s.meleeK = 0; s.reloadK = 0; s.shellK = 0; s.shellLoad = false; s.throwK = 0; s.kick = s.kickV = s.kickYaw = s.kickYawV = 0; s.adsK = 0; s.charge = 0;
+    this.pendingWeapon = null; this.slideLock = false; this.pumpT = 9; this.pumpEjected = true;
+    for (const c of this.casings) { c.t = 9; c.g.visible = false; }
+    if (this.guns[this.cur]) this.meleeEnd(this.guns[this.cur]);
+    this.setWeapon(id, true);
+  }
   onSwitch(id) { this.state.switchK = 0; this.pendingWeapon = id; }
   onShot(id, magLeft = 1) {
     const s = this.state, w = WEAPONS[id];

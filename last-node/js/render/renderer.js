@@ -109,6 +109,8 @@ export class Renderer {
 
   attach(world) {
     this.world = world;
+    this.vm.reset(world.player.weapon);
+    this.shake = 0; this.hurt = 0; this.aberr = 0; this.dash = 0; this.camDip = 0; this.fovKick = 0;
     this.fx.geom = world.geom;
     if (!this.fx.batteryViews.length) this.fx.buildBatteries(BATTERIES);
   }
@@ -278,13 +280,14 @@ export class Renderer {
     const am = p.ammo[p.weapon];
     this.vm.updateAmmo(am.mag, am.reserve);
     this.vm.update(dt, p, look, t);
-    this.vmPass.enabled = p.alive && !scoped; // 조준경 화면에서는 총 모델을 그리지 않는다
+    this.vmPass.enabled = p.alive && !scoped;
+    if (!p.alive) { this.hurt = 0; this.aberr = 0; }   // 쓰러진 뒤엔 빨간 번쩍임 없이(화면은 #veil이 가라앉힌다) // 조준경 화면에서는 총 모델을 그리지 않는다
 
     // 후처리 값
     this.hurt *= Math.exp(-dt * 3); this.aberr *= Math.exp(-dt * 4); this.dash *= Math.exp(-dt * 7);
     const u = this.final.uniforms;
     u.uTime.value = t; u.uHurt.value = this.hurt; u.uAberr.value = this.aberr;
-    u.uLow.value = p.hp < 30 ? 1 - p.hp / 30 : 0;
+    u.uLow.value = p.alive && p.hp < 30 ? 1 - p.hp / 30 : 0;
     u.uDash.value = this.dash;
     r0(this.renderer);
     this.composer.render(dt);

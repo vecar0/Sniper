@@ -95,7 +95,11 @@ const browser = await playwright.chromium.launch({ args: ARGS });
       window.__hits = 0; const orig = __ln.app.hud.hitmark.bind(__ln.app.hud); __ln.app.hud.hitmark = (k) => { window.__hits++; orig(k); };
     });
     const mag0 = await W(page, () => __ln.world.player.ammo.pistol.mag);
+    await page.mouse.move(640, 360);
     if (!(await W(page, () => __ln.app.input.locked))) { await page.mouse.click(640, 360); await page.waitForFunction(() => __ln.app.input.locked, null, { timeout: 3000 }).catch(() => {}); }
+    // 잠금 클릭 때 마우스가 버튼 자리에서 화면 가운데로 옮겨 오며 시점이 돌 수 있다 → 움직임이 다 들어온 뒤 다시 겨눈다
+    await sleep(400);
+    await W(page, () => { const p = __ln.world.player; p.yaw = 0; p.pitch = Math.atan2(1.3 - p.eye, 5); __ln.app.input.lookDX = __ln.app.input.lookDY = 0; });
     await page.mouse.down(); await sleep(1100); await page.mouse.up(); await sleep(300);
     const r = await W(page, () => ({ mag: __ln.world.player.ammo.pistol.mag, shots: __ln.world.stats.shots, hits: window.__hits }));
     assert(r.mag < mag0, `탄창 그대로 ${mag0}→${r.mag}`);

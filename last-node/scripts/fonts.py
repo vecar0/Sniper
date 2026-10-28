@@ -1,7 +1,11 @@
 """게임에 쓰인 글자만 잘라 낸 웹폰트를 내려받는다(Google Fonts text= 부분 집합). 한글 폰트 전체(수 MB) 대신 수십 KB.
-사용: python3 -I scripts/fonts.py   (last-node 폴더에서) — 문구를 바꾸면 다시 실행
+글자가 많으면 Google이 여러 파일로 나눠 주므로 fontTools로 한 파일에 합친다.
+사용: pip install fonttools brotli 후 python3 -I scripts/fonts.py   (last-node 폴더에서) — 문구를 바꾸면 다시 실행
 """
-import glob, re, urllib.request, urllib.parse, os
+import glob, io, re, tempfile, urllib.request, urllib.parse, os
+from fontTools.ttLib import TTFont
+from fontTools.merge import Merger
+from fontTools import subset
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FAMILIES = {
@@ -30,9 +34,19 @@ def main():
         for w in weights:
             css = get(f'https://fonts.googleapis.com/css2?family={fam}:wght@{w}&text={urllib.parse.quote(chars)}').decode()
             urls = re.findall(r'url\((https://[^)]+)\)', css)
-            data = b''.join(get(u) for u in urls[:1])
             path = os.path.join(out, f'{key}-{w}.woff2')
-            open(path, 'wb').write(data)
-            print(path, len(data) // 1024, 'KB', len(chars), 'chars', '(' + str(len(urls)) + ' file)')
+            with tempfile.TemporaryDirectory() as tmp:
+                parts = []
+                for i, u in enumerate(urls):
+                    f = TTFont(io.BytesIO(get(u))); f.flavor = None
+                    parts.append(os.path.join(tmp, f'{i}.ttf')); f.save(parts[-1])
+                font = TTFont(parts[0]) if len(parts) == 1 else Merger().merge(parts)
+            # 나뉜 파일에는 쓰지 않는 글자도 섞여 있다 → 쓰는 글자만 남긴다
+            sub = subset.Subsetter(subset.Options(layout_features=['kern', 'liga', 'tnum'], notdef_outline=True))
+            sub.populate(unicodes=[ord(c) for c in chars]); sub.subset(font)
+            font.flavor = 'woff2'; font.save(path)
+            cmap = font.getBestCmap()
+            missing = ''.join(c for c in chars if c.strip() and ord(c) not in cmap)
+            print(path, os.path.getsize(path) // 1024, 'KB', len(chars), 'chars', f'({len(urls)} files merged)', f'missing: {missing}' if missing else '')
 
 main()

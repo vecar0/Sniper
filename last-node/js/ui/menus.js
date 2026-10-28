@@ -43,9 +43,10 @@ export class Menus {
     this.root.innerHTML = `
       <div class="menu-main">
         <div class="col">
-          <p class="kicker">북천 기지 · 69°42′N · 영하 31도</p>
-          <h1 class="title">NORTHLIGHT</h1>
-          <p class="lede">연락이 끊긴 극지 연구 기지에서 무인 방어 체계가 폭주했습니다.<br>지킬 것은 없습니다. 빠르게 쓸어 담고, 강해지고, 살아남으세요.</p>
+          <p class="kicker">북위 69도 42분, 연락이 끊긴 북천 기지</p>
+          <h1 class="title">WHITEOUT</h1>
+          <p class="title-ko">화이트아웃</p>
+          <p class="lede">눈보라 속 극지 기지에서 무인 방어 체계가 폭주했습니다.<br>지킬 것은 없습니다. 빠르게 쓸어 담고, 강해지고, 살아남으세요.</p>
           <div class="actions">
             <button class="btn primary" data-a="start">작전 시작</button>
             <button class="btn quiet" data-a="howto">조작법과 규칙</button>
@@ -173,12 +174,12 @@ export class Menus {
   gameOver(world, newBest) {
     const s = world.stats, acc = s.shots ? Math.round((s.hits / s.shots) * 100) : 0, weak = s.hits ? Math.round((s.weakHits / s.hits) * 100) : 0;
     const names = s.cards.map((id) => { const c = CARDS.find((q) => q.id === id); return c.name || `${WEAPONS[c.weapon].name} 개량`; });
-    const rows = [['도달한 웨이브', world.wave], ['점수', world.score.toLocaleString()], ['처치', s.kills], ['최고 연속 처치', s.bestCombo], ['명중률', `${acc}%`], ['약점 명중', `${weak}%`]];
+    const rows = [['처치', s.kills], ['최고 연속', s.bestCombo], ['명중률', `${acc}%`], ['약점 명중', `${weak}%`]];
     this.root.innerHTML = `<div class="screen dim"><div class="sheet over">
-      <p class="kicker">작전 종료</p>
-      <h2 class="reason">요원 전투 불능</h2>
-      ${newBest ? '<p class="newbest">새 최고 기록입니다.</p>' : ''}
-      <dl class="stats">${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>
+      <p class="kicker">${world.wave}웨이브에서 작전이 끝났습니다</p>
+      <h2 class="reason">전투 불능</h2>
+      <div class="final"><span class="fs">${world.score.toLocaleString()}</span><span class="fl">점</span>${newBest ? '<span class="nb">새 최고 기록</span>' : ''}</div>
+      <dl class="stats">${rows.map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join('')}</dl>
       ${names.length ? `<p class="took"><span>고른 카드</span>${names.map((n) => esc(n)).join(' · ')}</p>` : ''}
       <p class="best">최고 기록 ${this.save.best.wave}웨이브 · ${this.save.best.score.toLocaleString()}점</p>
       <div class="actions"><button class="btn primary" data-a="retry">다시 하기</button><button class="btn quiet" data-a="menu">처음 화면으로</button></div></div></div>`;
