@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="UTF-8" /><title>손 모델 확인</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}</style>
+<script type="importmap">{ "imports": { "three": "../vendor/three/three.module.js" } }</script></head>
+<body><script type="module">
+// 개발용: 손 하나만 띄워 본다 ?open=0..1&yaw=&pitch=
+import * as THREE from 'three';
+import { gunMaterials, viewmodelEnvironment, makeHand, viewmodelLights } from '../js/render/guns.js';
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(innerWidth, innerHeight); r.toneMapping = THREE.ACESFilmicToneMapping; document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x30343c);
+const env = viewmodelEnvironment(r); scene.environment = env; viewmodelLights(scene);
+const M = gunMaterials(env);
+const h = makeHand(M, { mirror: !!q.get('left'), curls: q.get('fist') ? [[1.4,1.6,1.1],[1.4,1.6,1.1],[1.4,1.6,1.1],[1.4,1.6,1.1]] : [[0.1,0.1,0.1],[0.1,0.1,0.1],[0.1,0.1,0.1],[0.1,0.1,0.1]], thumb: { dir: [-0.4, 0.5, -1], curl: 0.2 } });
+scene.add(h);
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 10);
+const yaw = +(q.get('yaw') ?? 0.8), pitch = +(q.get('pitch') ?? 0.3), d = 0.45;
+cam.position.set(Math.sin(yaw) * Math.cos(pitch) * d, Math.sin(pitch) * d, 0.03 + Math.cos(yaw) * Math.cos(pitch) * d); cam.lookAt(0, 0, 0.03);
+r.render(scene, cam); window.__done = true;
+</script></body></html>

@@ -317,13 +317,27 @@ export function makeHand(M, { mirror = false, curls, thumb = { dir: [-0.6, 0.45,
     rot(tDist, tAx[1], THREE.MathUtils.clamp((thumb.curl ?? 0.3) * (1 - open) + 0.1, LIMIT.thumbIp[0], LIMIT.thumbIp[1]));
   };
   g.userData.pose(0, 0);
+  // 해부학 기준점(우리 손 좌표): 검지·새끼 첫마디 관절(MCP), 손목, 엄지 뿌리 — 총 위 실제 위치에 맞춰 손을 놓는 데 쓴다
+  const lm = (n) => { const v = toOurs(W(n)).add(root.position); v.x *= s; return v; };
+  g.userData.lm = { index: lm('index-finger-phalanx-proximal'), pinky: lm('pinky-finger-phalanx-proximal'), wrist: lm('wrist'), thumb: lm('thumb-metacarpal') };
   // 손바닥 중심(뼈 선 위)과 손바닥 법선(우리 손 좌표) — 총 표면에 손바닥을 붙일 때 쓴다
   const pc = toOurs(W('wrist').clone().lerp(W('middle-finger-phalanx-proximal'), 0.6)).add(root.position);
   const pn = palmN.clone().applyQuaternion(ALIGN);
   g.userData.palm = new THREE.Vector3(s * pc.x, pc.y, pc.z); g.userData.palmN = new THREE.Vector3(s * pn.x, pn.y, pn.z).normalize();
   // 접촉 맞춤: 각 손가락을 첫마디부터 차례로 굽히다가 총(또는 다른 손)에 닿기 직전에 멈춘다 → 실제 표면을 감싸 쥔다
   const tips = FINGERS.map((f) => by[f + '-finger-tip']);
-  g.userData.fit = (targets, trigger) => {
+  g.userData.grip = grip;
+  g.userData.fit = (targets, trigger, thumbAt) => {
+    if (thumbAt) {
+      // 엄지 끝이 향할 곳(실제 파지에서 엄지가 놓이는 자리) → 엄지 뿌리를 그쪽으로 돌린다(뿌리 관절 한계 63°)
+      g.updateMatrixWorld(true);
+      const base = new THREE.Vector3(); tMeta.getWorldPosition(base);
+      const dirW = thumbAt.clone().sub(base).normalize();
+      const dirM = dirW.transformDirection(new THREE.Matrix4().copy(root.matrixWorld).invert());          // 메시 좌표 방향
+      aimQ.setFromUnitVectors(t0, dirM);
+      const ang = 2 * Math.acos(Math.min(1, Math.abs(aimQ.w))); if (ang > 1.1) aimQ.slerp(new THREE.Quaternion(), 1 - 1.1 / ang);
+      last = ''; g.userData.pose(0, 0);
+    }
     const rc = new THREE.Raycaster(), a = new THREE.Vector3(), c = new THREE.Vector3(), off = new THREE.Vector3();
     g.updateMatrixWorld(true);
     const hit = (chain) => {
@@ -333,7 +347,7 @@ export function makeHand(M, { mirror = false, curls, thumb = { dir: [-0.6, 0.45,
         const dir = c.clone().sub(a), L = dir.length(); dir.divideScalar(L);
         // 손가락 두께: 가운데 + 손바닥 쪽 · 손등 쪽으로 반지름만큼 띄운 광선
         for (const k of [0, 1]) {
-          off.copy(g.userData.palmN).transformDirection(g.matrixWorld).multiplyScalar(0.0085 * k);
+          off.copy(g.userData.palmN).transformDirection(g.matrixWorld).multiplyScalar(0.005 * k);   // 장갑 낀 손가락은 1~2 mm 눌린다: 반지름보다 조금 안쪽
           rc.set(a.clone().add(off), dir); rc.far = L + 0.004;
           if (rc.intersectObjects(targets, false).length) return true;
         }
@@ -361,16 +375,8 @@ export function makeHand(M, { mirror = false, curls, thumb = { dir: [-0.6, 0.45,
         return;
       }
       const set = (k, v) => { grip[f][k] = clampF(k, v, grip[f][1]); rot(js[k].b, js[k].ax, grip[f][k]); };
-      for (let k = 0; k < 3; k++) set(k, 0.05);
-      for (let k = 0; k < 3; k++) {
-        const max = [LIMIT.mcp[1], LIMIT.pip[1], LIMIT.dip[1]][k], want = grip[f][k];
-        let v = 0.05, touched = false;
-        for (; v <= max; v += 0.15) { set(k, v); if (hit(chain.slice(k))) { touched = true; break; } }   // 거칠게 찾고
-        if (touched) { let lo = Math.max(0.05, v - 0.15), hi = v; for (let i = 0; i < 4; i++) { const mid = (lo + hi) / 2; set(k, mid); if (hit(chain.slice(k))) hi = mid; else lo = mid; } v = lo; } // 이분 탐색
-        set(k, touched ? Math.max(0, v - 0.02) : Math.min(max, (curls ? curls[f][k] : 0.8)));
-        if (!touched && k === 0 && curls) set(0, curls[f][0]);
-        void want;
-      }
+      // 나머지 손가락: 쥐는 물체 굵기에 맞춰 정한 굽힘(실제 파지 사진 기준)을 관절 범위 안에서 그대로 쓴다
+      const c = curls ? curls[f] : [0.9, 1.2, 0.8]; set(0, c[0]); set(1, c[1]); set(2, c[2]);
     });
     last = ''; g.userData.pose(0, 0);
   };
@@ -379,6 +385,22 @@ export function makeHand(M, { mirror = false, curls, thumb = { dir: [-0.6, 0.45,
 
 // 손바닥을 총 표면에 붙이고(법선 방향으로 밀어 닿게) 손가락을 접촉까지 굽힌다. others: 함께 피해야 할 다른 손
 const _tri = new THREE.Triangle(), _cp = new THREE.Vector3();
+// 손을 기준점 세 개(검지 MCP · 새끼 MCP · 손목)의 목표 위치(부모 공간)에 맞춰 놓는다: 두 삼각형의 좌표틀을 맞추는 회전 + 무게중심 이동
+export function placeHand(hand, { index, pinky, wrist }) {
+  const L = hand.userData.lm;
+  const frame = (w, i, p) => {
+    const m = i.clone().add(p).multiplyScalar(0.5), f = m.sub(w).normalize();
+    const l = i.clone().sub(p); l.addScaledVector(f, -l.dot(f)).normalize();
+    return new THREE.Matrix4().makeBasis(f, l, new THREE.Vector3().crossVectors(f, l));
+  };
+  const T = [new THREE.Vector3(...wrist), new THREE.Vector3(...index), new THREE.Vector3(...pinky)];
+  const R = frame(...T).multiply(frame(L.wrist, L.index, L.pinky).transpose());
+  hand.quaternion.setFromRotationMatrix(R);
+  const cl = L.wrist.clone().add(L.index).add(L.pinky).multiplyScalar(1 / 3).applyQuaternion(hand.quaternion);
+  hand.position.copy(T[0]).add(T[1]).add(T[2]).multiplyScalar(1 / 3).sub(cl);
+  hand.updateMatrix();
+}
+
 export function fitHand(gunGroup, hand, others = [], trigger = null) {
   gunGroup.updateMatrixWorld(true);
   let targets = [];
@@ -411,15 +433,19 @@ export function fitHand(gunGroup, hand, others = [], trigger = null) {
     }
   }
   const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(tri, 3));
-  const proxy = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); proxy.updateMatrixWorld(true);
+  const proxy = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ side: THREE.FrontSide })); proxy.updateMatrixWorld(true);   // 앞면만: 표면 안쪽에서 시작한 광선(이미 닿아 있는 마디)은 무시
   targets = [proxy];
-  rc.set(P, N); rc.far = 0.09;
+  // 손바닥 붙이기: 손바닥 뒤 5 cm에서 손바닥 쪽으로 광선을 쏴 표면을 찾고, 손바닥 살(1.45 cm)이 표면에 닿도록 앞뒤로 옮긴다
+  // (손이 총 속에 파묻혀 있으면 밖으로 빼고, 떠 있으면 붙인다 — 3 cm 이내만)
+  rc.set(P.clone().addScaledVector(N, -0.05), N); rc.far = 0.12;
   const h = rc.intersectObjects(targets, false)[0];
   if (h) {
-    const move = N.multiplyScalar(h.distance - 0.0145);
-    hand.position.add(move.transformDirection(new THREE.Matrix4().copy(hand.parent.matrixWorld).invert()).multiplyScalar(h.distance - 0.0145));
+    const d = THREE.MathUtils.clamp(h.distance - 0.05 - 0.0145, -0.03, 0.03);
+    const local = N.clone().transformDirection(new THREE.Matrix4().copy(hand.parent.matrixWorld).invert());
+    hand.position.addScaledVector(local, d); hand.updateMatrixWorld(true);
   }
-  hand.userData.fit(targets, trigger && gunGroup.localToWorld(trigger.clone()));
+  const th = hand.userData.thumbAt;
+  hand.userData.fit(targets, trigger && gunGroup.localToWorld(trigger.clone()), th && (hand.parent === gunGroup ? gunGroup : hand.parent).localToWorld(new THREE.Vector3(...th)));
 }
 
 // 아래팔: 손목(a)에서 팔꿈치(b)까지 + 팔꿈치 너머로 조금 더.
@@ -464,9 +490,12 @@ function foregrip(add, parent, z, yTop) {
   add(g, 'polymer', parent);
   add(box(0.026, 0.008, 0.05, 0, yTop - 0.002, z), 'anod', parent); // 레일 고정부
 }
-const FORE_HAND = { mirror: true, curls: [[1.0, 1.15, 0.85], [1.05, 1.25, 0.9], [1.1, 1.3, 0.95], [1.15, 1.3, 0.9]], thumb: { pos: [-0.002, 0.034, 0.036], dir: [-0.8, 0.6, -0.4], curl: 0.3 } };
-const CLAMP_HAND = { mirror: true, curls: [[0.25, 1.25, 0.7], [0.3, 1.3, 0.75], [0.35, 1.35, 0.75], [0.45, 1.35, 0.7]], thumb: { pos: [-0.019, 0.01, -0.007], dir: [-0.24, 0.93, -0.27], curl: 0.08 } };
-const PUMP_HAND = { mirror: true, curls: [[0.25, 1.05, 0.55], [0.3, 1.1, 0.6], [0.35, 1.1, 0.6], [0.45, 1.1, 0.55]], thumb: { pos: [-0.019, 0.01, -0.007], dir: [-0.24, 0.93, -0.27], curl: 0.08 } };
+// 손가락 굽힘(첫마디·중간·끝): 쥐는 물체 굵기 기준 — 수직 손잡이 2.8 cm, 핸드가드 4.3×6.8 cm, 펌프 4.8 cm
+const FORE_HAND = { mirror: true, curls: [[1.2, 1.45, 0.95], [1.25, 1.5, 1.0], [1.3, 1.5, 1.0], [1.35, 1.5, 1.0]], thumb: { dir: [-0.8, 0.6, -0.4], curl: 0.3 } };
+// C-클램프·펌프: 손바닥이 물체 중심을 보고, 손가락은 아래를 비스듬히 가로질러 중간마디(PIP)에서 꺾여 반대쪽 면을 감는다
+const CLAMP_HAND = { mirror: true, curls: [[0.3, 1.2, 0.55], [0.32, 1.25, 0.6], [0.35, 1.25, 0.6], [0.4, 1.2, 0.55]], thumb: { dir: [-0.24, 0.93, -0.27], curl: 0.08 } };
+// 펌프(지름 4.8 cm): 표면을 따라 감는 각 = 마디 길이 ÷ (반지름 + 손가락 두께)
+const PUMP_HAND = { mirror: true, curls: [[0.3, 1.0, 0.6], [0.33, 1.0, 0.6], [0.35, 1.0, 0.6], [0.4, 0.98, 0.58]], thumb: { dir: [-0.24, 0.93, -0.27], curl: 0.08 } };
 function onForegrip(hand, z, yTop) { hand.position.set(0, yTop - 0.04, z + 0.004); hand.rotation.set(0.12, 0, 0); }
 
 // 손 방향을 '쥐는 축'과 '손바닥이 향하는 쪽'으로 정한다(오일러 각을 맞추는 것보다 실제 파지를 옮기기 쉽다).
@@ -611,44 +640,6 @@ export function aimArm(arm, S = arm.userData.S0, pole = arm.userData.pole0) {
   // 아래팔 뼈: 위팔 기준에서 팔꿈치→손목 방향으로(굽힘 평면 안에서만 돈다)
   _V.copy(W).sub(E).normalize().applyQuaternion(_Qi.copy(g.quaternion).invert());
   u.rig.bones[1].quaternion.setFromUnitVectors(_Yv, _V);
-}
-
-// 손목 한계를 넘은 양(라디안 합)
-export function wristOver([fl, dv]) {
-  return Math.max(0, fl - LIMIT.wristFlex) + Math.max(0, -fl - LIMIT.wristExt) + Math.max(0, dv - LIMIT.wristUlnar) + Math.max(0, -dv - LIMIT.wristRadial);
-}
-// 쥔 채로 손 각도를 바꿔 보며(손바닥 중심을 축으로) 손목이 사람 관절 범위 안에 들어오고
-// 원래 파지에서 가장 덜 벗어나는 각을 고른 뒤, 손바닥을 다시 붙이고 손가락을 다시 감싼다. S·pole: arm.parent 공간 어깨·팔꿈치 방향
-export function settleHand(gunGroup, hand, arm, S, pole, others = [], trigger = null) {
-  const q0 = hand.quaternion.clone(), p0 = hand.position.clone();
-  hand.updateMatrix();
-  const pivot = hand.userData.palm.clone().applyMatrix4(hand.matrix);
-  const e = new THREE.Euler(), dq = new THREE.Quaternion(), wq = new THREE.Quaternion();
-  let best = [0, 0, 0], bestC = Infinity;
-  const tryR = (x, y, z) => {
-    dq.setFromEuler(e.set(x, y, z));
-    hand.quaternion.copy(q0).multiply(dq);
-    wq.copy(hand.quaternion).multiply(q0.clone().invert());                       // 부모 공간에서의 회전(손바닥 중심 둘레)
-    hand.position.copy(p0).sub(pivot).applyQuaternion(wq).add(pivot);
-    arm.userData.psi = undefined; aimArm(arm, S, pole);
-    const w = arm.userData.wristAngles;
-    // 비용: 한계 초과(크게) + 원래 파지에서 벗어난 각(손바닥 면 안 회전은 싸게 — 손잡이는 원래 손바닥을 비스듬히 가로지른다)
-    //       + 편한 범위(굽힘 ±35° · 옆 ±12°) 밖으로 갈수록
-    const o = wristOver(w), cf = Math.max(0, Math.abs(w[0]) - 0.6), cd = Math.max(0, Math.abs(w[1]) - 0.2);
-    const c = 60 * o * o + 8 * o + 0.35 * x * x + 1.0 * (y * y + z * z) + 0.8 * (cf * cf + cd * cd);
-    if (c < bestC) { bestC = c; best = [x, y, z]; }
-  };
-  // x = 손바닥 법선 둘레(대각선 파지) ±46°, y·z ±23° — 거칠게 찾고 근처를 곱게
-  for (let x = -0.8; x <= 0.801; x += 0.2) for (let y = -0.4; y <= 0.401; y += 0.2) for (let z = -0.4; z <= 0.401; z += 0.2) tryR(x, y, z);
-  const [bx, by, bz] = best;
-  for (let x = bx - 0.15; x <= bx + 0.151; x += 0.05) for (let y = by - 0.15; y <= by + 0.151; y += 0.05) for (let z = bz - 0.15; z <= bz + 0.151; z += 0.05) tryR(x, y, z);
-  dq.setFromEuler(e.set(...best));
-  hand.quaternion.copy(q0).multiply(dq);
-  wq.copy(hand.quaternion).multiply(q0.clone().invert());
-  hand.position.copy(p0).sub(pivot).applyQuaternion(wq).add(pivot);
-  fitHand(gunGroup, hand, others, trigger);
-  arm.userData.psi = undefined; aimArm(arm, S, pole);
-  return arm.userData.wristAngles;
 }
 
 // 각인(롤마크): 금속에 레이저로 새긴 듯한 옅은 회색 글자. 왼쪽 면(플레이어 쪽)에 붙인다
@@ -816,16 +807,19 @@ function buildPistol(g, add, M, out, X) {
   // 동작 기준점: 탄피 배출구 · 왼손이 탄창을 끼우는 곳(손잡이 밑) · 슬라이드를 당기는 곳
   out.eject = new THREE.Vector3(0.013, 0.038, -0.02); out.casing = 'pistol';
   out.magHand = new THREE.Vector3(0.05, -0.13, 0.07); out.rackPt = new THREE.Vector3(-0.034, 0.0, 0.01); out.slideTravel = 0.036;  // 슬라이드 뒤쪽 톱니를 왼손으로 집어 당김
-  out.sightY = 0.0505; out.adsZ = -0.58;
+  out.sightY = 0.0505; out.adsZ = -0.33;
   // 손: 오른손 손잡이, 왼손 감싸쥠
   const tilt = 0.27;
   // 엄지 앞으로(thumbs-forward) 파지: 오른손은 손잡이 높이 잡고 엄지를 프레임 왼쪽 위로 뻗어 표적을 가리킨다.
   // 왼손은 손바닥으로 손잡이 왼쪽 빈 곳을 덮고 손가락이 오른손 손가락 위를 45° 아래로 감싸며, 엄지는 오른손 엄지 아래에서 나란히 앞을 본다
-  const R = makeHand(M, { curls: [[0.25, 0.25, 0.15], [1.05, 1.25, 0.9], [1.1, 1.3, 0.95], [1.15, 1.3, 0.9]], thumb: { pos: [-0.017, 0.045, 0.028], dir: [0.06, 0.31, -0.95], curl: 0.05 } });
-  R.position.set(0.0, -0.05, 0.052); R.rotation.x = -tilt;
+  const R = makeHand(M, { curls: [[0.3, 0.3, 0.2], [1.2, 1.45, 0.95], [1.25, 1.5, 1.0], [1.3, 1.5, 1.0]], thumb: { dir: [0.06, 0.31, -0.95], curl: 0.05 } });
+  // 실제 파지(엄지 앞으로): 오른손 검지 MCP는 프레임 오른쪽 슬라이드 바로 아래·방아쇠울 뒤, 새끼 MCP는 손잡이 아래,
+  // 손목은 손잡이 뒤(총열 선을 따라 조금 아래) · 엄지는 프레임 왼쪽 위를 따라 앞으로
+  placeHand(R, { index: [0.021, -0.016, 0.032], pinky: [0.021, -0.076, 0.058], wrist: [0.03, -0.066, 0.142] }); R.userData.thumbAt = [-0.017, 0.002, -0.035];
   g.add(R);
-  const L = makeHand(M, { mirror: true, curls: [[1.4, 1.35, 0.8], [1.2, 1.3, 0.85], [1.15, 1.3, 0.85], [1.2, 1.3, 0.8]], thumb: { pos: [0.02, 0.026, 0.026], dir: [0.07, 0.75, -0.65], curl: 0.05 } });
-  poseHand(L, true, [0, 0.75, -0.66], [1, 0, 0.15], [-0.016, -0.016, 0.07]);
+  const L = makeHand(M, { mirror: true, curls: [[1.0, 1.15, 0.75], [1.0, 1.2, 0.8], [1.05, 1.25, 0.8], [1.1, 1.25, 0.8]], thumb: { dir: [0.07, 0.75, -0.65], curl: 0.05 } });   // 오른손 손가락 위를 감싸 굵기 약 5 cm
+  // 왼손: 손바닥이 손잡이 왼쪽 빈 곳을 덮고, 검지 MCP는 방아쇠울 앞 아래, 손목은 45° 아래로 꺾여 뒤쪽 · 엄지는 오른손 엄지 아래에서 앞으로
+  placeHand(L, { index: [-0.026, -0.03, -0.004], pinky: [-0.03, -0.078, 0.034], wrist: [-0.05, -0.085, 0.112] }); L.userData.thumbAt = [-0.02, -0.01, -0.05];
   g.add(L);
   out.rightArm = armFrom(g, M, R, false, [0.13, -0.2, 0.42]);
   out.leftArm = armFrom(g, M, L, true, [-0.24, -0.2, 0.4]);
@@ -937,10 +931,12 @@ function buildRifle(g, add, M, out, X) {
   out.sightY = 0.0725; out.adsZ = -0.17;
   // 손: 오른손 권총손잡이(엄지는 조정간 위로 감음) · 왼손 C-클램프(핸드가드 앞쪽, 엄지는 왼쪽 면을 따라 앞으로)
   const tilt = 0.42;
-  const R = makeHand(M, { curls: [[0.3, 0.3, 0.2], [1.1, 1.2, 0.9], [1.15, 1.25, 0.9], [1.2, 1.25, 0.85]], thumb: { dir: [-0.9, 0.45, -0.45], curl: 0.3 } });
-  R.position.set(0.002, -0.086, 0.118); R.rotation.x = -tilt; g.add(R);
+  const R = makeHand(M, { curls: [[0.3, 0.3, 0.2], [1.2, 1.45, 0.95], [1.25, 1.5, 1.0], [1.3, 1.5, 1.0]], thumb: { dir: [-0.9, 0.45, -0.45], curl: 0.3 } });
+  // 권총손잡이: 검지 MCP는 오른쪽 리시버 바로 아래(방아쇠울 뒤), 새끼 MCP는 손잡이 아래쪽 뒤, 손목은 손잡이 뒤 · 엄지는 위로 넘어가 조정간 옆
+  placeHand(R, { index: [0.021, -0.044, 0.066], pinky: [0.022, -0.108, 0.094], wrist: [0.03, -0.1, 0.19] }); R.userData.thumbAt = [-0.02, -0.014, 0.07]; g.add(R);
   const L = makeHand(M, CLAMP_HAND);
-  poseHand(L, true, [0, -0.25, -1], [-0.3, 0.95, 0], [-0.03, -0.026, -0.29]); g.add(L);
+  // C-클램프: 손바닥이 핸드가드 왼쪽 아래 모서리를 받치고 MCP 줄은 그 모서리를 따라, 손목은 왼쪽 아래 모서리 높이(손바닥이 위를 받치고 손가락이 밑을 지나 오른쪽 면을 감아 올라간다) · 엄지는 왼쪽 윗면을 따라 앞으로
+  placeHand(L, { index: [-0.028, -0.034, -0.325], pinky: [-0.026, -0.04, -0.27], wrist: [-0.1, -0.05, -0.285] }); L.userData.thumbAt = [-0.026, 0.02, -0.375]; g.add(L);
   out.rightArm = armFrom(g, M, R, false, [0.1, -0.18, 0.4]);
   out.leftArm = armFrom(g, M, L, true, [-0.28, -0.16, 0.6]);
   out.rightHand = R; out.leftHand = L;
@@ -1015,11 +1011,13 @@ function buildShotgun(g, add, M, out, X) {
   out.magHand = new THREE.Vector3(-0.01, -0.06, -0.02);   // 탄 넣는 구멍(아래)
   out.sightY = 0.047; out.adsZ = -0.24;
   const tilt = 0.85;   // 손목을 쥐는 각(권총손잡이보다 많이 눕는다)
-  const R = makeHand(M, { curls: [[0.3, 0.3, 0.2], [1.05, 1.2, 0.9], [1.1, 1.25, 0.9], [1.15, 1.25, 0.85]], thumb: { pos: [-0.002, 0.034, 0.038], dir: [-0.95, 0.35, -0.5], curl: 0.3 } });
-  R.position.set(0.002, -0.024, 0.166); R.rotation.x = -tilt; g.add(R);
+  const R = makeHand(M, { curls: [[0.3, 0.3, 0.2], [1.2, 1.45, 0.95], [1.25, 1.5, 1.0], [1.3, 1.5, 1.0]], thumb: { dir: [-0.95, 0.35, -0.5], curl: 0.3 } });
+  // 개머리 손목: 검지 MCP는 손목 오른쪽 앞(방아쇠울 뒤), 새끼 MCP는 아래 뒤, 손목은 개머리 쪽 · 엄지는 빗장을 넘어 왼쪽으로
+  placeHand(R, { index: [0.023, -0.028, 0.122], pinky: [0.023, -0.07, 0.152], wrist: [0.03, -0.075, 0.245] }); R.userData.thumbAt = [-0.024, 0.02, 0.12]; g.add(R);
   // 왼손: 펌프를 아래에서 감싸 쥐고(손가락은 오른쪽 면으로, 엄지는 왼쪽 면을 따라 앞으로) 앞으로 밀어 반동을 누른다
   const L = makeHand(M, PUMP_HAND);
-  poseHand(L, true, [0, -0.2, -1], [-0.3, 0.95, 0], [-0.03, -0.03, -0.275]); pump.add(L);
+  // 펌프: 손바닥이 펌프 왼쪽 아래를 감싸고 손가락은 아래로 돌아 오른쪽 면으로, 손목은 왼쪽 옆 · 엄지는 왼쪽 면을 따라 앞으로
+  placeHand(L, { index: [-0.024, -0.03, -0.31], pinky: [-0.022, -0.036, -0.255], wrist: [-0.096, -0.05, -0.27] }); L.userData.thumbAt = [-0.026, 0.016, -0.345]; pump.add(L);
   out.rightArm = armFrom(g, M, R, false, [0.1, -0.18, 0.4]);
   out.leftArm = armFrom(pump, M, L, true, [-0.28, -0.16, 0.56]);
   out.rightHand = R; out.leftHand = L;
@@ -1096,11 +1094,12 @@ function buildRail(g, add, M, out, X) {
   out.magHand = new THREE.Vector3(-0.02, -0.11, 0.2);
   out.sightY = 0.084; out.adsZ = -0.17;
   const tilt = 0.3;
-  const R = makeHand(M, { curls: [[0.3, 0.3, 0.2], [1.05, 1.2, 0.9], [1.1, 1.25, 0.9], [1.15, 1.25, 0.85]], thumb: { pos: [-0.002, 0.034, 0.038], dir: [-0.95, 0.35, -0.5], curl: 0.3 } });
-  R.position.set(0.002, -0.08, 0.021); R.rotation.x = -tilt; g.add(R);
+  const R = makeHand(M, { curls: [[0.3, 0.3, 0.2], [1.2, 1.45, 0.95], [1.25, 1.5, 1.0], [1.3, 1.5, 1.0]], thumb: { dir: [-0.95, 0.35, -0.5], curl: 0.3 } });
+  placeHand(R, { index: [0.021, -0.044, -0.0], pinky: [0.022, -0.108, 0.028], wrist: [0.03, -0.1, 0.125] }); R.userData.thumbAt = [-0.02, -0.02, -0.005]; g.add(R);
   foregrip(add, g, -0.38, -0.014);
   const L = makeHand(M, FORE_HAND);
-  onForegrip(L, -0.38, -0.014); g.add(L);
+  // 수직 앞손잡이: 검지 MCP는 손잡이 왼쪽 위, 새끼 MCP는 아래, 손목은 뒤 · 엄지는 손잡이 위를 감아 오른쪽으로
+  placeHand(L, { index: [-0.02, -0.03, -0.39], pinky: [-0.018, -0.088, -0.382], wrist: [-0.045, -0.06, -0.3] }); L.userData.thumbAt = [0.02, -0.025, -0.395]; g.add(L);
   out.rightArm = armFrom(g, M, R, false, [0.1, -0.18, 0.4]);
   out.leftArm = armFrom(g, M, L, true, [-0.28, -0.16, 0.62]);
   out.rightHand = R; out.leftHand = L;

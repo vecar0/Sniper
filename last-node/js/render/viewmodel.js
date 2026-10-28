@@ -3,7 +3,7 @@
 // · 왼손이 실제로 탄창을 빼고 끼우는 단계별 재장전(탄창이 비었으면 슬라이드·장전 손잡이 당김) · 교체 · 근접 · 투척 · 대시 기울기
 import * as THREE from 'three';
 import { WEAPONS } from '../config/balance.js';
-import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm, viewmodelLights, shadowGun, settleHand } from './guns.js';
+import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm, viewmodelLights, shadowGun, fitHand } from './guns.js';
 
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _v1 = new THREE.Vector3();
 const easeIn = (t) => t * t * t;
@@ -46,13 +46,16 @@ export class ViewModel {
       for (const [hand, arm, others] of [[gun.rightHand, gun.rightArm, []], [gun.leftHand, gun.leftArm, [gun.rightHand]]]) {
         if (!arm) continue;
         const mirror = arm.userData.mirror;
-        // 어깨: 눈 아래 20 cm · 좌우 16~17 cm. 권총은 두 어깨를 앞으로 내밀고(−3 cm), 소총류는 개머리를 어깨 안쪽에 대 오른 어깨가 안으로
-        arm.userData.Sroot = id === 'pistol' ? new THREE.Vector3(mirror ? -0.16 : 0.16, -0.2, -0.03) : mirror ? new THREE.Vector3(-0.17, -0.21, 0.04) : new THREE.Vector3(0.13, -0.2, 0.04);
+        // 뷰모델 어깨: 실제 어깨 자리(눈 아래 20 cm)에 두면 아래팔이 카메라 바로 앞을 가로질러 화면을 덮는다.
+        // 1인칭 게임처럼 화면 아래·뒤로 내려 팔이 화면 아래 모서리로 빠져나가게 한다(팔 길이는 실제 그대로)
+        arm.userData.Sroot = new THREE.Vector3(mirror ? -0.2 : 0.22, -0.5, 0.1);
         arm.userData.poleRoot = new THREE.Vector3(mirror ? -0.6 : 0.6, -1, 0.25).normalize();
         arm.parent.updateWorldMatrix(true, false);
         const toP = _m2.copy(arm.parent.matrixWorld).invert().multiply(this.root.matrixWorld);
         gun.wrist = gun.wrist || {};
-        gun.wrist[mirror ? 'L' : 'R'] = settleHand(gun.group, hand, arm, arm.userData.Sroot.clone().applyMatrix4(toP), arm.userData.poleRoot.clone().transformDirection(toP), others, mirror ? null : gun.trigger).map((r) => Math.round((r * 180) / Math.PI));
+        fitHand(gun.group, hand, others, mirror ? null : gun.trigger);
+        arm.userData.psi = undefined; aimArm(arm, arm.userData.Sroot.clone().applyMatrix4(toP), arm.userData.poleRoot.clone().transformDirection(toP));
+        gun.wrist[mirror ? 'L' : 'R'] = arm.userData.wristAngles.map((r) => Math.round((r * 180) / Math.PI));
       }
       gun.leftRest = { p: gun.leftHand.position.clone(), r: gun.leftHand.rotation.clone() };
       gun.rightRest = { p: gun.rightHand.position.clone(), q: gun.rightHand.quaternion.clone() };
@@ -472,7 +475,7 @@ export class ViewModel {
 // 허리 사격 위치 [x, y, z, 좌우 비틀기, 기울기] — 총마다 길이·손잡이 위치가 다르다
 const HIP = {
   // 긴 총은 개머리를 어깨에 댄 자세: 앞손(왼손)과 손잡이 손(오른손)이 모두 화면 아래쪽에 보이게 조금 높고 멀리
-  pistol: [0.04, -0.085, -0.58, 0.03, -0.02],   // 아이소셀레스(두 팔을 거의 편 삼각형) 자세: 실제 팔 길이대로 눈에서 58 cm
+  pistol: [0.075, -0.095, -0.36, 0.06, -0.03],
   rifle: [0.115, -0.055, -0.27, 0.13, -0.06],
   shotgun: [0.115, -0.075, -0.33, 0.13, -0.06],
   rail: [0.115, -0.06, -0.26, 0.13, -0.06],
