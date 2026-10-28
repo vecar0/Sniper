@@ -207,58 +207,85 @@ export function viewmodelEnvironment(renderer) {
 // 기본 자세: 손가락이 −z로 뻗고, 손가락 마디가 y로 쌓이며(검지가 위), 오른손은 −x 쪽으로 감아 쥔다.
 // mirror=true면 왼손(+x로 감음). curls: [검지, 중지, 약지, 소지] 각 [밑마디, 가운데, 끝] 굽힘(라디안)
 export function makeHand(M, { mirror = false, curls, thumb = { pos: [0.006, 0.03, 0.045], dir: [-0.6, 0.45, -1], curl: 0.4 }, palm = 0.026 } = {}) {
+  // 뼈대 손: 손가락 3마디 + 엄지 2마디가 실제 관절처럼 따로 굽는다. 부품은 붙은 뼈 하나에 100% 묶인(단단한) 스킨 → 재질당 그리기 1번.
+  // 묶는 기준 자세 = 손가락을 편 상태. pose(open, trig)로 쥔 자세 ↔ 편 자세를 섞고, 검지를 방아쇠 쪽으로 당긴다
   const s = mirror ? -1 : 1;
   const g = new THREE.Group();
-  const segs = [];
-  // 손바닥(손등 보호판 포함)
-  // 손바닥: 납작한 타원체(상자보다 손처럼 보인다) + 엄지 두덩
-  const palmG = new THREE.SphereGeometry(1, 16, 12); palmG.scale(0.0145, 0.04, 0.048); palmG.translate(s * palm, 0, 0.04);
-  segs.push({ g: palmG, m: 'glove' });
-  const thenar = new THREE.SphereGeometry(1, 12, 8); thenar.scale(0.011, 0.019, 0.024); thenar.translate(s * (palm - 0.01), 0.022, 0.05);
-  segs.push({ g: thenar, m: 'glove' });
-  // 손등 보호판(얇게, 둥근 모서리)
-  segs.push({ g: rbox(0.004, 0.05, 0.036, 0.0018, s * (palm + 0.016), 0.004, 0.028), m: 'knuckle' });
+  const bones = [new THREE.Bone()];
+  g.add(bones[0]);
+  const parts = [];
+  const part = (geo, m, bone) => parts.push({ geo, m, bone });
+  // 손바닥: 납작한 타원체 + 엄지 두덩 + 손등 보호판
+  const palmG = new THREE.SphereGeometry(1, 16, 12); palmG.scale(0.0145, 0.04, 0.048); palmG.translate(s * palm, 0, 0.04); part(palmG, 'glove', 0);
+  const thenar = new THREE.SphereGeometry(1, 12, 8); thenar.scale(0.011, 0.019, 0.024); thenar.translate(s * (palm - 0.01), 0.022, 0.05); part(thenar, 'glove', 0);
+  part(rbox(0.004, 0.05, 0.036, 0.0018, s * (palm + 0.016), 0.004, 0.028), 'knuckle', 0);
   const ys = [0.027, 0.009, -0.009, -0.026];
   const lens = [[0.042, 0.026, 0.022], [0.046, 0.029, 0.023], [0.043, 0.027, 0.022], [0.034, 0.021, 0.019]];
   const rads = [0.0088, 0.0092, 0.0088, 0.0078];
-  const fingerMeshes = [];
+  const fingers = [];
   for (let f = 0; f < 4; f++) {
-    let pos = new THREE.Vector3(s * (palm - 0.004), ys[f], -0.002);
-    let ang = 0;
+    const base = new THREE.Vector3(s * (palm - 0.004), ys[f], -0.002);
+    let parent = bones[0], at = base.clone(), z = 0;
+    const joints = [];
     for (let k = 0; k < 3; k++) {
-      ang += (curls ? curls[f][k] : [0.6, 1.0, 0.7][k]) * -s; // 오른손: 회전 −(y축) = −x 쪽으로 감음
-      const L = lens[f][k], r = rads[f] * (1 - k * 0.1);
-      const dir = new THREE.Vector3(Math.sin(ang), 0, -Math.cos(ang));
-      const c = new THREE.CapsuleGeometry(r, Math.max(0.001, L - r * 1.2), 3, 10);
-      c.rotateX(Math.PI / 2);                      // 캡슐 축 y → z
-      c.rotateY(-ang);
-      const mid = pos.clone().addScaledVector(dir, L / 2);
-      c.translate(mid.x, mid.y, mid.z);
-      segs.push({ g: c, m: 'glove' });
-      if (k === 0) { const kn = rbox(0.006, 0.012, 0.011, 0.0025, mid.x + Math.cos(ang) * r * 0.9 * s, mid.y, mid.z + Math.sin(ang) * r * 0.9 * s); segs.push({ g: kn, m: 'knuckle' }); }
-      pos = pos.addScaledVector(dir, L);
+      const b = new THREE.Bone();
+      b.position.copy(k === 0 ? base : new THREE.Vector3(0, 0, -lens[f][k - 1]));
+      parent.add(b); bones.push(b); joints.push(b);
+      const bi = bones.length - 1, L = lens[f][k], r = rads[f] * (1 - k * 0.1);
+      // 기준 자세(곧게 편 손가락)에서 마디 중심 = 관절에서 −z로 L/2
+      const c = new THREE.CapsuleGeometry(r, Math.max(0.001, L - r * 1.2), 3, 10); c.rotateX(Math.PI / 2);
+      c.translate(at.x, at.y, at.z - L / 2); part(c, 'glove', bi);
+      if (k === 0) part(rbox(0.006, 0.012, 0.011, 0.0025, at.x + s * r * 0.9, at.y, at.z - L / 2), 'knuckle', bi);
+      at = at.clone().add(new THREE.Vector3(0, 0, -L)); parent = b; z += L;
     }
-    fingerMeshes.push(pos.clone());
+    fingers.push(joints);
   }
-  // 엄지(2마디)
-  {
-    let pos = new THREE.Vector3(s * thumb.pos[0], thumb.pos[1], thumb.pos[2]);
-    let dir = new THREE.Vector3(s * thumb.dir[0], thumb.dir[1], thumb.dir[2]).normalize();
-    for (let k = 0; k < 2; k++) {
-      const L = [0.04, 0.03][k], r = 0.0105 - k * 0.0012;
-      const c = new THREE.CapsuleGeometry(r, L - r * 1.2, 3, 10);
-      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-      c.applyQuaternion(q);
-      const mid = pos.clone().addScaledVector(dir, L / 2);
-      c.translate(mid.x, mid.y, mid.z);
-      segs.push({ g: c, m: 'glove' });
-      pos = pos.addScaledVector(dir, L);
-      dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), -s * thumb.curl).normalize();
-    }
+  // 엄지(2마디): 기준 자세는 thumb.dir로 곧게
+  const tdir = new THREE.Vector3(s * thumb.dir[0], thumb.dir[1], thumb.dir[2]).normalize();
+  const tpos = new THREE.Vector3(s * thumb.pos[0], thumb.pos[1], thumb.pos[2]);
+  const t0 = new THREE.Bone(); t0.position.copy(tpos); bones[0].add(t0); bones.push(t0);
+  const t1 = new THREE.Bone(); t1.position.copy(tdir.clone().multiplyScalar(0.04)); t0.add(t1); bones.push(t1);
+  for (let k = 0; k < 2; k++) {
+    const L = [0.04, 0.03][k], r = 0.0105 - k * 0.0012;
+    const c = new THREE.CapsuleGeometry(r, L - r * 1.2, 3, 10);
+    c.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), tdir));
+    const mid = tpos.clone().addScaledVector(tdir, (k === 0 ? 0 : 0.04) + L / 2);
+    c.translate(mid.x, mid.y, mid.z); part(c, 'glove', bones.length - 2 + k);
   }
+  // 재질별로 하나의 스킨 메시
   const byMat = {};
-  for (const { g: geo, m } of segs) (byMat[m] = byMat[m] || []).push(geo);
-  for (const [m, list] of Object.entries(byMat)) g.add(new THREE.Mesh(merge(list), M[m]));
+  for (const q of parts) (byMat[q.m] = byMat[q.m] || []).push(q);
+  g.updateMatrixWorld(true);
+  const skeleton = new THREE.Skeleton(bones);
+  for (const [m, list] of Object.entries(byMat)) {
+    const geos = list.map(({ geo, bone }) => {
+      let n = geo.index ? geo.toNonIndexed() : geo;
+      for (const k of Object.keys(n.attributes)) if (!['position', 'normal'].includes(k)) n.deleteAttribute(k);
+      const cnt = n.attributes.position.count, si = new Uint16Array(cnt * 4), sw = new Float32Array(cnt * 4);
+      for (let i = 0; i < cnt; i++) { si[i * 4] = bone; sw[i * 4] = 1; }
+      n.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4)); n.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+      return n;
+    });
+    const mesh = new THREE.SkinnedMesh(mergeGeometries(geos, false), M[m]);
+    g.add(mesh); mesh.bind(skeleton, new THREE.Matrix4());
+    mesh.frustumCulled = false;
+  }
+  const grip = curls || [[0.6, 1.0, 0.7], [0.6, 1.0, 0.7], [0.6, 1.0, 0.7], [0.6, 1.0, 0.7]];
+  const OPEN = [0.12, 0.16, 0.08], TRIG = [0.35, 0.45, 0.25];
+  let last = '';
+  // open: 0 = 쥔 자세, 1 = 편 손(살짝 굽은 자연스러운 손) · trig: 검지를 방아쇠 쪽으로 당김
+  g.userData.pose = (open = 0, trig = 0) => {
+    const key = open.toFixed(3) + trig.toFixed(3);
+    if (key === last) return; last = key;
+    fingers.forEach((joints, f) => joints.forEach((b, k) => {
+      const c = grip[f][k] + (OPEN[k] + f * 0.03 - grip[f][k]) * open + (f === 0 ? TRIG[k] * trig : 0);
+      b.rotation.set(0, s * c, 0);
+      if (k === 0) b.rotation.z = s * (f - 1.5) * 0.06 * open;     // 펼 때 손가락 사이가 조금 벌어진다
+    }));
+    t1.rotation.set(0, -s * thumb.curl * (1 - open), 0);
+    t0.rotation.set(0, s * 0.35 * open, 0);                          // 엄지가 바깥으로 벌어짐
+  };
+  g.userData.pose(0, 0);
   return g;
 }
 
@@ -316,29 +343,57 @@ export function poseHand(hand, mirror, axis, palm, at) {
   hand.position.set(...at);
 }
 
-// 손목(기본 자세 (±0.024, 0, 0.085))에서 팔꿈치 쪽으로 아래팔. 손이 움직이면(재장전) aimArm으로 다시 겨눈다:
-// 팔꿈치는 제자리, 아래팔이 손목을 따라 돌고 늘어난다
-function armFrom(parent, M, hand, mirror, elbowOffset) {
+// 팔: 어깨–팔꿈치–손목 2관절. 위팔·아래팔 길이는 처음(쉬는 자세)에 정해져 변하지 않고, 손이 움직이면
+// 팔꿈치가 '아래·바깥'으로 굽는 위치를 2-뼈 IK로 푼다(사람 팔처럼 접히고 펴진다). shoulderOff: 쉬는 자세 손목 기준 어깨 위치
+function armFrom(parent, M, hand, mirror, shoulderOff) {
+  const arm = new THREE.Group();
+  const wrist = new THREE.Vector3(mirror ? -0.022 : 0.022, 0, 0.082);
   hand.updateMatrix();
-  const w = new THREE.Vector3(mirror ? -0.022 : 0.022, 0, 0.082).applyMatrix4(hand.matrix);
-  const L = Math.hypot(...elbowOffset);
-  const inner = makeForearm(M, [0, 0, 0], [0, L, 0]);
-  const arm = new THREE.Group(); arm.add(inner);
-  arm.userData = { hand, wrist: new THREE.Vector3(mirror ? -0.022 : 0.022, 0, 0.082), elbow: new THREE.Vector3(w.x + elbowOffset[0], w.y + elbowOffset[1], w.z + elbowOffset[2]), L };
+  const W = wrist.clone().applyMatrix4(hand.matrix);
+  arm.userData = { hand, wrist, mirror, M, S0: W.clone().add(new THREE.Vector3(...shoulderOff)), pole0: new THREE.Vector3(mirror ? -0.55 : 0.55, -1, 0.1).normalize() };
   parent.add(arm);
   aimArm(arm);
   return arm;
 }
-const _up = new THREE.Vector3(0, 1, 0), _w = new THREE.Vector3(), _d = new THREE.Vector3();
-export function aimArm(arm) {
+// 위팔 소매(어깨 → 팔꿈치, +y 방향) + 팔꿈치 덧댐
+function makeUpperArm(M, L) {
+  const g = new THREE.Group();
+  const prof = [[0, -0.02], [0.03, -0.02]];
+  for (let i = 0; i <= 10; i++) { const t = i / 10, z = t * (L + 0.05); prof.push([0.05 - 0.012 * t + 0.0015 * Math.sin(z * 90) * (1 - t), z]); }
+  prof.push([0.036, L + 0.06], [0, L + 0.062]);
+  g.add(new THREE.Mesh(new THREE.LatheGeometry(prof.map(([r, z]) => new THREE.Vector2(r, z)), 16), M.sleeve));
+  const pad = new THREE.SphereGeometry(1, 12, 8); pad.scale(0.03, 0.04, 0.03); pad.translate(0.02, L - 0.01, 0);
+  g.add(new THREE.Mesh(pad, M.knuckle));
+  return g;
+}
+const _Y = new THREE.Vector3(0, 1, 0), _W = new THREE.Vector3(), _D = new THREE.Vector3(), _E = new THREE.Vector3(), _P = new THREE.Vector3(), _X = new THREE.Vector3(), _Z = new THREE.Vector3(), _B = new THREE.Matrix4();
+function orientY(obj, from, to, outward) {
+  // obj의 +y를 from→to로, +x(보호판 쪽)를 바깥(팔꿈치가 굽는 쪽)으로
+  const dir = _D.copy(to).sub(from), len = dir.length(); dir.divideScalar(len || 1);
+  _X.copy(outward).addScaledVector(dir, -outward.dot(dir)).normalize();
+  _Z.crossVectors(_X, dir);
+  obj.position.copy(from); obj.quaternion.setFromRotationMatrix(_B.makeBasis(_X, dir, _Z));
+  return len;
+}
+// S(어깨)·pole(팔꿈치가 향할 방향)은 arm.parent 공간. 생략하면 쉬는 자세 값
+export function aimArm(arm, S = arm.userData.S0, pole = arm.userData.pole0) {
   const u = arm.userData;
   u.hand.updateMatrix();
-  _w.copy(u.wrist).applyMatrix4(u.hand.matrix);
-  _d.copy(u.elbow).sub(_w);
-  const len = _d.length();
-  arm.position.copy(_w);
-  arm.quaternion.setFromUnitVectors(_up, _d.normalize());
-  arm.scale.set(1, len / u.L, 1);
+  const W = _W.copy(u.wrist).applyMatrix4(u.hand.matrix);
+  if (!u.a) {
+    const d = S.distanceTo(W), tot = d * 1.045;               // 쉬는 자세에서 팔꿈치가 조금만 굽어 있게(사격 자세는 팔을 뻗는다)
+    u.a = tot * 0.47; u.b = tot * 0.53;
+    u.upper = makeUpperArm(u.M, u.a); u.fore = makeForearm(u.M, [0, 0, 0], [0, u.b, 0]);
+    arm.add(u.upper, u.fore);
+  }
+  const D = _P.copy(W).sub(S), d = D.length(), n = D.divideScalar(d || 1);
+  let a = u.a, b = u.b, k = 1;
+  if (d > (a + b) * 0.998) { k = d / ((a + b) * 0.998); a *= k; b *= k; }   // 닿지 않으면 아주 조금 늘린다(손이 총에서 떨어지지 않게)
+  const x = (a * a - b * b + d * d) / (2 * d), h = Math.sqrt(Math.max(0, a * a - x * x));
+  const pp = pole.clone().addScaledVector(n, -pole.dot(n)).normalize();
+  const E = _E.copy(S).addScaledVector(n, x).addScaledVector(pp, h);
+  orientY(u.upper, S, E, pp); u.upper.scale.set(1, k, 1);
+  orientY(u.fore, W, E, pp); u.fore.scale.set(1, k, 1);
 }
 
 // 각인(롤마크): 금속에 레이저로 새긴 듯한 옅은 회색 글자. 왼쪽 면(플레이어 쪽)에 붙인다
@@ -510,8 +565,8 @@ function buildPistol(g, add, M, out, X) {
   const L = makeHand(M, { mirror: true, curls: [[1.4, 1.35, 0.8], [1.2, 1.3, 0.85], [1.15, 1.3, 0.85], [1.2, 1.3, 0.8]], thumb: { pos: [0.02, 0.026, 0.026], dir: [0.07, 0.75, -0.65], curl: 0.05 } });
   poseHand(L, true, [0, 0.75, -0.66], [1, 0, 0.15], [-0.016, -0.05, 0.07]);
   g.add(L);
-  out.rightArm = armFrom(g, M, R, false, [0.1, -0.2, 0.3]);
-  out.leftArm = armFrom(g, M, L, true, [-0.15, -0.22, 0.25]);
+  out.rightArm = armFrom(g, M, R, false, [0.13, -0.2, 0.42]);
+  out.leftArm = armFrom(g, M, L, true, [-0.24, -0.2, 0.4]);
   out.rightHand = R; out.leftHand = L;
 }
 
@@ -647,8 +702,8 @@ function buildRifle(g, add, M, out, X) {
   // 엄지는 왼쪽 면을 따라 앞으로 뻗는다. 수직 손잡이 대신 손 멈춤판에 손 앞을 건다
   const L = makeHand(M, CLAMP_HAND);
   poseHand(L, true, [0, -0.25, -1], [-0.3, 0.95, 0], [-0.03, -0.026, -0.405]); g.add(L);
-  out.rightArm = armFrom(g, M, R, false, [0.1, -0.2, 0.3]);
-  out.leftArm = armFrom(g, M, L, true, [-0.15, -0.17, 0.3]);
+  out.rightArm = armFrom(g, M, R, false, [0.1, -0.18, 0.4]);
+  out.leftArm = armFrom(g, M, L, true, [-0.28, -0.16, 0.66]);
   out.rightHand = R; out.leftHand = L;
 }
 
@@ -726,8 +781,8 @@ function buildShotgun(g, add, M, out, X) {
   // 왼손: 펌프를 아래에서 감싸 쥐고(손가락은 오른쪽 면으로, 엄지는 왼쪽 면을 따라 앞으로) 앞으로 밀어 반동을 누른다
   const L = makeHand(M, PUMP_HAND);
   poseHand(L, true, [0, -0.2, -1], [-0.3, 0.95, 0], [-0.03, -0.03, -0.275]); pump.add(L);
-  out.rightArm = armFrom(g, M, R, false, [0.1, -0.2, 0.3]);
-  out.leftArm = armFrom(pump, M, L, true, [-0.17, -0.2, 0.3]);
+  out.rightArm = armFrom(g, M, R, false, [0.1, -0.18, 0.4]);
+  out.leftArm = armFrom(pump, M, L, true, [-0.28, -0.16, 0.56]);
   out.rightHand = R; out.leftHand = L;
 }
 
@@ -803,8 +858,8 @@ function buildRail(g, add, M, out, X) {
   foregrip(add, g, -0.38, -0.014);
   const L = makeHand(M, FORE_HAND);
   onForegrip(L, -0.38, -0.014); g.add(L);
-  out.rightArm = armFrom(g, M, R, false, [0.1, -0.2, 0.3]);
-  out.leftArm = armFrom(g, M, L, true, [-0.17, -0.2, 0.32]);
+  out.rightArm = armFrom(g, M, R, false, [0.1, -0.18, 0.4]);
+  out.leftArm = armFrom(g, M, L, true, [-0.28, -0.16, 0.62]);
   out.rightHand = R; out.leftHand = L;
 }
 
