@@ -121,21 +121,27 @@ const lin = (r, g, b) => new THREE.Color().setRGB(r, g, b, THREE.LinearSRGBColor
 export function gunMaterials(envMap) {
   const M = {
     // 흑착색 강철(슬라이드·총열): 금속, 어두운 F0
-    steel: finishMaterial({ color: lin(0.2, 0.205, 0.215), metalness: 1, roughness: 0.3, envMapIntensity: 0.9 }, { smear: 0.12, scratch: 0.2, grain: 0.03, wear: 0.9, key: 'steel' }),
+    steel: finishMaterial({ color: lin(0.26, 0.265, 0.275), metalness: 1, roughness: 0.3, envMapIntensity: 0.9 }, { smear: 0.12, scratch: 0.2, grain: 0.03, wear: 0.9, key: 'steel' }),
     // 맨 강철(총구·볼트·방아쇠)
     bright: finishMaterial({ color: lin(0.56, 0.57, 0.58), metalness: 1, roughness: 0.2, envMapIntensity: 0.85 }, { smear: 0.1, scratch: 0.22, grain: 0.025, key: 'bright' }),
     // 경질 아노다이징 알루미늄(리시버): 금속, 아주 어두운 F0, 무광
-    anod: finishMaterial({ color: lin(0.13, 0.135, 0.145), metalness: 1, roughness: 0.42, envMapIntensity: 1.0 }, { smear: 0.08, scratch: 0.15, grain: 0.04, wear: 1, key: 'anod' }),
+    anod: finishMaterial({ color: lin(0.2, 0.205, 0.215), metalness: 1, roughness: 0.42, envMapIntensity: 1.0 }, { smear: 0.08, scratch: 0.15, grain: 0.04, wear: 1, key: 'anod' }),
     // 세라코트(군청 회색 도장): 비금속
-    cerakote: finishMaterial({ color: lin(0.075, 0.08, 0.09), metalness: 0, roughness: 0.48, envMapIntensity: 0.8 }, { smear: 0.1, scratch: 0.12, grain: 0.05, wear: 0.8, key: 'cera' }),
+    cerakote: finishMaterial({ color: lin(0.11, 0.115, 0.125), metalness: 0, roughness: 0.48, envMapIntensity: 0.8 }, { smear: 0.1, scratch: 0.12, grain: 0.05, wear: 0.8, key: 'cera' }),
     // 건메탈 아노다이징(리시버·슬라이드 판): 밝은 회색 금속 — 검은 폴리머와 두 톤으로 부품이 구분된다
-    gunmetal: finishMaterial({ color: lin(0.15, 0.155, 0.165), metalness: 0.45, roughness: 0.4, envMapIntensity: 1.0 }, { smear: 0.1, scratch: 0.2, grain: 0.04, wear: 0.9, key: 'gunmetal' }),
+    gunmetal: finishMaterial({ color: lin(0.17, 0.174, 0.182), metalness: 0.55, roughness: 0.4, envMapIntensity: 1.0 }, { smear: 0.1, scratch: 0.2, grain: 0.04, wear: 0.9, key: 'gunmetal' }),
     // 회색 폴리머 프레임(권총)
-    polyGrey: finishMaterial({ color: lin(0.075, 0.078, 0.082), metalness: 0, roughness: 0.58, envMapIntensity: 0.7 }, { smear: 0.1, scratch: 0.04, grain: 0.08, bump: 0.0005, bumpF: 2200, key: 'polygrey' }),
+    polyGrey: finishMaterial({ color: lin(0.1, 0.103, 0.108), metalness: 0, roughness: 0.58, envMapIntensity: 0.7 }, { smear: 0.1, scratch: 0.04, grain: 0.08, bump: 0.0005, bumpF: 2200, key: 'polygrey' }),
     // 작은 강조색(조정간 표시·경고 띠) — 한두 군데만
     accent: new THREE.MeshStandardMaterial({ color: lin(0.85, 0.3, 0.05), metalness: 0, roughness: 0.5 }),
     // 강화 폴리머(프레임·손잡이·개머리판)
-    polymer: finishMaterial({ color: lin(0.035, 0.036, 0.04), metalness: 0, roughness: 0.6, envMapIntensity: 0.7 }, { smear: 0.12, scratch: 0.05, grain: 0.12, bump: 0.0004, bumpF: 2400, key: 'poly' }),
+    polymer: finishMaterial({ color: lin(0.05, 0.051, 0.056), metalness: 0, roughness: 0.6, envMapIntensity: 0.7 }, { smear: 0.12, scratch: 0.05, grain: 0.12, bump: 0.0004, bumpF: 2400, key: 'poly' }),
+    // 플랫 다크 어스(FDE) 폴리머 가구 · 같은 색 세라코트(핸드가드) · 올리브(산탄총) — 검은 금속과 두 톤으로 부품이 갈린다
+    fde: finishMaterial({ color: lin(0.165, 0.128, 0.085), metalness: 0, roughness: 0.62, envMapIntensity: 0.7 }, { smear: 0.12, scratch: 0.06, grain: 0.1, wear: 0.5, bump: 0.0005, bumpF: 2200, key: 'fde' }),
+    fdeCera: finishMaterial({ color: lin(0.158, 0.122, 0.082), metalness: 0, roughness: 0.5, envMapIntensity: 0.8 }, { smear: 0.1, scratch: 0.14, grain: 0.05, wear: 0.9, key: 'fdecera' }),
+    od: finishMaterial({ color: lin(0.07, 0.078, 0.05), metalness: 0, roughness: 0.6, envMapIntensity: 0.7 }, { smear: 0.12, scratch: 0.06, grain: 0.1, bump: 0.0005, bumpF: 2200, key: 'od' }),
+    // 손잡이 점각(스티플링): 같은 FDE에 굵은 요철
+    stip: finishMaterial({ color: lin(0.15, 0.116, 0.078), metalness: 0, roughness: 0.78, envMapIntensity: 0.6 }, { smear: 0.05, scratch: 0, grain: 0.15, bump: 0.0011, bumpF: 1000, key: 'stip' }),
     // 미끄럼 방지 고무
     rubber: finishMaterial({ color: lin(0.02, 0.02, 0.022), metalness: 0, roughness: 0.82, envMapIntensity: 0.5 }, { smear: 0.05, scratch: 0, grain: 0.15, bump: 0.0012, bumpF: 2600, key: 'rubber' }),
     // 탄피 황동 · 산탄 붉은 플라스틱
@@ -156,6 +162,23 @@ export function gunMaterials(envMap) {
   for (const m of Object.values(M)) if (m.isMeshStandardMaterial && envMap) m.envMap = envMap; // r163+: scene.environment만으로는 envMapIntensity가 무시된다
   return M;
 }
+
+// 뷰모델 조명(게임·검수 페이지 공용). 총 왼면(플레이어가 보는 면)에 따뜻한 투광등 키, 윗모서리에 차가운 달빛 테두리,
+// 아래에서 눈 반사 채움 — 검은 총이라도 면이 바뀌는 곳마다 밝기가 달라 형태가 읽힌다
+export function viewmodelLights(scene, camera, target = [0, 0, 0]) {
+  scene.add(new THREE.HemisphereLight(0x8094b8, 0x3a3440, 0.55));
+  // 키 조명만 그림자: 조준경·손·장전 손잡이가 총 몸통에 그림자를 드리워 부품 사이 깊이가 생긴다(뷰모델 크기만 덮는 작은 상자)
+  const key = new THREE.DirectionalLight(0xffd6a8, 2.1); key.position.set(-1.2 + target[0], 1.5 + target[1], 0.5 + target[2]);
+  key.target.position.set(...target); scene.add(key, key.target);
+  key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0002; key.shadow.normalBias = 0.002; key.shadow.radius = 2;
+  Object.assign(key.shadow.camera, { left: -0.55, right: 0.55, top: 0.55, bottom: -0.55, near: 0.5, far: 4 });
+  const rim = new THREE.DirectionalLight(0xa8c8ff, 1.5); rim.position.set(0.9, 1.2, -1.1); scene.add(rim);
+  const fill = new THREE.DirectionalLight(0x9aa6c0, 0.45); fill.position.set(-0.3, -1, 0.4); scene.add(fill);
+  const pt = new THREE.PointLight(0x8ad8ff, 0.6, 2.5, 2); pt.position.set(-0.35, 0.25, -0.9); (camera || scene).add(pt);
+  return pt;
+}
+// 그림자 받기/드리우기: 불투명 표준 재질만(렌즈·발광·조준점 제외)
+export function shadowGun(root) { root.traverse((o) => { if (o.isMesh && o.material.isMeshStandardMaterial && !o.material.transparent) o.castShadow = o.receiveShadow = true; }); }
 
 // 뷰모델 전용 반사 환경: 거의 검은 방 + 밝고 경계가 또렷한 조명판(투광등·하늘·눈). PMREM으로 미리 흐림
 export function viewmodelEnvironment(renderer) {
@@ -329,7 +352,44 @@ export function buildGun(id, M, extras) {
   else if (id === 'shotgun') buildShotgun(g, add, M, out, extras);
   else buildRail(g, add, M, out, extras);
   out.magRest = out.mag ? out.mag.position.clone() : null;
+  bakeStatic(g, out);
   return out;
+}
+
+// 가공선(부품 이음새·밀링 단차): 옆면 x 위에 점 [z,y]를 잇는 가는 어두운 홈 — 넓은 평면을 실제 부품처럼 쪼갠다
+function panelLine(pts, x, w = 0.0009, closed = false) {
+  const parts = [], n = pts.length;
+  for (let i = 0; i < (closed ? n : n - 1); i++) {
+    const [z0, y0] = pts[i], [z1, y1] = pts[(i + 1) % n], len = Math.hypot(z1 - z0, y1 - y0);
+    const b = new THREE.BoxGeometry(0.0006, w, len + w); b.rotateX(Math.atan2(y1 - y0, -(z1 - z0))); b.translate(x, (y0 + y1) / 2, (z0 + z1) / 2); parts.push(b);
+  }
+  return merge(parts);
+}
+// 모서리 모따기 면(긴 부품의 위·아래 모서리를 45°로 깎은 띠): 빛을 다르게 받아 단면이 팔각처럼 읽힌다
+function chamfer(x, y, z0, z1, wdt, ang) { const g = new THREE.BoxGeometry(0.0012, wdt, z0 - z1); g.rotateZ(ang); g.translate(x, y, (z0 + z1) / 2); return g; }
+// 나사 머리(육각 홈) — 옆면 x에
+function screw(add, x, y, z, r = 0.0022) {
+  const sx = Math.sign(x) || -1;
+  add(new THREE.CylinderGeometry(r, r * 1.05, 0.0012, 14).rotateZ(Math.PI / 2).translate(x + sx * 0.0005, y, z), 'bright');
+  add(new THREE.CylinderGeometry(r * 0.45, r * 0.45, 0.0014, 6).rotateZ(Math.PI / 2).translate(x + sx * 0.0008, y, z), 'bore');
+}
+
+// 움직이지 않는 부품(총 그룹 바로 아래, 변환 없음)을 재질별로 하나로 합친다 → 부품 수백 개라도 그리기 호출은 재질 수만큼
+function bakeStatic(g, out) {
+  const keep = new Set([out.display, out.ret, ...(out.coils || [])]);
+  const byMat = new Map();
+  for (const o of [...g.children]) {
+    if (!o.isMesh || keep.has(o) || o.material.map || o.material.side === THREE.DoubleSide) continue;
+    o.updateMatrix(); if (!o.matrix.equals(new THREE.Matrix4())) continue;
+    if (!byMat.has(o.material)) byMat.set(o.material, []);
+    byMat.get(o.material).push(o);
+  }
+  for (const [mat, list] of byMat) {
+    if (list.length < 2) continue;
+    for (const o of list) g.remove(o);
+    g.add(new THREE.Mesh(merge(list.map((o) => o.geometry)), mat));
+    for (const o of list) o.geometry.dispose();
+  }
 }
 
 function grooves(z0, z1, n, y0, y1, x, depth = 0.0007) {
@@ -371,13 +431,13 @@ function buildPistol(g, add, M, out, X) {
   // 프레임(폴리머): 먼지 덮개 + 방아쇠울(구멍) + 기울어진 손잡이 + 비버테일
   const frame = [[0.047, 0.013], [0.064, 0.011, 0.006], [0.061, 0.0], [0.062, -0.012], [0.083, -0.088, 0.006], [0.044, -0.094, 0.006], [0.026, -0.03, 0.008], [0.012, -0.016],
     [-0.036, -0.026, 0.012], [-0.05, -0.012, 0.005], [-0.05, -0.002], [-0.142, -0.002, 0.002], [-0.142, 0.013]];
-  add(side(frame, 0.027, { holes: [[[0.006, -0.004], [-0.04, -0.004], [-0.04, -0.012, 0.004], [-0.033, -0.018, 0.004], [0.0, -0.014, 0.002]]], bevel: 0.0026 }), 'polyGrey');
+  add(side(frame, 0.027, { holes: [[[0.006, -0.004], [-0.04, -0.004], [-0.04, -0.012, 0.004], [-0.033, -0.018, 0.004], [0.0, -0.014, 0.002]]], bevel: 0.0026 }), 'fde');
   // 프레임 핀 2개 · 분해 레버 · 일련번호 판
   pinX(0.0016, 0.0278, 0, -0.001, 0.004, 'bright', add); pinX(0.0016, 0.0278, 0, 0.004, 0.036, 'bright', add);
   add(rbox(0.0024, 0.004, 0.012, 0.001, -0.0145, 0.004, -0.008), 'steel');
   add(rbox(0.0008, 0.005, 0.016, 0.0003, -0.0139, -0.008, -0.03), 'bright');
   // 손잡이 미끄럼 방지 패널(고무, 양옆) · 손가락 받침
-  for (const x of [0.0142, -0.0142]) add(side([[0.064, -0.016], [0.08, -0.08, 0.004], [0.05, -0.085, 0.004], [0.034, -0.03], [0.04, -0.016]], 0.0015, { cx: x, bevel: 0.0004 }), 'rubber');
+  for (const x of [0.0142, -0.0142]) add(side([[0.064, -0.016], [0.08, -0.08, 0.004], [0.05, -0.085, 0.004], [0.034, -0.03], [0.04, -0.016]], 0.0015, { cx: x, bevel: 0.0004 }), 'stip');
   // 액세서리 레일 홈(먼지 덮개 아래)
   add(grooves(-0.13, -0.07, 3, -0.0015, 0.001, 0, 0.014), 'port');
   // 방아쇠 · 슬라이드 멈치 · 탄창 멈치
@@ -399,6 +459,17 @@ function buildPistol(g, add, M, out, X) {
   add(rbox(0.004, 0.0016, 0.008, 0.0006, 0.004, 0.0474, -0.034), 'bright', S);
   // 슬라이드 뒤 작은 탄수 표시(카메라 쪽)
   out.display = add(new THREE.PlaneGeometry(0.019, 0.009), X.ammoMat, S); out.display.position.set(0, 0.031, 0.0486);
+  // ── 표면 디테일 ──
+  for (const sx of [-1, 1]) {
+    // 슬라이드 아래 모서리 모따기 · 앞 경사면 가공선 · 프레임: 먼지 덮개 이음새 · 레일 옆 홈 · 엄지 받침 단차 · 점각 테두리
+    add(chamfer(sx * 0.0118, 0.0145, 0.046, -0.148, 0.004, -sx * Math.PI / 4), 'steel', S);
+    add(panelLine([[-0.112, 0.046], [-0.112, 0.016]], sx * 0.0128), 'port', S);
+    add(panelLine([[-0.05, -0.002], [-0.14, -0.002]], sx * 0.0139), 'port');
+    add(panelLine([[-0.06, 0.006], [-0.138, 0.006]], sx * 0.0139), 'port');
+    add(panelLine([[0.008, 0.008], [-0.03, 0.008], [-0.036, 0.0]], sx * 0.0139), 'port');
+    add(panelLine([[0.064, -0.016], [0.08, -0.08], [0.05, -0.085], [0.034, -0.03], [0.04, -0.016]], sx * 0.0148, 0.0008, true), 'port');
+    screw(add, sx * 0.0138, -0.05, 0.068, 0.0015);
+  }
   out.muzzle = new THREE.Vector3(0, 0.03, -0.16);
   // 동작 기준점: 탄피 배출구 · 왼손이 탄창을 끼우는 곳(손잡이 밑) · 슬라이드를 당기는 곳
   out.eject = new THREE.Vector3(0.013, 0.038, -0.02); out.casing = 'pistol';
@@ -419,7 +490,7 @@ function buildPistol(g, add, M, out, X) {
 
 function buildRifle(g, add, M, out, X) {
   // 상부 리시버(아노다이징) + 배출구 덮개 + 장전 손잡이
-  add(side([[0.13, 0.0], [0.13, 0.036, 0.003], [0.124, 0.042], [-0.16, 0.042], [-0.16, 0.0]], 0.031, { bevel: 0.0022 }), 'gunmetal');
+  add(side([[0.13, 0.0], [0.13, 0.036, 0.003], [0.124, 0.042], [-0.16, 0.042], [-0.16, 0.0]], 0.031, { bevel: 0.0022 }), 'anod');
   // 상부 왼쪽 가공 홈(한 단 낮은 면) + 볼트 멈치 레버 + 분해 핀 머리
   add(side([[0.1, 0.008], [0.1, 0.03, 0.003], [-0.12, 0.03, 0.003], [-0.12, 0.008, 0.003]], 0.0012, { cx: -0.0158, bevel: 0.0004 }), 'anod');
   add(side([[0.062, -0.002], [0.066, 0.006, 0.002], [0.05, 0.008, 0.002], [0.048, -0.002]], 0.004, { cx: -0.0168, bevel: 0.0008 }), 'steel');
@@ -433,7 +504,7 @@ function buildRifle(g, add, M, out, X) {
   add(rbox(0.006, 0.012, 0.046, 0.002, 0.0128, 0.022, 0.02), 'bright', BOLT);
   // 하부 리시버: 탄창 삽입구 · 방아쇠울(구멍)
   add(side([[0.12, 0.0], [0.12, -0.026, 0.004], [0.075, -0.04], [0.06, -0.04], [0.035, -0.055, 0.005], [-0.005, -0.055, 0.004], [-0.02, -0.04], [-0.026, -0.072, 0.003], [-0.09, -0.072, 0.003], [-0.094, -0.02], [-0.11, 0.0]], 0.03,
-    { holes: [[[0.055, -0.03], [0.03, -0.044], [0.0, -0.044], [-0.006, -0.032], [-0.006, -0.028], [0.055, -0.028]]], bevel: 0.0022 }), 'gunmetal');
+    { holes: [[[0.055, -0.03], [0.03, -0.044], [0.0, -0.044], [-0.006, -0.032], [-0.006, -0.028], [0.055, -0.028]]], bevel: 0.0022 }), 'anod');
   // 탄창 삽입구 왼쪽 각인 + 조정간 표시(작은 주황 점이 '연발'을 가리킴)
   engrave(add, M, 'AR-7', -0.0152, -0.04, -0.058, 0.05, 0.0075);
   engrave(add, M, 'CAL 5.56×45 · NORDVAG', -0.0152, -0.055, -0.058, 0.055, 0.0045);
@@ -443,12 +514,12 @@ function buildRifle(g, add, M, out, X) {
   add(side([[0.03, -0.028], [0.026, -0.038, 0.003], [0.033, -0.045], [0.036, -0.045], [0.034, -0.028]], 0.006, { bevel: 0.0007 }), 'bright');
   add(new THREE.CylinderGeometry(0.006, 0.006, 0.002, 14).rotateZ(Math.PI / 2).translate(-0.0158, -0.012, 0.075), 'steel'); // 조정간
   // 손잡이(폴리머, 손가락 홈)
-  add(side([[0.11, -0.03], [0.116, -0.04], [0.146, -0.128, 0.008], [0.112, -0.138, 0.006], [0.098, -0.11], [0.092, -0.09, 0.006], [0.084, -0.07], [0.078, -0.04]], 0.029, { bevel: 0.003 }), 'polymer');
+  add(side([[0.11, -0.03], [0.116, -0.04], [0.146, -0.128, 0.008], [0.112, -0.138, 0.006], [0.098, -0.11], [0.092, -0.09, 0.006], [0.084, -0.07], [0.078, -0.04]], 0.029, { bevel: 0.003 }), 'fde');
   add(side([[0.118, -0.05], [0.14, -0.122, 0.004], [0.118, -0.128], [0.098, -0.06]], 0.0012, { cx: 0.0148, bevel: 0.0003 }), 'rubber');
   // 개머리판: 완충관 + 접이 개머리(살빼기 구멍) + 고무 받침
   add(lathe([[0, 0.12], [0.016, 0.12], [0.016, 0.33], [0, 0.33]], 20, 0.016), 'anod');
   add(side([[0.2, 0.038], [0.2, -0.012], [0.33, -0.07, 0.008], [0.355, -0.07], [0.355, 0.042, 0.006], [0.25, 0.046, 0.01]], 0.036,
-    { holes: [[[0.235, 0.02], [0.235, 0.0, 0.005], [0.315, -0.035, 0.006], [0.33, -0.035, 0.003], [0.33, 0.026, 0.005], [0.27, 0.028, 0.006]]], bevel: 0.003 }), 'polymer');
+    { holes: [[[0.235, 0.02], [0.235, 0.0, 0.005], [0.315, -0.035, 0.006], [0.33, -0.035, 0.003], [0.33, 0.026, 0.005], [0.27, 0.028, 0.006]]], bevel: 0.003 }), 'fde');
   add(side([[0.355, 0.044], [0.355, -0.072], [0.372, -0.074, 0.006], [0.372, 0.046, 0.006]], 0.038, { bevel: 0.003 }), 'rubber');
   // 볼 받침(뺨 대는 곳) · 멜빵 고리 소켓 · 완충관 고정 너트
   add(side([[0.21, 0.046], [0.214, 0.056, 0.004], [0.33, 0.054, 0.006], [0.33, 0.044]], 0.03, { bevel: 0.003 }), 'rubber');
@@ -458,7 +529,7 @@ function buildRifle(g, add, M, out, X) {
   // 핸드가드(M-LOK 구멍) + 위 레일
   const slots = [];
   for (let i = 0; i < 6; i++) { const z = -0.19 - i * 0.048; slots.push([[z, 0.006], [z - 0.032, 0.006, 0.003], [z - 0.032, -0.004, 0.003], [z, -0.004, 0.003]].map((p, k) => (k === 0 ? [p[0], p[1], 0.003] : p))); }
-  add(side([[-0.16, 0.042], [-0.49, 0.042], [-0.495, 0.036], [-0.495, -0.016, 0.006], [-0.485, -0.026], [-0.17, -0.026], [-0.16, -0.016]], 0.043, { holes: slots, bevel: 0.0045 }), 'cerakote');
+  add(side([[-0.16, 0.042], [-0.49, 0.042], [-0.495, 0.036], [-0.495, -0.016, 0.006], [-0.485, -0.026], [-0.17, -0.026], [-0.16, -0.016]], 0.043, { holes: slots, bevel: 0.0045 }), 'fdeCera');
   // 핸드가드 고정 나사 · 앞쪽 가스 블록
   for (const z of [-0.175, -0.47]) add(new THREE.CylinderGeometry(0.0022, 0.0022, 0.001, 10).rotateZ(Math.PI / 2).translate(-0.0217, 0.03, z), 'bright');
   add(rbox(0.022, 0.024, 0.02, 0.003, 0, 0.012, -0.505), 'gunmetal');
@@ -504,6 +575,39 @@ function buildRifle(g, add, M, out, X) {
   out.ret = add(new THREE.PlaneGeometry(0.012, 0.012).translate(0, 0.0705, -0.0115), X.reticleMat);
   // 탄수 표시(왼쪽 리시버 뒤)
   out.display = add(new THREE.PlaneGeometry(0.03, 0.013), X.ammoMat); out.display.position.set(-0.0162, 0.024, -0.12); out.display.rotation.y = -Math.PI / 2;
+  // ── 표면 디테일 ──
+  for (const sx of [-1, 1]) {
+    const hx = sx * 0.0216;
+    // 핸드가드: 팔각 단면 모따기(위·아래 모서리) · 가공선 · 앞 끝 테 · 나사
+    add(merge([chamfer(sx * 0.0192, 0.0395, -0.17, -0.485, 0.0075, sx * Math.PI / 4), chamfer(sx * 0.0192, -0.0235, -0.18, -0.48, 0.0075, -sx * Math.PI / 4)]), 'fdeCera');
+    add(panelLine([[-0.168, 0.026], [-0.482, 0.026]], hx), 'port');
+    add(panelLine([[-0.168, -0.014], [-0.482, -0.014]], hx), 'port');
+    add(panelLine([[-0.476, 0.04], [-0.476, -0.022]], hx), 'port');
+    for (const z of [-0.214, -0.31, -0.406]) screw(add, hx, 0.033, z, 0.0016);
+    // 하부 리시버: 탄창 삽입구 앞 단(플레어) · 아래 몸통 가공 단차 · 볼트 멈치 패들
+    add(panelLine([[-0.092, -0.024], [-0.088, -0.068], [-0.03, -0.068], [-0.024, -0.042]], sx * 0.0153), 'port');
+    add(panelLine([[0.118, -0.006], [0.04, -0.006], [0.032, -0.02]], sx * 0.0153), 'port');
+    // 상부 리시버: 가로 가공선 · 앞쪽 총열 너트 테
+    add(panelLine([[0.122, 0.004], [-0.156, 0.004]], sx * 0.0158), 'port');
+    // 손잡이 미끄럼 방지 판(양쪽)
+    add(side([[0.118, -0.05], [0.14, -0.122, 0.004], [0.118, -0.128], [0.098, -0.06]], 0.0012, { cx: sx * 0.0148, bevel: 0.0003 }), 'rubber');
+  }
+  // 손 멈춤판(핸드가드 아래) · 왼쪽 QD 멜빵 컵 · 핸드가드 앞 끝 테
+  add(side([[-0.44, -0.026], [-0.446, -0.036, 0.003], [-0.472, -0.034, 0.004], [-0.476, -0.026]], 0.02, { bevel: 0.001 }), 'anod');
+  add(lathe([[0, 0], [0.006, 0], [0.006, 0.003], [0, 0.003]], 16).rotateY(Math.PI / 2).translate(-0.0245, 0.008, -0.44), 'anod');
+  add(new THREE.CircleGeometry(0.0034, 14).rotateY(-Math.PI / 2).translate(-0.0247, 0.008, -0.44), 'bore');
+  add(side([[-0.488, 0.044], [-0.496, 0.04, 0.002], [-0.496, -0.018, 0.004], [-0.488, -0.028]], 0.046, { bevel: 0.0015 }), 'anod');
+  // 완충관 링 홈 · 개머리 조절 레버 · 개머리 가공선 · 하부 리시버 아래 방아쇠울 볼록
+  for (let i = 0; i < 5; i++) add(lathe([[0, 0.14 + i * 0.012], [0.0168, 0.14 + i * 0.012], [0.0168, 0.143 + i * 0.012], [0, 0.143 + i * 0.012]], 18, 0.016), 'steel');
+  add(side([[0.21, -0.016], [0.214, -0.026, 0.002], [0.26, -0.044, 0.003], [0.262, -0.036]], 0.012, { bevel: 0.001 }), 'polymer');
+  for (const sx of [-1, 1]) {
+    add(panelLine([[0.22, 0.04], [0.345, 0.038], [0.345, -0.062]], sx * 0.0183), 'port');
+    screw(add, sx * 0.0183, 0.034, 0.24, 0.0018); screw(add, sx * 0.0183, -0.055, 0.335, 0.0018);
+  }
+  // 탄창: 바닥판(분리 테) · 옆 와플 결
+  add(side([[-0.051, -0.168], [-0.053, -0.176, 0.002], [-0.1, -0.168, 0.002], [-0.098, -0.16]], 0.03, { bevel: 0.0012 }), 'polymer', mag);
+  for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++)
+    add(rbox(0.0012, 0.008, 0.012, 0.0005, sx * 0.0132, -0.128 - i * 0.012 + j * 0.0, -0.064 - j * 0.016 - i * 0.004), 'polymer', mag);
   out.muzzle = new THREE.Vector3(0, 0.012, -0.68);
   out.eject = new THREE.Vector3(0.017, 0.022, 0.02); out.casing = 'rifle';
   out.magHand = new THREE.Vector3(-0.03, -0.2, -0.07); out.rackPt = new THREE.Vector3(-0.05, -0.04, 0.04); out.boltTravel = 0.04;  // 왼쪽 노리쇠 멈치를 손바닥으로 쳐서 닫음
@@ -522,7 +626,7 @@ function buildRifle(g, add, M, out, X) {
 
 function buildShotgun(g, add, M, out, X) {
   // 리시버(세라코트, 둥근 윗면) + 배출구 + 위 레일 짧게
-  add(side([[0.12, -0.02], [0.12, 0.034, 0.006], [0.1, 0.047, 0.006], [-0.1, 0.047, 0.004], [-0.105, 0.04], [-0.105, -0.02]], 0.036, { bevel: 0.0035 }), 'gunmetal');
+  add(side([[0.12, -0.02], [0.12, 0.034, 0.006], [0.1, 0.047, 0.006], [-0.1, 0.047, 0.004], [-0.105, 0.04], [-0.105, -0.02]], 0.036, { bevel: 0.0035 }), 'anod');
   // 리시버 각인 · 핀 · 크로스볼트 안전장치 · 탄 넣는 구멍(아래)
   engrave(add, M, 'M12 12GA', -0.0182, 0.032, 0.04, 0.05, 0.0065);
   engrave(add, M, '3" CHAMBER · NORDVAG ARMS', -0.0182, 0.0, -0.06, 0.06, 0.0042);
@@ -535,9 +639,9 @@ function buildShotgun(g, add, M, out, X) {
   // 방아쇠울 · 방아쇠 · 손잡이 · 개머리판(일체형 폴리머)
   add(side([[0.11, -0.02], [0.1, -0.04, 0.004], [0.04, -0.044, 0.006], [0.02, -0.02]], 0.026, { holes: [[[0.09, -0.024], [0.084, -0.036, 0.004], [0.048, -0.038, 0.004], [0.034, -0.024]]], bevel: 0.0014 }), 'anod');
   add(side([[0.068, -0.024], [0.064, -0.033, 0.003], [0.07, -0.038], [0.073, -0.038], [0.071, -0.024]], 0.006, { bevel: 0.0007 }), 'bright');
-  add(side([[0.11, -0.02], [0.14, -0.13, 0.008], [0.106, -0.14, 0.006], [0.088, -0.05], [0.086, -0.022]], 0.03, { bevel: 0.003 }), 'polymer');
+  add(side([[0.11, -0.02], [0.14, -0.13, 0.008], [0.106, -0.14, 0.006], [0.088, -0.05], [0.086, -0.022]], 0.03, { bevel: 0.003 }), 'od');
   add(side([[0.12, 0.036], [0.37, 0.03, 0.01], [0.38, -0.085, 0.008], [0.33, -0.088], [0.15, -0.035], [0.12, -0.02]], 0.038,
-    { holes: [[[0.2, 0.012], [0.33, 0.008, 0.008], [0.335, -0.058, 0.008], [0.21, -0.022, 0.01]]], bevel: 0.003 }), 'polymer');
+    { holes: [[[0.2, 0.012], [0.33, 0.008, 0.008], [0.335, -0.058, 0.008], [0.21, -0.022, 0.01]]], bevel: 0.003 }), 'od');
   add(side([[0.375, 0.032], [0.39, 0.032, 0.006], [0.395, -0.086, 0.006], [0.378, -0.088]], 0.04, { bevel: 0.002 }), 'rubber');
   // 총열 + 탄창관 + 고정 고리 + 가늠쇠 구슬
   add(lathe([[0, -0.1], [0.0112, -0.1], [0.0112, -0.55], [0.0125, -0.552], [0.0125, -0.56], [0, -0.56]], 22, 0.03), 'steel');
@@ -560,7 +664,7 @@ function buildShotgun(g, add, M, out, X) {
   const pp = [[0, -0.2], [0.021, -0.2]];
   for (let i = 0; i < 8; i++) { const z = -0.205 - i * 0.017; pp.push([0.024, z], [0.024, z - 0.011], [0.021, z - 0.013], [0.021, z - 0.017]); }
   pp.push([0.021, -0.345], [0, -0.345]);
-  const pg = lathe(pp, 24, 0.0); pg.scale(1.15, 1, 1); add(pg, 'polymer', pump);
+  const pg = lathe(pp, 24, 0.0); pg.scale(1.15, 1, 1); add(pg, 'od', pump);
   pump.position.y = 0.004;
   out.pump = pump; out.pumpRest = 0;
   // 왼쪽 산탄 받침(4발: 붉은 탄피 + 황동 바닥)
@@ -572,6 +676,18 @@ function buildShotgun(g, add, M, out, X) {
   }
   // 탄수 표시
   out.display = add(new THREE.PlaneGeometry(0.03, 0.013), X.ammoMat); out.display.position.set(-0.0185, 0.032, -0.07); out.display.rotation.y = -Math.PI / 2;
+  // ── 표면 디테일 ──
+  for (const sx of [-1, 1]) {
+    // 리시버 옆 밀링 홈(한 단 낮은 판) · 위 모서리 모따기 · 나사
+    add(side([[0.105, 0.03], [0.105, 0.0, 0.004], [-0.09, 0.0, 0.004], [-0.09, 0.03, 0.004]], 0.0012, { cx: sx * 0.0184, bevel: 0.0003 }), 'steel');
+    add(chamfer(sx * 0.016, 0.044, 0.105, -0.098, 0.006, sx * Math.PI / 4), 'anod');
+    for (const z of [0.1, -0.095]) screw(add, sx * 0.0186, 0.038, z, 0.0016);
+    // 개머리판 가공선(뺨 받침 경계) · 멜빵 고리 · 손잡이 점각
+    add(panelLine([[0.15, 0.03], [0.36, 0.026], [0.372, -0.08]], sx * 0.0193), 'port');
+    add(side([[0.1, -0.03], [0.128, -0.12, 0.004], [0.11, -0.128], [0.094, -0.04]], 0.0012, { cx: sx * 0.0153, bevel: 0.0003 }), 'rubber');
+  }
+  add(new THREE.TorusGeometry(0.006, 0.0014, 6, 14).translate(-0.0205, -0.06, 0.33), 'steel');
+  for (let i = 0; i < 6; i++) add(box(0.041, 0.0016, 0.0015, 0, 0.022 - i * 0.019, 0.396), 'polymer');  // 개머리 고무 받침 줄
   out.muzzle = new THREE.Vector3(0, 0.03, -0.575);
   out.eject = new THREE.Vector3(0.019, 0.02, -0.02); out.casing = 'shell';
   out.magHand = new THREE.Vector3(-0.01, -0.06, -0.02);   // 탄 넣는 구멍(아래)
@@ -639,6 +755,17 @@ function buildRail(g, add, M, out, X) {
   add(new THREE.CircleGeometry(0.0158, 24).translate(0, 0.084, 0.1205), 'lens');
   out.ret = add(new THREE.PlaneGeometry(0.03, 0.03).translate(0, 0.084, 0.119), X.scopeMat);
   out.display = add(new THREE.PlaneGeometry(0.034, 0.015), X.ammoMat); out.display.position.set(-0.0262, 0.012, -0.18); out.display.rotation.y = -Math.PI / 2;
+  // ── 표면 디테일 ──
+  for (const sx of [-1, 1]) {
+    const hx = sx * 0.0253;
+    // 하우징 가공선(덮개 이음새) · 위 모서리 모따기 · 아래 냉각 슬롯 · 나사
+    add(panelLine([[0.31, 0.03], [0.08, 0.034], [-0.0, 0.03], [-0.28, 0.026]], hx), 'port');
+    add(panelLine([[0.3, -0.02], [0.08, -0.02]], hx), 'port');
+    add(panelLine([[0.24, 0.046], [0.24, -0.026]], hx), 'port');
+    add(chamfer(sx * 0.0225, 0.048, 0.28, -0.27, 0.0075, sx * Math.PI / 4), 'cerakote');
+    for (let i = 0; i < 9; i++) add(box(0.0008, 0.0025, 0.012, hx, -0.01, -0.13 - i * 0.016), 'port');
+    for (const [z, y] of [[0.29, 0.038], [0.29, -0.018], [0.25, 0.04], [-0.27, 0.034], [-0.27, -0.008]]) screw(add, hx, y, z, 0.0018);
+  }
   out.muzzle = new THREE.Vector3(0, 0.002, -0.73);
   out.magHand = new THREE.Vector3(-0.02, -0.11, 0.2);
   out.sightY = 0.084; out.adsZ = -0.17;

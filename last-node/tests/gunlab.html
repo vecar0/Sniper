@@ -10,22 +10,20 @@
 <script type="module">
 // 개발용: ?gun=rifle&yaw=0.6&pitch=0.2&dist=1.1 — 총 하나를 어두운 배경에서 돌려 본다(손·재질·윤곽 검수)
 import * as THREE from 'three';
-import { gunMaterials, viewmodelEnvironment, buildGun } from '../js/render/guns.js';
+import { gunMaterials, viewmodelEnvironment, buildGun, viewmodelLights, shadowGun } from '../js/render/guns.js';
 const q = new URLSearchParams(location.search);
 const r = new THREE.WebGLRenderer({ antialias: true });
-r.setSize(innerWidth, innerHeight); r.setPixelRatio(1);
+r.setSize(innerWidth, innerHeight); r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap; r.setPixelRatio(1);
 r.toneMapping = THREE.ACESFilmicToneMapping; r.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(r.domElement);
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x101318);
 const env = viewmodelEnvironment(r);
 scene.environment = env;
-scene.add(new THREE.HemisphereLight(0x55688a, 0x120a12, 0.35));
-const key = new THREE.DirectionalLight(0xc8d8ff, 1.6); key.position.set(-1, 2.2, 0.6); scene.add(key);
-const rim = new THREE.PointLight(0x8ad8ff, 0.6, 2.5, 2); rim.position.set(-0.35, 0.25, -0.9); scene.add(rim);
+viewmodelLights(scene);
 const M = gunMaterials(env);
 const ammo = new THREE.MeshBasicMaterial({ color: 0x223322 });
 const gun = buildGun(q.get('gun') || 'rifle', M, { ammoMat: ammo, reticleMat: ammo, scopeMat: ammo });
-scene.add(gun.group);
+scene.add(gun.group); shadowGun(gun.group);
 if (q.get('noarm')) gun.group.traverse((o) => { if (o.isMesh && [M.sleeve, M.glove, M.knuckle].includes(o.material)) o.visible = false; });
 const box = new THREE.Box3(); gun.group.updateMatrixWorld(true); gun.group.traverse((o) => { if (o.isMesh && o.visible && o.parent.visible) box.expandByObject(o); }); const c = box.getCenter(new THREE.Vector3());
 const cam = new THREE.PerspectiveCamera(q.get('fp') ? 54 : 30, innerWidth / innerHeight, 0.01, 20);
@@ -38,7 +36,7 @@ if (q.get('fp')) { // 플레이어 눈: 허리 사격 위치의 반대(fp=x,y,z)
   cam.lookAt(c);
 }
 r.render(scene, cam);
-window.__tris = r.info.render.triangles;
+window.__tris = r.info.render.triangles + " calls " + r.info.render.calls;
 window.__done = true;
 </script>
 </body>

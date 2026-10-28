@@ -3,7 +3,7 @@
 // · 왼손이 실제로 탄창을 빼고 끼우는 단계별 재장전(탄창이 비었으면 슬라이드·장전 손잡이 당김) · 교체 · 근접 · 투척 · 대시 기울기
 import * as THREE from 'three';
 import { WEAPONS } from '../config/balance.js';
-import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm } from './guns.js';
+import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm, viewmodelLights, shadowGun } from './guns.js';
 
 export class ViewModel {
   constructor(renderer, aspect) {
@@ -14,10 +14,7 @@ export class ViewModel {
     this.camera.add(this.root);
     const env = viewmodelEnvironment(renderer);
     this.scene.environment = env;
-    // 직접광은 약하게(형태만): 반사 환경이 금속의 인상을 만든다
-    this.scene.add(new THREE.HemisphereLight(0x55688a, 0x120a12, 0.35));
-    const key = new THREE.DirectionalLight(0xc8d8ff, 1.6); key.position.set(-1, 2.2, 0.6); this.scene.add(key);
-    this.rim = new THREE.PointLight(0x8ad8ff, 0.6, 2.5, 2); this.rim.position.set(-0.35, 0.25, -0.9); this.camera.add(this.rim);
+    this.rim = viewmodelLights(this.scene, this.camera, [0.12, -0.1, -0.35]);
     this.muzzleLight = new THREE.PointLight(0xffb070, 0, 3, 2); this.camera.add(this.muzzleLight);
 
     this.M = gunMaterials(env);
@@ -33,6 +30,7 @@ export class ViewModel {
       const gun = buildGun(id, this.M, X);
       gun.group.visible = false;
       gun.group.traverse((o) => { o.frustumCulled = false; });
+      shadowGun(gun.group);
       if (gun.ret) gun.ret.visible = false;
       this.root.add(gun.group);
       this.guns[id] = gun;
