@@ -124,7 +124,7 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     const fired = await W(page, () => {
       const app = __ln.app, w = __ln.world; app.externalSim = true;
       const m0 = w.player.ammo.rifle.mag;
-      for (let i = 0; i < 40; i++) { w.input.fire = true; w.step(1 / 60); }
+      for (let i = 0; i < 80; i++) { w.input.fire = true; w.step(1 / 60); }   // 교체 동작(0.62초) 뒤에 쏜다
       w.input.fire = false; app.externalSim = false;
       return m0 - w.player.ammo.rifle.mag;
     });

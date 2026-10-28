@@ -12,7 +12,8 @@ import { FX } from './fx.js';
 import { ViewModel } from './viewmodel.js';
 import { setAnisotropy } from './materials.js';
 import { BATTERIES } from '../config/map.js';
-import { WEAPONS } from '../config/balance.js';
+import { WEAPONS, PLAYER } from '../config/balance.js';
+import { scopedView } from '../sim/player.js';
 
 const FinalShader = {
   uniforms: {
@@ -251,16 +252,17 @@ export class Renderer {
     const x = p.px + (p.x - p.px) * alpha, y = p.py + (p.y - p.py) * alpha, z = p.pz + (p.z - p.pz) * alpha;
     this.camDip *= Math.exp(-dt * 8);
     const bob = p.grounded ? Math.sin(this.vm.state.bobT * 2) * Math.min(1, p.speed / 7) * 0.025 : 0;
-    this.camera.position.set(x, y + p.eye - this.camDip + bob, z);
+    this.camera.position.set(x + p.leanX, y + p.eye - Math.abs(p.lean) * 0.08 - this.camDip + bob, z + p.leanZ);
     this.shake = Math.max(0, this.shake - dt * 1.6);
     const sk = this.shake * this.shake * (settings.shake ?? 1);
     const st = t * 32;
-    const roll = (p.dashT > 0 ? 0 : 0) + clampRoll(p, look) + Math.sin(st * 1.3) * sk * 0.03;
+    const roll = -p.lean * PLAYER.leanRoll + clampRoll(p, look) + Math.sin(st * 1.3) * sk * 0.03;
     this.camera.rotation.set(look.pitch + Math.sin(st) * sk * 0.025, look.yaw + Math.cos(st * 0.9) * sk * 0.025, roll, 'YXZ');
     // 시야각: 기본 + 대시 순간 확대 + 조준 확대
     this.fovKick *= Math.exp(-dt * 6);
     const hfov = settings.fov || 95;
-    const zoom = p.weapon === 'rail' ? 0.5 : p.weapon === 'rifle' ? 0.72 : p.weapon === 'pistol' ? 0.85 : 0.9;
+    const scoped = scopedView(p);
+    const zoom = p.weapon === 'rail' ? (scoped ? 0.28 : 0.5) : p.weapon === 'rifle' ? 0.72 : p.weapon === 'pistol' ? 0.85 : 0.9;
     const ads = p.ads;
     const h = (hfov + this.fovKick) * (1 - ads * (1 - zoom));
     const vfov = (2 * Math.atan(Math.tan((h * Math.PI) / 360) * (9 / 16)) * 180) / Math.PI;
@@ -276,7 +278,7 @@ export class Renderer {
     const am = p.ammo[p.weapon];
     this.vm.updateAmmo(am.mag, am.reserve);
     this.vm.update(dt, p, look, t);
-    this.vmPass.enabled = p.alive;
+    this.vmPass.enabled = p.alive && !scoped; // 조준경 화면에서는 총 모델을 그리지 않는다
 
     // 후처리 값
     this.hurt *= Math.exp(-dt * 3); this.aberr *= Math.exp(-dt * 4); this.dash *= Math.exp(-dt * 7);

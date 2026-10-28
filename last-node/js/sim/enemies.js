@@ -299,11 +299,10 @@ function drone(world, e, dt) {
   } else if (e.state === 'windup') {
     const l = Math.hypot(dx, dy, dz) || 1;
     wvx = (dx / l) * 2; wvy = (dy / l) * 2; wvz = (dz / l) * 2;
-    if (e.t >= c.windup) { e.state = 'dive'; e.t = 0; }
-  } else { // dive
-    const l = Math.hypot(dx, dy, dz) || 1;
-    wvx = (dx / l) * 15; wvy = (dy / l) * 15; wvz = (dz / l) * 15;
-    if (dist3 < 1.0 || e.t > 1.2) { world.droneExplode(e, true); return; }
+    if (e.t >= c.windup) { const l2 = Math.hypot(dx, dy, dz) || 1; e.state = 'dive'; e.t = 0; e.dvx = dx / l2; e.dvy = dy / l2; e.dvz = dz / l2; }
+  } else { // dive: 시작할 때 정한 방향으로 곧게(옆으로 비키면 빗나간다)
+    wvx = e.dvx * c.diveSpeed; wvy = e.dvy * c.diveSpeed; wvz = e.dvz * c.diveSpeed;
+    if (dist3 < 1.0 || e.t > 0.9) { world.droneExplode(e, true); return; }
   }
   const k = Math.min(1, dt * (e.state === 'dive' ? 12 : 4));
   e.vx += (wvx - e.vx) * k; e.vy += (wvy - e.vy) * k; e.vz += (wvz - e.vz) * k;

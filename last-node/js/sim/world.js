@@ -7,7 +7,7 @@ import { CARDS, CARD_RULES, UPGRADE_STEP } from '../config/cards.js';
 import { BOXES, SPAWNS, BATTERIES, ROOF } from '../config/map.js';
 import { Geometry, raySphere } from './geom.js';
 import { Rng } from './rng.js';
-import { makePlayer, updatePlayer, forward, spreadDir } from './player.js';
+import { makePlayer, updatePlayer, forward, spreadDir, eyePos } from './player.js';
 import { makeEnemy, updateEnemy, enemyParts } from './enemies.js';
 
 const DEG = Math.PI / 180;
@@ -150,7 +150,7 @@ export class World {
     s.t += dt;
     const alive = this.enemies.filter((e) => e.type !== 'boss').length;
     const cap = s.boss ? WAVES.bossAliveCap : WAVES.aliveCap;
-    // 계단실: 0.6~1.0초마다 1기
+    // 계단실: 1.0~1.6초마다 1기
     s.stairsT -= dt;
     if (s.stairsT <= 0 && s.left > 0 && alive < cap) {
       s.stairsT = this.rng.range(...WAVES.stairsEvery);
@@ -258,6 +258,7 @@ export class World {
       const lv = p.levels[c.weapon];
       return { ...c, name: `${WEAPONS[c.weapon].name} 개량 ${lv + 1}단계`, desc: UPGRADE_STEP[lv], level: lv, max: 3 };
     }
+    if (c.kind === 'weapon') { const d = this.dropFor(c.id.slice(4)); if (d) return { ...c, desc: `${c.desc} · 손에 든 ${WEAPONS[d].name}와 교체`, level: 0 }; }
     return { ...c, level: this.taken[id] || 0 };
   }
 
@@ -294,7 +295,7 @@ export class World {
       { id: 'ammo', name: '탄약 보충', desc: '가진 무기 예비탄 가득', ...st(SUPPLY.ammo.price, WEAPON_ORDER.every((k) => !p.owned[k] || k === 'pistol' || p.ammo[k].reserve >= WEAPONS[k].reserve)) },
       { id: 'emp', name: 'EMP 수류탄 +1', desc: `${p.emp}/${p.empMax}`, ...st(SUPPLY.emp.price, p.emp >= p.empMax) },
     ];
-    for (const k of ['shotgun', 'rifle', 'rail']) items.push({ id: 'buy:' + k, name: WEAPONS[k].name, desc: '무기 구매', ...(p.owned[k] ? { price: SUPPLY.weapons[k], state: 'owned' } : st(SUPPLY.weapons[k], false)) });
+    for (const k of ['shotgun', 'rifle', 'rail']) items.push({ id: 'buy:' + k, name: WEAPONS[k].name, desc: this.dropFor(k) ? `${WEAPONS[this.dropFor(k)].name}와 교체` : '무기 구매', ...(p.owned[k] ? { price: SUPPLY.weapons[k], state: 'owned' } : st(SUPPLY.weapons[k], false)) });
     return items;
   }
 
@@ -314,13 +315,23 @@ export class World {
     return { ok: true };
   }
 
+  // 새 총 w를 얻을 때 내려놓을 총(두 자루 미만이면 없음)
+  dropFor(w) {
+    const p = this.player;
+    if (p.owned[w] || WEAPON_ORDER.filter((k) => p.owned[k]).length < PLAYER.carry) return null;
+    return p.weapon;
+  }
+
   applyCard(id) {
     const p = this.player, R = CARD_RULES;
     if (id.startsWith('get:')) {
       const w = id.slice(4);
+      // 총은 두 자루까지: 이미 두 자루면 손에 든 총을 내려놓고 새 총을 든다
+      const drop = this.dropFor(w);
+      if (drop) { delete p.owned[drop]; this.events.push({ t: 'drop', w: drop }); }
       p.owned[w] = true;
       p.ammo[w] = { mag: WEAPONS[w].mag, reserve: WEAPONS[w].reserve };
-      p.lastWeapon = p.weapon; p.weapon = w; p.switchT = 0.3; p.reloadT = -1;
+      p.lastWeapon = drop ? WEAPON_ORDER.find((k) => p.owned[k] && k !== w) : p.weapon; p.weapon = w; p.switchT = PLAYER.switchTime; p.reloadT = -1;
       this.events.push({ t: 'switch', w });
       return;
     }
@@ -567,7 +578,7 @@ export class World {
   // ── 플레이어 사격 ─────────────────────────────────────
   fireHitscan(id, w, dmg) {
     const p = this.player;
-    const eye = { x: p.x, y: p.y + p.eye, z: p.z };
+    const eye = eyePos(p);
     let f = forward(p);
     const moveBloom = Math.min(1, p.speed / PLAYER.speed) * 0.9 + (p.grounded ? 0 : 1.2);
     const spread = (w.spreadHip + (w.spreadAds - w.spreadHip) * p.ads) + moveBloom * (1 - 0.6 * p.ads) * (w.pellets > 1 ? 0.3 : 1);
@@ -649,7 +660,7 @@ export class World {
 
   // 조준 보조(모바일)용: 시선 원뿔 안 가장 가까운 적 부위 방향
   aimAssist(coneDeg) {
-    const p = this.player, eye = { x: p.x, y: p.y + p.eye, z: p.z }, f = forward(p);
+    const p = this.player, eye = eyePos(p), f = forward(p);
     let best = null, bestCos = Math.cos(coneDeg * DEG);
     for (const e of this.enemies) {
       if (!e.alive) continue;

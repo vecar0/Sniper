@@ -1,5 +1,6 @@
 // HUD: 웨이브·기준 시간 · 레이더 · 점수·연속 처치 배수 · 방송 · 체력·대시 · 무기 · 십자선·명중 · 피격 방향 · 배너
 import { WEAPONS, PLAYER, SCORE } from '../config/balance.js';
+import { scopedView } from '../sim/player.js';
 
 const SHORT = { pistol: '권총', shotgun: '산탄총', rifle: '소총', rail: '레일건' };
 
@@ -9,6 +10,7 @@ export class Hud {
   constructor(root) {
     this.root = root;
     root.innerHTML = `
+      <div class="scope hidden"><i class="h"></i><i class="v"></i><i class="dot"></i></div>
       <div class="hud-top">
         <div class="hud-wave"><span class="wlead"><b class="wave">0</b>웨이브</span><span class="sep"></span>남은 적 <b class="left">0</b></div>
         <div class="par"><div class="meter par-bar"><i class="fill"></i></div><span class="par-t"></span></div>
@@ -50,7 +52,7 @@ export class Hud {
       hpBox: q('.hud-hp'), hp: q('.hp'), hpMax: q('.hpmax'), ar: q('.ar'), hpFill: q('.hp-bar .fill'), hpLag: q('.hp-bar .lag'), armorBar: q('.armor'), armorFill: q('.armor .fill'),
       pipBox: q('.dash-pips'), pips: [],
       reload: q('.reload'), wname: q('.wname'), ammo: q('.ammo'), mag: q('.mag'), res: q('.res'), slots: [...root.querySelectorAll('.slots span')], emp: q('.emp'),
-      cross: q('.cross'), crossI: [...root.querySelectorAll('.cross i')], hit: q('.hitmark'), pop: q('.pop'), dirs: q('.dirs'), arrows: q('.arrows'), nums: q('.nums'),
+      scope: q('.scope'), cross: q('.cross'), crossI: [...root.querySelectorAll('.cross i')], hit: q('.hitmark'), pop: q('.pop'), dirs: q('.dirs'), arrows: q('.arrows'), nums: q('.nums'),
       prep: q('.prep'), prepT: q('.prep .t'), prepS: q('.prep .s'), banner: q('.banner'), bBig: q('.banner .big'), bSmall: q('.banner .small'),
     };
     this.ctx = this.el.radar.getContext('2d');
@@ -125,6 +127,10 @@ export class Hud {
       t.style.top = `${-gap - 8}px`; b.style.top = `${gap}px`; l.style.left = `${-gap - 8}px`; r.style.left = `${gap}px`;
     }
     E.cross.classList.toggle('ads', p.ads > 0.7 && p.weapon !== 'shotgun');
+    // 레일건 조준경: 정조준하면 화면 전체가 조준경 시야(총 모델은 숨긴다)
+    const scoped = scopedView(p);
+    E.scope.classList.toggle('hidden', !scoped);
+    E.cross.classList.toggle('hidden', scoped);
     // 웨이브 사이 카운트다운
     const prep = world.state === 'prep' || world.state === 'intermission';
     E.prep.classList.toggle('hidden', !prep);

@@ -5,7 +5,7 @@ export class Touch {
     this.settings = settings;
     this.audio = audio;
     this.active = false;
-    this.state = { mx: 0, mz: 0, fire: false, ads: false, crouch: false, edges: new Set() };
+    this.state = { mx: 0, mz: 0, fire: false, ads: false, crouch: false, lean: 0, edges: new Set() };
     this.lookDX = 0; this.lookDY = 0;
     this.el = document.createElement('div');
     this.el.id = 'touch';
@@ -22,6 +22,8 @@ export class Touch {
       <button class="tbtn small" data-a="melee">근접</button>
       <button class="tbtn small" data-a="emp">EMP</button>
       <button class="tbtn small" data-a="cycle">무기</button>
+      <button class="tbtn small" data-a="leanL">◁기울</button>
+      <button class="tbtn small" data-a="leanR">기울▷</button>
       <button class="tbtn small" data-a="pause">II</button>
       <button class="tbtn ctx hidden" data-a="ready">준비 완료</button>`;
     root.appendChild(this.el);
@@ -40,7 +42,7 @@ export class Touch {
     const pos = (a, right, bottom, scale = 1) => { const b = this.btn[a]; b.style.right = `calc(${right * s}px + env(safe-area-inset-right, 0px))`; b.style.bottom = `${bottom * s}px`; b.style.transform = `scale(${s * scale})`; b.style.transformOrigin = 'bottom right'; };
     pos('fire', 96, 92); pos('ads', 196, 150); pos('jump', 16, 24); pos('dash', 16, 108);
     pos('crouch', 196, 70); pos('reload', 112, 22); pos('melee', 270, 106); pos('emp', 270, 40);
-    pos('cycle', 16, 190);
+    pos('cycle', 16, 190); pos('leanL', 196, 226); pos('leanR', 112, 226);
     const p = this.btn.pause; p.style.left = `calc(${118 * s}px + env(safe-area-inset-left, 0px))`; p.style.top = `${8 * s}px`; p.style.transform = `scale(${s})`; p.style.transformOrigin = 'top left';
     for (const a of ['ready']) { const b = this.btn[a]; b.style.left = '50%'; b.style.transform = `translateX(-50%) scale(${s})`; }
     this.btn.ready.style.bottom = `${96 * s}px`;
@@ -48,7 +50,7 @@ export class Touch {
   }
 
   show(on) { this.active = on; this.el.classList.toggle('hidden', !on); if (!on) this.reset(); }
-  reset() { const s = this.state; s.mx = s.mz = 0; s.fire = s.ads = s.crouch = false; s.edges.clear(); this.stickId = null; this.lookId = null; this.fireId = null; this.stick.classList.add('hidden'); }
+  reset() { const s = this.state; s.mx = s.mz = 0; s.fire = s.ads = s.crouch = false; s.lean = 0; s.edges.clear(); if (this.btn) { this.btn.leanL.classList.remove('on'); this.btn.leanR.classList.remove('on'); } this.stickId = null; this.lookId = null; this.fireId = null; this.stick.classList.add('hidden'); }
 
   bind() {
     const L = this.el.querySelector('.zone.l'), R = this.el.querySelector('.zone.r');
@@ -100,6 +102,12 @@ export class Touch {
         if (a === 'fire') { s.fire = true; this.fireId = t.identifier; this.fx = t.clientX; this.fy = t.clientY; b.classList.add('on'); return; }
         if (a === 'ads') { s.ads = !s.ads; b.classList.toggle('on', s.ads); if (s.ads) this.assistPull = true; return; }
         if (a === 'crouch') { s.crouch = !s.crouch; b.classList.toggle('on', s.crouch); s.edges.add('crouchTap'); return; }
+        if (a === 'leanL' || a === 'leanR') { // 누르면 기울고, 같은 쪽을 다시 누르면 똑바로
+          const d = a === 'leanL' ? -1 : 1;
+          s.lean = s.lean === d ? 0 : d;
+          this.btn.leanL.classList.toggle('on', s.lean === -1); this.btn.leanR.classList.toggle('on', s.lean === 1);
+          return;
+        }
         if (a === 'pause') { if (this.onPause) this.onPause(); return; }
         if (a === 'emp') { s.edges.add('empTap'); return; }
         s.edges.add(a);

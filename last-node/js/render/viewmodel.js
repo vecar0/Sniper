@@ -173,12 +173,12 @@ export class ViewModel {
   update(dt, p, look, t) {
     const s = this.state;
     const gun = this.guns[this.cur];
-    // 교체: 총구를 아래로 돌리며 내렸다가 새 총을 올린다
+    // 교체: 든 총을 총구를 숙이며 내리고(앞 25%) → 새 총을 아래에서 위로 던져 돌리며 띄웠다가 두 손으로 받아 쥔다(switchAnim)
     if (s.switchK < 1) {
-      s.switchK = Math.min(1, s.switchK + dt / 0.32);
-      if (s.switchK > 0.5 && this.pendingWeapon) { this.setWeapon(this.pendingWeapon); this.pendingWeapon = null; this.state.reloadK = 0; }
+      s.switchK = Math.min(1, s.switchK + dt / PLAYER.switchTime);
+      if (s.switchK > SW_DROP && this.pendingWeapon) { this.setWeapon(this.pendingWeapon); this.pendingWeapon = null; this.state.reloadK = 0; }
     }
-    const sw = s.switchK < 0.5 ? s.switchK * 2 : (1 - s.switchK) * 2; // 0→1→0
+    const sw = s.switchK < SW_DROP ? ease(s.switchK / SW_DROP) : 0;
     // 조준
     s.adsK += ((p.ads > 0.5 ? 1 : 0) - s.adsK) * Math.min(1, dt * 14);
     const ads = s.adsK;
@@ -209,7 +209,7 @@ export class ViewModel {
     }
     s.kick = clamp(s.kick, -0.5, 2.5); s.kickYaw = clamp(s.kickYaw, -1, 1); s.land = clamp(s.land, -0.2, 0.1);
     // 대시·슬라이드 기울기
-    const rollT = (p.dashT > 0 ? 0.25 : 0) + (p.slideT > 0 ? 0.35 : 0);
+    const rollT = (p.dashT > 0 ? 0.25 : 0) + (p.slideT > 0 ? 0.35 : 0) - p.lean * 0.12; // 기울이면 총도 같이 기운다
     s.roll += (rollT - s.roll) * Math.min(1, dt * 10);
     s.flashT += dt;
 
@@ -325,6 +325,8 @@ export class ViewModel {
     gun.group.rotation.copy(rot);
     if (gun.ret) gun.ret.visible = ads > 0.85;
     // 근접: 총으로 친다(긴 총 = 개머리판 수평 타격 후 공중에 던져 돌려 다시 잡기, 권총 = 손가락에 걸고 돌려 거꾸로 쥔 손잡이 밑으로 찍기)
+    if (s.switchK > SW_DROP && s.switchK < 1 && s.meleeK <= 0) this.switchAnim(gun, s.switchK, pos, rot);
+    else if (s.meleeK <= 0) { gun.rightHand.position.copy(gun.rightRest.p); gun.rightHand.quaternion.copy(gun.rightRest.q); }
     if (s.meleeK > 0) {
       s.meleeK += dt / PLAYER.meleeDuration;
       if (s.meleeK >= 1) { s.meleeK = 0; this.meleeEnd(gun); }
@@ -336,6 +338,8 @@ export class ViewModel {
       const k = s.meleeK, trig = s.slideT < 0.1 ? Math.sin((s.slideT / 0.1) * Math.PI) : 0;
       if (s.reloadK > 0 && !gun.pump) { const r = s.reloadK; oL = 0.2 + 0.5 * Math.min(1, Math.exp(-(((r - 0.1) / 0.04) ** 2)) + Math.exp(-(((r - 0.78) / 0.04) ** 2))); }
       if (gun.pump && (s.shellLoad || s.shellK > 0)) oL = 0.3;
+      const toss = this.tossOpen(s.switchK);
+      oL = Math.max(oL, toss); oR = Math.max(oR, toss);
       if (k > 0) {
         if (this.cur === 'pistol') oL = 0.6 * Math.min(smooth(0, 0.18, k), 1 - smooth(0.82, 0.98, k));   // 권총: 놓은 왼손은 살짝 펴짐(긴 총은 두 손 다 쥔 채)
       }
@@ -428,6 +432,43 @@ export class ViewModel {
     }
   }
 
+  // ── 무기 교체: 던져 돌려 받기 ─────────────────────────────
+  // 새 총이 아래에서 위로 포물선을 그리며 날아와(긴 총 = 총열 축으로 한 바퀴, 권총 = 방아쇠울을 축으로 앞으로 한 바퀴 반)
+  // 쉬는 자세에 닿는 순간 두 손이 받아 쥔다. 날아오는 동안 손은 펴진 채 아래에서 마중 나온다.
+  tossOpen(k) { return k <= SW_DROP || k >= 1 ? 0 : 0.75 * Math.min(smooth(SW_DROP, SW_DROP + 0.08, k), 1 - smooth(SW_CATCH - 0.04, SW_CATCH + 0.08, k)); }
+  switchAnim(gun, k, pos, rot) {
+    const G = gun.group, R = gun.rightHand, L = gun.leftHand;
+    const restQ = new THREE.Quaternion().setFromEuler(rot);
+    G.position.copy(pos); G.quaternion.copy(restQ);
+    R.position.copy(gun.rightRest.p); R.quaternion.copy(gun.rightRest.q);
+    const restR = this.rootOf(R), restL = this.rootOf(L);
+    const t = THREE.MathUtils.clamp((k - SW_DROP) / (SW_CATCH - SW_DROP), 0, 1);
+    // 받은 뒤: 무게에 살짝 눌렸다 올라온다
+    const settle = k > SW_CATCH ? Math.sin(((k - SW_CATCH) / (1 - SW_CATCH)) * Math.PI) : 0;
+    const pis = this.cur === 'pistol';
+    // 긴 총은 앞으로 멀리 띄워(개머리판이 화면을 덮지 않게), 권총은 높이 띄워 도는 게 보이게
+    const dp = new THREE.Vector3(0.03 * (1 - t), -0.26 * (1 - t) + (pis ? 0.75 : 0.45) * t * (1 - t) - settle * 0.012, (pis ? -0.05 : -0.2) * Math.sin(Math.PI * t));
+    let gq;
+    if (this.cur === 'pistol') {
+      // 방아쇠울(검지 자리)을 축으로 앞으로 한 바퀴 반 + 반 바퀴 = 두 바퀴 돌아 바로 선다
+      const phi = -ease(t) * Math.PI * 4, P = new THREE.Vector3(0, -0.012, 0);
+      gq = restQ.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), phi));
+      dp.add(P.clone().applyQuaternion(restQ)).sub(P.clone().applyQuaternion(gq));
+    } else {
+      // 총열 축으로 한 바퀴(개머리판이 얼굴 쪽으로 오지 않는 회전) + 날아오며 총구가 살짝 들렸다 내려옴
+      const roll = ease(t) * Math.PI * 2 * (this.cur === 'shotgun' ? -1 : 1);
+      gq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.35 * Math.sin(Math.PI * t), 0, 0)).multiply(restQ)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll));
+    }
+    G.position.copy(pos).add(dp); G.quaternion.copy(gq);
+    if (k < SW_CATCH) {
+      // 손: 화면 아래에서 쉬는 자세로 올라오며 받을 준비(총에서 떨어져 뷰모델 공간에 고정)
+      const up = ease(Math.min(1, t / 0.85));
+      const hold = (M, dx) => { const o = M.clone(); o.setPosition(new THREE.Vector3().setFromMatrixPosition(M).add(new THREE.Vector3(dx * (1 - up), -0.2 * (1 - up) - 0.015, 0.02 * (1 - up)))); return o; };
+      this.pin(R, hold(restR, 0.03)); this.pin(L, hold(restL, -0.03));
+    }
+  }
+
   // 팔 2관절 IK: 어깨(뷰모델 공간 고정) → 팔의 부모(총·펌프) 공간으로 옮겨 푼다
   solveArms(gun) {
     for (const a of [gun.leftArm, gun.rightArm]) {
@@ -450,10 +491,13 @@ export class ViewModel {
   resize(aspect) { this.camera.aspect = aspect; this.camera.updateProjectionMatrix(); }
 }
 
+// 교체 동작: 0~SW_DROP 든 총 내리기, ~SW_CATCH 새 총이 날아옴(받는 순간), 이후 받은 무게에 눌렸다 올라옴
+const SW_DROP = 0.24, SW_CATCH = 0.82;
+
 // 허리 사격 위치 [x, y, z, 좌우 비틀기, 기울기] — 총마다 길이·손잡이 위치가 다르다
 const HIP = {
   // 긴 총은 개머리를 어깨에 댄 자세: 앞손(왼손)과 손잡이 손(오른손)이 모두 화면 아래쪽에 보이게 조금 높고 멀리
-  pistol: [0.075, -0.095, -0.36, 0.06, -0.03],
+  pistol: [0.05, -0.068, -0.35, 0.05, -0.03],   // 두 손이 다 보이게 조금 높고 가운데로
   rifle: [0.115, -0.055, -0.27, 0.13, -0.06],
   shotgun: [0.115, -0.075, -0.33, 0.13, -0.06],
   rail: [0.115, -0.06, -0.26, 0.13, -0.06],

@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../js/sim/world.js';
 import { enemyParts } from '../js/sim/enemies.js';
+import { eyePos } from '../js/sim/player.js';
 import { ENEMIES, WAVES, PLAYER, SCORE, WEAPONS, EMP } from '../js/config/balance.js';
 import { CARDS } from '../js/config/cards.js';
 import { SPAWNS } from '../js/config/map.js';
@@ -35,7 +36,7 @@ test('시작: 체력 100, 점수 0, 크레딧 0, 권총 14/∞, EMP 1, 웨이브
 });
 
 // ── 웨이브 구성 ─────────────────────────────────────────
-test('웨이브 w의 적 수 = 10 + 4w, 동시 생존 20 이하, 정해진 입구에서만 등장', () => {
+test('웨이브 w의 적 수 = WAVES.count(w), 동시 생존 aliveCap 이하, 정해진 입구에서만 등장', () => {
   const w = new World({ seed: 3 });
   w.player.hp = w.player.maxHp = 1e9;
   const seen = { 1: 0, 2: 0, 3: 0, 4: 0 }; let maxAlive = 0;
@@ -52,7 +53,7 @@ test('웨이브 w의 적 수 = 10 + 4w, 동시 생존 20 이하, 정해진 입�
     if (w.time > 900) break;
   }
   for (const k of [1, 2, 3, 4]) assert.equal(seen[k], WAVES.count(k), `웨이브 ${k}`);
-  assert.ok(maxAlive <= 20, `동시 생존 ${maxAlive}`);
+  assert.ok(maxAlive <= WAVES.aliveCap, `동시 생존 ${maxAlive}`);
   assert.deepEqual([...sources[1]].sort(), ['stairs']);
   assert.ok(!sources[1].has('elevator') && sources[2].has('elevator'), '엘리베이터는 W2부터');
   assert.ok(!sources[3].has('dropship') && sources[4].has('dropship'), '수송기는 W4부터');
@@ -426,4 +427,25 @@ test('교착 없음: 봇 8판 동안 한 웨이브가 4분을 넘지 않는다',
       assert.ok(t - waveStart < 240 || w.state !== 'wave', `seed ${seed} 웨이브 ${w.wave}가 4분 넘게 안 끝남`);
     }
   }
+});
+
+test('총은 두 자루까지: 세 번째를 얻으면 손에 든 총과 바꾼다', () => {
+  const w = new World({ seed: 5 });
+  const p = w.player;
+  w.applyCard('get:rifle');
+  assert.deepEqual(Object.keys(p.owned).sort(), ['pistol', 'rifle']);
+  assert.equal(p.weapon, 'rifle');
+  w.applyCard('get:shotgun');
+  assert.deepEqual(Object.keys(p.owned).sort(), ['pistol', 'shotgun']);
+  assert.equal(p.weapon, 'shotgun'); assert.equal(p.lastWeapon, 'pistol');
+});
+
+test('기울이기: 눈이 옆으로 나가고 사격 시작점도 따라간다', () => {
+  const w = new World({ seed: 6 });
+  const p = w.player; p.yaw = 0;
+  for (let i = 0; i < 60; i++) { w.input.lean = 1; w.step(DT); }
+  assert.ok(p.lean > 0.3, `lean ${p.lean}`);
+  assert.ok(eyePos(p).x > p.x + 0.1, '오른쪽으로 나간다');
+  for (let i = 0; i < 60; i++) { w.input.lean = 0; w.step(DT); }
+  assert.ok(Math.abs(p.lean) < 0.01);
 });

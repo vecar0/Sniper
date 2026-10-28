@@ -287,3 +287,11 @@ kbd { font-family: var(--body); font-weight: 600; font-size: 0.82em; color: var(
   .row { padding: 5px 0; font-size: 14px; }
   .prep { top: 21%; } .prep .t { font-size: 28px; } .prep .s { font-size: 12px; }
 }
+
+/* 레일건 조준경: 가운데 원만 뚫린 검은 테 + 가는 십자선 */
+.scope { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle at 50% 50%, transparent 0, transparent min(36vh, 36vw), rgba(0,0,0,0.75) calc(min(36vh, 36vw) + 2px), #000 calc(min(36vh, 36vw) + 10px)); }
+.scope i { position: absolute; left: 50%; top: 50%; background: rgba(8, 10, 12, 0.9); }
+.scope i.h { width: min(72vh, 72vw); height: 1px; transform: translate(-50%, -50%); }
+.scope i.v { height: min(72vh, 72vw); width: 1px; transform: translate(-50%, -50%); }
+.scope i.dot { width: 4px; height: 4px; border-radius: 50%; background: #ff4030; transform: translate(-50%, -50%); }

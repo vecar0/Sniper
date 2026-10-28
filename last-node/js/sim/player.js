@@ -17,7 +17,7 @@ export function makePlayer() {
     airJumps: 1, crouch: false, slideT: 0, slideCd: 0, eye: P.eye,
     weapon: 'pistol', lastWeapon: 'pistol', owned: { pistol: true }, levels: { pistol: 0, shotgun: 0, rifle: 0, rail: 0 }, ammo,
     fireCd: 0, reloadT: -1, switchT: 0, charge: 0, sustain: 0, lastShot: -9, recoilDebt: 0,
-    ads: 0, meleeCd: 0, meleeT: 0, meleeHitT: 0, emp: P.empStart, hurtT: 9, bob: 0, speed: 0,
+    ads: 0, lean: 0, leanX: 0, leanZ: 0, meleeCd: 0, meleeT: 0, meleeHitT: 0, emp: P.empStart, hurtT: 9, bob: 0, speed: 0,
   };
 }
 
@@ -30,13 +30,17 @@ export function weaponStat(p, id) {
   };
 }
 
+// 레일건 정조준 = 조준경 화면(HUD·렌더러가 같은 기준을 쓴다)
+export function scopedView(p) { return p.weapon === 'rail' && p.ads > 0.55 && p.switchT <= 0 && p.reloadT < 0 && p.meleeT <= 0; }
+
 export function forward(p) {
   const cp = Math.cos(p.pitch);
   return { x: -Math.sin(p.yaw) * cp, y: Math.sin(p.pitch), z: -Math.cos(p.yaw) * cp };
 }
 
+// 눈 위치(기울이면 옆으로 나가고 조금 낮아진다)
 export function eyePos(p) {
-  return { x: p.x, y: p.y + p.eye, z: p.z };
+  return { x: p.x + p.leanX, y: p.y + p.eye - Math.abs(p.lean) * 0.08, z: p.z + p.leanZ };
 }
 
 export function updatePlayer(world, p, inp, dt) {
@@ -65,6 +69,17 @@ export function updatePlayer(world, p, inp, dt) {
   p.h = p.crouch ? P.crouchHeight : P.height;
   const targetEye = p.crouch ? P.crouchEye : P.eye;
   p.eye += (targetEye - p.eye) * Math.min(1, dt * 14);
+
+  // 기울이기(Q/E): 벽이 있으면 벽 앞까지만
+  const leanWant = p.dashT > 0 || p.slideT > 0 ? 0 : Math.max(-1, Math.min(1, inp.lean || 0));
+  p.lean += (leanWant - p.lean) * Math.min(1, dt * 10);
+  if (Math.abs(p.lean) > 0.001) {
+    const sgn = Math.sign(p.lean), rx = cy * sgn, rz = -sy * sgn;
+    const hit = world.geom.raycast(p.x, p.y + p.eye, p.z, rx, 0, rz, P.leanDist + 0.2);
+    const room = hit ? Math.max(0, hit.t - 0.2) / P.leanDist : 1;
+    if (Math.abs(p.lean) > room) p.lean = sgn * room;
+  } else p.lean = 0;
+  p.leanX = cy * p.lean * P.leanDist; p.leanZ = -sy * p.lean * P.leanDist;
 
   // 대시
   if (p.dashCharges < p.dashMax) {
@@ -148,7 +163,7 @@ export function updatePlayer(world, p, inp, dt) {
   if (inp.throwEmp && p.emp > 0) {
     const f = forward(p);
     p.emp--;
-    world.throwEmp(p.x + f.x * 0.5, p.y + p.eye - 0.2, p.z + f.z * 0.5,
+    world.throwEmp(p.x + p.leanX + f.x * 0.5, p.y + p.eye - 0.2, p.z + p.leanZ + f.z * 0.5,
       f.x * EMP.throwSpeed + p.vx * 0.4, f.y * EMP.throwSpeed + EMP.upSpeed, f.z * EMP.throwSpeed + p.vz * 0.4);
   }
   p.hurtT += dt;
@@ -171,7 +186,7 @@ function updateWeapons(world, p, inp, dt) {
   }
   if (inp.lastWeapon && p.owned[p.lastWeapon] && p.lastWeapon !== id) want = p.lastWeapon;
   if (want) {
-    p.lastWeapon = id; p.weapon = want; p.switchT = 0.32; p.reloadT = -1; p.charge = 0; p.sustain = 0;
+    p.lastWeapon = id; p.weapon = want; p.switchT = P.switchTime; p.reloadT = -1; p.charge = 0; p.sustain = 0;
     ev.push({ t: 'switch', w: want });
     return;
   }

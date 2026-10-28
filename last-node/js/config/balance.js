@@ -37,6 +37,10 @@ export const PLAYER = {
   fallY: -12,            // 이 높이 아래로 떨어지면 추락 처리
   fallDamage: 30,
   respawn: { x: 0, y: 0, z: 9 },
+  leanDist: 0.45,       // 기울이기(Q/E): 눈이 옆으로 나가는 거리(m)
+  leanRoll: 0.2,        // 화면이 기우는 각(라디안, 약 11°)
+  switchTime: 0.62,     // 무기 교체: 든 총을 내리고 새 총을 위로 던져 돌려 받아 쥔다(이 동안은 못 쏜다)
+  carry: 2,             // 들고 다닐 수 있는 총(세 번째를 얻으면 손에 든 총과 바꾼다)
   empMax: 3,
   empStart: 1,
   dashDamageMulSlide: 0.5, // 강화 '낮은 자세': 슬라이드 중 피해 배수
@@ -105,9 +109,10 @@ export const ENEMIES = {
     parts: [[0, 1.02, -0.1, 0.2, 'weak'], [0, 0.55, 0, 0.42, 1], [0, 0.5, 0.42, 0.3, 1], [0, 0.5, -0.42, 0.3, 1]],
   },
   drone: {
-    name: 'FPV 드론', hp: 25, speed: 8.0, radius: 0.35, height: 0.5, target: 'player', points: 30,
-    flyMin: 2, flyMax: 5, triggerDist: 4, windup: 0.5, boomDmg: 18, boomRadius: 2, chain: 1.5,
-    parts: [[0, 0, 0.1, 0.18, 'weak'], [0, 0, 0, 0.36, 1]],
+    name: 'FPV 드론', hp: 20, speed: 5.5, radius: 0.35, height: 0.5, target: 'player', points: 30,
+    // 대처할 틈: 4.5m 안에 오면 0.9초 동안 깜빡이며 멈칫한 뒤, 그 순간 방향으로 곧게 돌진(따라 꺾지 않는다 → 옆으로 피할 수 있다)
+    flyMin: 2, flyMax: 4, triggerDist: 4.5, windup: 0.9, diveSpeed: 11, boomDmg: 12, boomRadius: 1.8, chain: 1.5,
+    parts: [[0, 0, 0.1, 0.22, 'weak'], [0, 0, 0, 0.45, 1]], // 맞히기 쉽게 판정을 조금 크게
   },
   mech: {
     name: '무인 전투차량', hp: 600, speed: 2.2, radius: 1.1, height: 2.4, target: 'player', points: 350,
@@ -128,23 +133,23 @@ export const ENEMIES = {
 };
 
 export const WAVES = {
-  count: (w) => Math.min(80, 10 + 4 * w),
-  aliveCap: 20,
-  bossAliveCap: 12,
+  count: (w) => Math.min(45, 6 + 3 * w),   // 적 양을 줄였다(1웨이브 9, 5웨이브 21)
+  aliveCap: 12,
+  bossAliveCap: 8,
   hpMul: (w) => Math.min(2.2, 1 + 0.07 * (w - 1)),
   dmgMul: (w) => Math.min(2.2, 1 + 0.04 * (w - 1)),
   bossEvery: 5,
   intermission: 3,        // 보급 화면을 닫은 뒤 다음 웨이브까지
   firstDelay: 6,
-  stairsEvery: [0.6, 1.0],
+  stairsEvery: [1.0, 1.6],   // 적이 줄어든 만큼 천천히 나와 숨 돌릴 틈이 있다
   elevatorFrom: 2, elevatorEvery: 12, elevatorGroup: [4, 6],
   dropshipFrom: 4, dropshipEvery: 18, dropshipGroup: 3, dropshipWarn: 1.5,
   droneFrom: 3, leechFrom: 2, mechFrom: 6,
-  mix: { reaper: 40, enforcer: 25, leech: 12, drone: 15 },
+  mix: { reaper: 40, enforcer: 25, leech: 12, drone: 10 },
   medicMax: (w) => 1 + Math.floor(w / 4), // 동시에 있을 수 있는 수리 로봇
   mechMax: (w) => Math.floor(w / 3),
   mechChance: 0.06,
-  swarm: [3, 5],
+  swarm: [2, 3],
 };
 
 // 점수: 처치 점수 × 연속 처치 배수(2.5초 안 다음 처치마다 +0.1, 최대 2.0) · 기준 시간 보너스

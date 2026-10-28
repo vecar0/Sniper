@@ -2,7 +2,7 @@
 const BIND = {
   KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r',
   Space: 'jump', ShiftLeft: 'dash', ShiftRight: 'dash', KeyC: 'crouch', ControlLeft: 'crouch', KeyV: 'melee',
-  KeyR: 'reload', KeyQ: 'lastWeapon', KeyG: 'emp', Enter: 'ready',
+  KeyR: 'reload', KeyQ: 'leanL', KeyE: 'leanR', KeyF: 'lastWeapon', KeyG: 'emp', Enter: 'ready',
   Digit1: 's1', Digit2: 's2', Digit3: 's3', Digit4: 's4',
 };
 const SLOTS = { s1: 'pistol', s2: 'shotgun', s3: 'rifle', s4: 'rail' };
@@ -77,7 +77,7 @@ export class Input {
     if (this.touch) this.touch.applyLook(world, dt);
     p.pitch = Math.max(-1.45, Math.min(1.45, p.pitch));
 
-    if (!this.enabled) { inp.moveX = inp.moveZ = 0; inp.fire = inp.ads = inp.crouch = false; return; }
+    if (!this.enabled) { inp.moveX = inp.moveZ = 0; inp.lean = 0; inp.fire = inp.ads = inp.crouch = false; return; }
     const H = this.held, E = this.edges;
     let mx = (H.has('r') ? 1 : 0) - (H.has('l') ? 1 : 0), mz = (H.has('f') ? 1 : 0) - (H.has('b') ? 1 : 0);
     let fire = this.mouse.fire, ads = this.mouse.ads || this.adsLatched, crouch = H.has('crouch');
@@ -88,7 +88,9 @@ export class Input {
       for (const e of t.edges) E.add(e);
       t.edges.clear();
     }
-    inp.moveX = mx; inp.moveZ = mz; inp.fire = fire; inp.ads = ads; inp.crouch = crouch;
+    let lean = (H.has('leanR') ? 1 : 0) - (H.has('leanL') ? 1 : 0);
+    if (this.touch && this.touch.active && this.touch.state.lean) lean = this.touch.state.lean;
+    inp.moveX = mx; inp.moveZ = mz; inp.fire = fire; inp.ads = ads; inp.crouch = crouch; inp.lean = lean;
     if (E.has('jump')) inp.jump = true;
     if (E.has('dash')) inp.dash = true;
     if (E.has('melee')) inp.melee = true;
