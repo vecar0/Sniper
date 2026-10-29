@@ -24,6 +24,7 @@ const M = gunMaterials(env);
 const ammo = new THREE.MeshBasicMaterial({ color: 0x223322 });
 const gun = buildGun(q.get('gun') || 'rifle', M, { ammoMat: ammo, reticleMat: ammo, scopeMat: ammo });
 scene.add(gun.group); shadowGun(gun.group);
+if (q.get('xray')) { const skip = new Set(); for (const h of [gun.leftHand, gun.rightHand, gun.leftArm, gun.rightArm]) if (h) h.traverse((o) => skip.add(o)); gun.group.traverse((o) => { if (o.isMesh && !skip.has(o)) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.25; o.material.depthWrite = false; } }); }
 if (q.get('bolt') && gun.bolt98) { const [rz, pz] = q.get('bolt').split(',').map(Number); gun.bolt98.rotation.z = rz; gun.bolt98.position.z = pz; }
 if (q.get('bg') && gun.boltHand) { const v = q.get('bg') === '1' ? null : q.get('bg').split(',').map(Number); placeBoltHand(gun.rightHand, gun.bolt98, v ? { index: v.slice(0, 3), pinky: v.slice(3, 6), wrist: v.slice(6, 9) } : gun.boltHand, gun.boltKnob); }
 if (q.get("noarms")) gun.group.traverse((o) => { if (o.userData && o.userData.rig) o.visible = false; });

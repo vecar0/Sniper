@@ -50,28 +50,28 @@ export const PLAYER = {
 // 무기: dmg=1발(산탄은 펠릿 1개) 피해, rate=초당 발사, spread=도(°)
 export const WEAPONS = {
   pistol: {
-    name: 'P92 권총', slot: 1,
+    name: 'VR-9 권총', slot: 1,
     dmg: 28, pellets: 1, rate: 6.5, auto: false, mag: 14, reserve: Infinity,
     reload: 1.1, spreadHip: 1.1, spreadAds: 0.25, recoil: 1.3, range: 120,
     falloffStart: 25, falloffEnd: 50, falloffMin: 0.65,
     homing: 2.0,           // ADS 때 약점 쪽으로 최대 2° 휜다
   },
   shotgun: {
-    name: 'M12 산탄총', slot: 2,
+    name: 'T-97 펌프 산탄총', slot: 2,
     dmg: 11, pellets: 10, rate: 1.6, auto: true, mag: 8, reserve: 48,
     reload: 0.45, reloadStart: 0.3, perShell: true, spreadHip: 5.0, spreadAds: 3.6, recoil: 5.5, range: 40,
     falloffStart: 10, falloffEnd: 28, falloffMin: 0.35, knockback: 3.5,
   },
   rifle: {
-    name: 'M416 소총', slot: 3,
+    name: 'KV-41 소총', slot: 3,
     dmg: 22, pellets: 1, rate: 11, auto: true, mag: 36, reserve: 216,
     reload: 1.6, spreadHip: 1.6, spreadAds: 0.35, recoil: 0.9, range: 150,
     falloffStart: 25, falloffEnd: 50, falloffMin: 0.65,
     sustainTime: 3.0, sustainBonus: 0.2, // 3초 연사하면 피해 +20%
   },
   rail: {
-    // 볼트액션 저격소총(배그 Kar98k형): 충전 없이 바로 쏘고, 한 발마다 노리쇠를 당겨 다음 탄을 넣는다(0.8발/초 = 1.25초)
-    name: 'Kar98k 저격소총', slot: 4,
+    // 볼트액션 저격소총(옛 마우저식): 충전 없이 바로 쏘고, 한 발마다 노리쇠를 당겨 다음 탄을 넣는다(0.8발/초 = 1.25초)
+    name: 'SK-7 볼트 저격소총', slot: 4,
     dmg: 240, pellets: 1, rate: 0.8, auto: false, mag: 5, reserve: 25,
     reload: 2.2, spreadHip: 0.6, spreadAds: 0.0, recoil: 7, range: 220,
     pierce: 3, weakMul: 1.5,
@@ -82,7 +82,7 @@ export const WEAPON_ORDER = ['pistol', 'shotgun', 'rifle', 'rail'];
 // 무기 강화 3단계(카드): 1=피해 +15%, 2=탄창 +30%, 3=재장전 −25%
 export const UPGRADE = { dmg: 0.15, mag: 0.3, reload: 0.25 };
 
-export const WEAK_MUL = 2.0;
+export const WEAK_MUL = 3.0;   // 머리(약점) 3배: 권총 2발 · 소총 2발
 
 export const EMP = {
   fuse: 1.6, throwSpeed: 15, upSpeed: 4, radius: 5, damage: 25, // 리퍼(50)를 죽이지 않고 기절만 → 근접 마무리 기회
@@ -101,9 +101,9 @@ export const ENEMIES = {
     ],
   },
   enforcer: {
-    name: '보병 로봇', hp: 120, speed: 2.4, radius: 0.36, height: 1.9, target: 'player', points: 80,
-    burst: 3, burstGap: 0.11, dmg: 6, fireEvery: 2.3, aimTime: 0.4, accuracy: 0.3,
-    rangeMin: 10, rangeMax: 26, repositionMin: 5, repositionMax: 8, tooClose: 5, bulletSpeed: 70,
+    name: '보병 로봇', hp: 100, speed: 2.4, radius: 0.36, height: 1.9, target: 'player', points: 80,
+    burst: 3, burstGap: 0.11, dmg: 9, fireEvery: 2.0, aimTime: 0.55, accuracy: 0.4,   // 각을 잡고 있다가 보이면 0.55초 뒤 점사(먼저 보고 먼저 맞히는 쪽이 이긴다)
+    rangeMin: 6, rangeMax: 22, repositionMin: 6, repositionMax: 11, tooClose: 4, bulletSpeed: 70, maxPush: 2,
     parts: [[0, 1.72, 0.04, 0.21, 'weak'], [0, 1.3, 0, 0.36, 1], [0, 0.9, 0, 0.32, 1], [0, 0.45, 0, 0.3, 1]],
   },
   leech: {
@@ -136,19 +136,19 @@ export const ENEMIES = {
 };
 
 export const WAVES = {
-  count: (w) => Math.min(30, 5 + 2 * w),   // 느린 템포: 한 웨이브 적이 적고(1웨이브 7, 5웨이브 15) 한 번에 많이 몰려오지 않는다
-  aliveCap: 7,
+  count: (w) => Math.min(14, 4 + w),   // 전술 템포: 웨이브(라운드)마다 소수 정예(1웨이브 5, 10웨이브 14)
+  aliveCap: 8,
   bossAliveCap: 5,
   hpMul: (w) => Math.min(2.2, 1 + 0.07 * (w - 1)),
   dmgMul: (w) => Math.min(2.2, 1 + 0.04 * (w - 1)),
   bossEvery: 5,
   intermission: 5,        // 보급 화면을 닫은 뒤 다음 웨이브까지
   firstDelay: 6,
-  stairsEvery: [2.5, 4.0],   // 적이 줄어든 만큼 천천히 나와 숨 돌릴 틈이 있다
+  stairsEvery: [1.2, 2.0],   // 웨이브 시작에 분대가 잇달아 들어와 자리를 잡는다   // 적이 줄어든 만큼 천천히 나와 숨 돌릴 틈이 있다
   elevatorFrom: 2, elevatorEvery: 18, elevatorGroup: [2, 3],
   dropshipFrom: 4, dropshipEvery: 26, dropshipGroup: 3, dropshipWarn: 1.5,
   droneFrom: 3, leechFrom: 2, mechFrom: 6,
-  mix: { reaper: 22, enforcer: 50, leech: 12, drone: 8 },   // 엄폐물 사이 총격전 위주(보병 로봇이 절반)
+  mix: { reaper: 10, enforcer: 72, leech: 12, drone: 6 },   // 엄폐물 사이 총격전 위주(보병 로봇 72%, 돌격형은 소수)
   medicMax: (w) => 1 + Math.floor(w / 4), // 동시에 있을 수 있는 수리 로봇
   mechMax: (w) => Math.floor(w / 3),
   mechChance: 0.06,

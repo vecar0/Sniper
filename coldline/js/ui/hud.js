@@ -2,7 +2,7 @@
 import { WEAPONS, PLAYER, SCORE } from '../config/balance.js';
 import { scopedView } from '../sim/player.js';
 
-const SHORT = { pistol: 'P92', shotgun: 'S1897', rifle: 'M416', rail: 'Kar98k' };
+const SHORT = { pistol: 'VR-9', shotgun: 'T-97', rifle: 'KV-41', rail: 'SK-7' };
 
 // 군용 계기판처럼: 숫자는 좁은 고딕(Barlow Condensed), 설명은 IBM Plex Sans KR. 상자 없이 화면에 바로 쓴다.
 // 색은 의미에만: 빨강 = 위협·피해, 호박 = 점수·연속 처치(투광등과 같은 색), 그 밖은 차가운 흰색.

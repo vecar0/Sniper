@@ -29,8 +29,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # LAST NODE(빌드 도구 없는 정적 게임)는 폴더째 복사 → /Sniper/last-node/
-      - run: mkdir -p dist/last-node && cp -r last-node/index.html last-node/css last-node/js last-node/vendor last-node/fonts last-node/textures dist/last-node/
+      # COLDLINE(빌드 도구 없는 정적 게임)는 폴더째 복사 → /Sniper/coldline/ (예전 주소 /Sniper/last-node/는 새 주소로 넘겨 준다)
+      - run: mkdir -p dist/coldline && cp -r coldline/index.html coldline/css coldline/js coldline/vendor coldline/fonts coldline/textures dist/coldline/
+      - run: mkdir -p dist/last-node && printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=../coldline/"><link rel="canonical" href="../coldline/"><a href="../coldline/">COLDLINE</a>' > dist/last-node/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

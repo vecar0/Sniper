@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { World } from '../js/sim/world.js';
 import { enemyParts } from '../js/sim/enemies.js';
 import { eyePos } from '../js/sim/player.js';
-import { ENEMIES, WAVES, PLAYER, SCORE, WEAPONS, EMP } from '../js/config/balance.js';
+import { ENEMIES, WAVES, PLAYER, SCORE, WEAPONS, EMP, WEAK_MUL } from '../js/config/balance.js';
 import { CARDS } from '../js/config/cards.js';
 import { SPAWNS } from '../js/config/map.js';
 import { load, save, recordRun, sanitize, SAVE_KEY } from '../js/core/save.js';
@@ -57,15 +57,16 @@ test('웨이브 w의 적 수 = WAVES.count(w), 동시 생존 aliveCap 이하, �
   assert.deepEqual([...sources[1]].sort(), ['stairs']);
   assert.ok(!sources[1].has('elevator') && sources[2].has('elevator'), '엘리베이터는 W2부터');
   assert.ok(!sources[3].has('dropship') && sources[4].has('dropship'), '수송기는 W4부터');
-  assert.ok(sources[3].has('sky') || sources[4].has('sky'), '드론은 W3부터 하늘에서');
+  assert.ok(!sources[1].has('sky') && !sources[2].has('sky'), '드론은 W3부터 하늘에서');
   assert.ok(!sources[2].has('sky'), 'W2에는 드론 없음');
 });
 
 // ── 적 AI ───────────────────────────────────────────────
-test('하운드: 콘크리트 블록을 돌아 플레이어에게 와서 근접 피해를 준다', () => {
+test('하운드: 총소리를 듣고 콘크리트 블록을 돌아 플레이어에게 와서 근접 피해를 준다', () => {
   const w = sandbox(2);
   put(w, 11, 14);                         // 컨테이너(8~14.1, 10~12.45) 남쪽
   w.spawnEnemy('reaper', 11, 0, 7);       // 북쪽
+  w.reveal();                             // 총소리(위치가 알려짐)
   const ev = events(w, 10);
   assert.ok(ev.some((e) => e.t === 'playerHurt' && e.kind === 'blade'), '칼날 피해 없음');
   assert.ok(w.player.hp < 100);
@@ -110,6 +111,7 @@ test('무인 전투차량: 플레이어를 노려 다가오고, 가까우면 들
   const w = sandbox(42);
   put(w, 0, 18);
   const v = w.spawnEnemy('mech', 0, 0, 8);
+  w.reveal();
   const ev = events(w, 10);
   assert.ok(ev.some((q) => q.t === 'playerHurt'), '플레이어 피해 없음');
   assert.ok(Math.hypot(v.x - w.player.x, v.z - w.player.z) < 10);
@@ -119,6 +121,7 @@ test('집행관: 엄폐점으로 이동한 뒤 사격하고, 엄폐물 뒤의 �
   const w = sandbox(5);
   put(w, 0, 16);
   const e = w.spawnEnemy('enforcer', SPAWNS.stairs.x, 0, SPAWNS.stairs.z);
+  w.reveal();                             // 위치가 알려진 상태
   const x0 = e.x, z0 = e.z;
   const ev = events(w, 12);
   assert.ok(Math.hypot(e.x - x0, e.z - z0) > 2, '엄폐점으로 이동하지 않음');
@@ -161,10 +164,10 @@ test('메크: 정면 방패 ×0.3, 등 코어 ×2.5, EMP 맞으면 4초간 방�
   hp = m.hp; w.damageEnemy(m, 100, { kind: 1, dir: front }); assert.ok(Math.abs(hp - m.hp - 100) < 1e-6, 'EMP 후에도 방패');
 });
 
-test('약점 ×2, 레일건이 일렬로 선 적 3기를 관통', () => {
+test('약점 ×WEAK_MUL, 레일건이 일렬로 선 적 3기를 관통', () => {
   const w = sandbox(9);
   const e = w.spawnEnemy('enforcer', 0, 0, 0);
-  const hp = e.hp; w.damageEnemy(e, 20, { kind: 'weak' }); assert.equal(hp - e.hp, 40);
+  const hp = e.hp; w.damageEnemy(e, 20, { kind: 'weak' }); assert.equal(hp - e.hp, 20 * WEAK_MUL);
   // 레일건: 플레이어 앞(−z)에 4기 일렬
   const w2 = sandbox(10);
   put(w2, 2, 26);
@@ -461,4 +464,26 @@ test('1번 = 주무기, 2번 = 보조무기(권총)', () => {
   // 꽉 찼을 때 새 총은 손에 든 총(주무기)의 칸으로
   w.applyCard('get:shotgun');
   assert.deepEqual(p.loadout, ['shotgun', 'pistol']);
+});
+
+// ── 전술 규칙: 정보 · 각 잡기 ───────────────────────────
+test('정보: 적은 플레이어를 보지 못하면 위치를 모르고, 총을 쏘면 위치가 드러난다', () => {
+  const w = sandbox(31);
+  put(w, -15, -19);                        // 북서 창고 안(벽으로 가려짐)
+  const e = w.spawnEnemy('enforcer', 18, 0, 20); e.stun = 1e9;
+  run(w, 2);
+  assert.ok(w.intel.t < -98, '보지도 않았는데 위치를 앎');
+  w.input.fire = true; w.step(DT); w.input.fire = false;
+  assert.ok(w.intelAge() < 0.1 && Math.hypot(w.intel.x + 15, w.intel.z + 19) < 0.5, '총소리로 위치가 드러나지 않음');
+});
+
+test('각 잡기: 보병 로봇은 자리를 잡은 뒤 한 번에 최대 maxPush기만 밀고 들어온다', () => {
+  const w = sandbox(32);
+  put(w, 0, 20);
+  for (let i = 0; i < 6; i++) w.spawnEnemy('enforcer', -20 + i * 0.8, 0, -2);
+  w.reveal();
+  run(w, 10, (ww) => { ww.player.hp = 100; });
+  let most = 0;
+  run(w, 25, (ww) => { ww.player.hp = 100; ww.reveal(); most = Math.max(most, ww.enemies.filter((e) => e.state === 'move' && e.settled).length); });
+  assert.ok(most <= ENEMIES.enforcer.maxPush, `동시에 밀고 들어온 수 ${most}`);
 });

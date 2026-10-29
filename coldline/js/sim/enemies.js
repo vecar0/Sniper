@@ -99,7 +99,9 @@ function reaper(world, e, dt) {
   switch (e.state) {
     case 'spawn': case 'chase': {
       e.state = 'chase';
-      const v = steer(world, e, world.fieldPlayer, c.speed);
+      // 본 적이 있으면(3초 안) 달려들고, 아니면 마지막으로 알려진 곳 쪽으로 살금살금 수색
+      const hunting = world.time - (e.seenT ?? -99) < 3;
+      const v = steer(world, e, world.fieldPlayer, c.speed * (hunting ? 1 : 0.5));
       physics(world, e, v.x, v.z, dt);
       faceMove(e, dt);
       if (d < 1.4 && Math.abs(dy) < 1.4) { e.state = 'melee'; e.t = 0; e.cd = 0.25; }
@@ -161,6 +163,8 @@ function enforcer(world, e, dt) {
   }
   switch (e.state) {
     case 'seek': {
+      // 처음 자리를 잡으러 갈 때 말고는, 이미 maxPush기가 움직이는 중이면 지금 자리에서 각을 지킨다
+      if (e.settled && world.enemies.filter((o) => o.alive && o.type === 'enforcer' && o.state === 'move' && o.settled).length >= c.maxPush) { e.state = 'hold'; e.t = 0; e.holdT = 0; break; }
       const cover = world.pickCover(e);
       if (cover >= 0) { e.coverK = cover; e.field = g.field([cover], e.field); e.state = 'move'; }
       else { e.state = 'hold'; e.coverK = -1; }
@@ -173,18 +177,21 @@ function enforcer(world, e, dt) {
       physics(world, e, v.x, v.z, dt);
       faceMove(e, dt, 8);
       const cc = g.cellCenter(e.coverK);
-      if (k === e.coverK || Math.hypot(cc.x - e.x, cc.z - e.z) < 0.5 || e.t > 9) { e.state = 'hold'; e.t = 0; }
+      if (k === e.coverK || Math.hypot(cc.x - e.x, cc.z - e.z) < 0.5 || e.t > 9) { e.state = 'hold'; e.t = 0; e.settled = true; }
       // 이동 중에도 기회가 되면 쏜다
-      if (e.cd <= 0 && d < 30 && sees()) { e.state = 'aim'; e.t = 0; e.after = 'move'; world.events.push({ t: 'tele', kind: 'aim', id: e.id }); }
+      // 가는 길에 마주치면 그 자리에 멈춰 교전한다(그대로 달려들지 않음)
+      if (e.cd <= 0 && d < 30 && sees()) { e.state = 'aim'; e.t = 0; e.after = 'hold'; e.settled = true; world.events.push({ t: 'tele', kind: 'aim', id: e.id }); }
       break;
     }
     case 'hold': {
+      // 각 잡기: 엄폐 뒤에서 마지막으로 알려진 방향을 겨누고 기다린다. 보이면 쏜다.
+      // 오래 못 보면 다음 엄폐로 밀고 들어가는데, 한 번에 최대 2기만 움직인다(나머지는 각을 지킴)
       physics(world, e, 0, 0, dt);
-      e.yaw = turn(e.yaw, angTo(e.x, e.z, p.x, p.z), 5 * dt);
-      const vis = sees();
+      const vis = sees(), I = world.intel;
+      e.yaw = turn(e.yaw, vis || I.t < -98 ? angTo(e.x, e.z, p.x, p.z) : angTo(e.x, e.z, I.x, I.z), 5 * dt);
       if (vis) e.blind = 0; else e.blind = (e.blind || 0) + dt;
       if (e.cd <= 0 && vis) { e.state = 'aim'; e.t = 0; e.after = 'hold'; world.events.push({ t: 'tele', kind: 'aim', id: e.id }); }
-      if (e.holdT > e.repos || e.blind > 2) { e.state = 'seek'; e.blind = 0; }
+      else if (e.holdT > e.repos || e.blind > 4) { e.settled = true; e.state = 'seek'; e.blind = 0; }
       break;
     }
     case 'aim':

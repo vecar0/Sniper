@@ -466,28 +466,33 @@ export class ViewModel {
     const B = gun.bolt98, R = gun.rightHand;
     if (this.boltK === undefined) this.boltK = 1;
     if (this.boltK >= 1) { B.rotation.z = 0; B.position.z = 0; return 0; }
-    this.boltK = Math.min(1, this.boltK + dt / 0.93);
+    this.boltK = Math.min(1, this.boltK + dt / 1.1);
     const u = this.boltK;
     if (u < 0) return 0;
-    const lift = smooth(0.15, 0.3, u) * (1 - smooth(0.68, 0.8, u)), pull = smooth(0.3, 0.48, u) * (1 - smooth(0.5, 0.68, u));
+    // 단계(겹쳐 이어짐): 손 뻗기 0~0.17 · 들기 0.15~0.29 · 당기기 0.3~0.46 · (멈칫) · 밀기 0.52~0.66 · 내리기 0.66~0.78 · 손 돌아오기 0.8~1
+    const lift = smooth(0.15, 0.29, u) * (1 - smooth(0.66, 0.78, u)), pull = smooth(0.3, 0.46, u) * (1 - smooth(0.52, 0.66, u));
     B.rotation.z = lift * 1.45; B.position.z = pull * 0.09;
-    if (u >= 0.44 && !this.boltEjected) { this.boltEjected = true; this.eject(gun, 'rifle'); }
+    if (u >= 0.42 && !this.boltEjected) { this.boltEjected = true; this.eject(gun, 'rifle'); }
     if (u < 0.3) this.boltEjected = false;
     // 손: 쉬는 자리 ↔ 손잡이 공. 손바닥을 아래로 해 공을 위에서 감아 쥐고, 노리쇠와 함께 돌고 뒤로 간다.
-    // 손잡이가 내려가 있을 때(들기 전·민 뒤)는 공이 개머리 나무에 붙어 있으니 손을 조금 바깥(오른쪽 위)에 띄운다
-    const reach = smooth(0.0, 0.15, u) * (1 - smooth(0.8, 1.0, u));
+    // 손잡이가 내려가 있을 때(들기 전·민 뒤)는 공이 개머리 나무에 붙어 있으니 손을 조금 바깥(오른쪽 위)에 띄운다.
+    // 오가는 길은 곧은 선이 아니라 바깥(오른쪽 위)으로 둥글게 — 개머리 옆면을 쓸고 지나가지 않게
+    const reach = smooth(0.0, 0.17, u) * (1 - smooth(0.8, 1.0, u));
     if (reach > 0) {
       const p0 = R.position.clone(), q0 = R.quaternion.clone();
       placeBoltHand(R, B, gun.boltHand, gun.boltKnob);
       R.position.add(new THREE.Vector3(0.018, 0.012, 0).multiplyScalar(1 - lift));
       R.position.lerpVectors(p0, R.position, reach); R.quaternion.slerpQuaternions(q0, R.quaternion, reach);
+      R.position.add(new THREE.Vector3(0.03, 0.02, 0.01).multiplyScalar(Math.sin(Math.PI * reach) * (1 - lift)));
     }
-    // 총: 노리쇠를 다루는 동안 총을 들어 올려 왼쪽으로 눕힌다 — 노리쇠와 손이 화면 가운데 아래에 보이게
-    const P = this.boltPose || BOLT_POSE;
-    gun.group.position.add(new THREE.Vector3(P[0], P[1], P[2]).multiplyScalar(reach));
-    gun.group.rotation.z += P[3] * reach; gun.group.rotation.x += P[4] * reach; gun.group.rotation.y += P[5] * reach;
-    // 손가락: 다가갈 때 펴고, 손잡이가 들려 있는 동안만 공을 감아 쥔다
-    return reach * (0.75 - 0.6 * lift);
+    // 총: 노리쇠를 다루는 동안 총을 들어 올려 왼쪽으로 눕힌다 — 노리쇠와 손이 화면 가운데 아래에 보이게.
+    // 총은 손보다 조금 먼저 움직이기 시작하고 늦게 돌아오며, 당길 때는 손 쪽으로 살짝 끌려오고 밀 때 앞으로 밀린다
+    const P = this.boltPose || BOLT_POSE, gk = smooth(0.0, 0.14, u) * (1 - smooth(0.84, 1.0, u));
+    const tug = pull * 0.012 - smooth(0.52, 0.6, u) * (1 - smooth(0.6, 0.72, u)) * 0.008;
+    gun.group.position.add(new THREE.Vector3(P[0], P[1], P[2] + tug / Math.max(gk, 0.01)).multiplyScalar(gk));
+    gun.group.rotation.z += P[3] * gk + lift * 0.05; gun.group.rotation.x += P[4] * gk; gun.group.rotation.y += P[5] * gk;
+    // 손가락: 다가갈 때 살짝 펴고(뻣뻣하게 쫙 펴지 않음), 손잡이가 들려 있는 동안 공을 감아 쥔다
+    return reach * (0.35 - 0.3 * lift);
   }
 
   // 팔 2관절 IK: 어깨(뷰모델 공간 고정) → 팔의 부모(총·펌프) 공간으로 옮겨 푼다

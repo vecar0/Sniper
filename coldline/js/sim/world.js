@@ -4,10 +4,11 @@ import {
   SCORE, SUPPLY, DROPS, BATTERY, BROADCAST,
 } from '../config/balance.js';
 import { CARDS, CARD_RULES, UPGRADE_STEP } from '../config/cards.js';
-import { BOXES, SPAWNS, BATTERIES, ROOF } from '../config/map.js';
+import { BOXES, SPAWNS, BATTERIES, ROOF, PLAYER_START } from '../config/map.js';
 import { Geometry, raySphere } from './geom.js';
 import { Rng } from './rng.js';
 import { makePlayer, updatePlayer, forward, spreadDir, eyePos } from './player.js';
+const ENEMY_SIGHT = 50;
 import { makeEnemy, updateEnemy, enemyParts } from './enemies.js';
 
 const DEG = Math.PI / 180;
@@ -51,7 +52,10 @@ export class World {
     this.taken = {};                    // 카드 id → 고른 횟수
     this.weaponOffered = false;
     this.noEnd = false;                 // 테스트: 승패 판정 끄기
-    this.fieldPlayer = new Float32Array(this.geom.n * this.geom.n);
+    // 정보: 적은 플레이어를 직접 보거나(시야) 총소리·발소리를 들어야 위치를 안다 → 무전으로 공유. 모르면 마지막으로 안 곳을 수색한다
+    this.intel = { x: 0, y: 0, z: 0, t: -99 };
+    this.intelT = 0;
+    this.fieldPlayer = new Float32Array(this.geom.n * this.geom.n);   // 이름은 그대로지만 '마지막으로 안 플레이어 위치'까지의 거리장
     this.fieldPlayerCell = -2;
     this.fieldPlayerT = 0;
     this._parts = [];
@@ -74,6 +78,7 @@ export class World {
     }
     updatePlayer(this, this.player, inp, dt);
 
+    this.updateIntel(dt);
     this.updatePlayerField(false, dt);
     this.updateWaves(dt, inp.ready);
     for (const e of this.enemies) if (e.alive) updateEnemy(this, e, dt);
@@ -124,9 +129,26 @@ export class World {
 
   drainEvents() { const e = this.events; this.events = []; return e; }
 
+  // 0.2초마다: 플레이어를 보는(시야 50m) 적, 아주 가까이(4m, 발소리) 있는 적이 있으면 위치가 알려진다
+  updateIntel(dt) {
+    this.intelT -= dt;
+    if (this.intelT > 0) return;
+    this.intelT = 0.2;
+    const p = this.player; if (!p.alive) return;
+    const py = p.y + p.h * 0.62;
+    for (const e of this.enemies) {
+      if (!e.alive || e.type === 'boss') continue;
+      const d = Math.hypot(e.x - p.x, e.z - p.z);
+      const eyeY = e.y + Math.min(1.6, (e.h || 1) * 0.85);
+      if (d < 4 || (d < ENEMY_SIGHT && this.geom.los(e.x, eyeY, e.z, p.x, py, p.z))) { e.seenT = this.time; this.reveal(); }
+    }
+  }
+  reveal() { const p = this.player; this.intel.x = p.x; this.intel.y = p.y; this.intel.z = p.z; this.intel.t = this.time; }
+  intelAge() { return this.time - this.intel.t; }
+
   updatePlayerField(force, dt = 0) {
     this.fieldPlayerT -= dt;
-    const p = this.player;
+    const p = this.intel.t > -99 ? this.intel : PLAYER_START;   // 아직 아무 정보가 없으면 기지 남쪽 광장(작전 시작점) 쪽으로 수색해 들어온다
     if (!force && this.fieldPlayerT > 0) return;
     this.fieldPlayerT = 0.25;
     const k = this.geom.nearestClear(p.x, p.z, p.y + 0.6);
@@ -614,6 +636,7 @@ export class World {
     if (anyHit) this.stats.hits++;
     if (anyWeak) this.stats.weakHits++;
     this.events.push({ t: 'shot', w: id, x: eye.x, y: eye.y, z: eye.z, ends, hit: anyHit, weak: anyWeak, kill: anyKill });
+    this.reveal();   // 총소리: 쏘면 위치가 드러난다
   }
 
   // 광선 추적: 벽에서 멈추고, 그 앞의 적(관통 수만큼)·배터리를 순서대로
@@ -883,7 +906,7 @@ export class World {
 
   // 집행관 엄폐점: 플레이어와 10~26m, 시선 있음, 다른 집행관과 4m 이상, 가까울수록 좋음
   pickCover(e) {
-    const g = this.geom, p = this.player, c = e.c;
+    const g = this.geom, c = e.c, p = this.intel.t > -99 ? this.intel : PLAYER_START;   // 마지막으로 안 위치를 겨눌 수 있는 엄폐
     if (!this._covers) this._covers = buildCovers(g);
     const here = g.nearestClear(e.x, e.z, e.y + 0.6);
     if (here < 0) return -1;
@@ -901,7 +924,7 @@ export class World {
         const oc = g.cellCenter(o.coverK); if (Math.hypot(oc.x - cc.x, oc.z - cc.z) < 4) { crowd = true; break; }
       }
       if (crowd) continue;
-      const s = dist[k] * 0.15 + Math.abs(d - 17) * 0.4 + this.rng.next() * 3;
+      const s = dist[k] * 0.15 + Math.abs(d - 13) * 0.4 + this.rng.next() * 3;
       if (s >= bs) continue;
       if (!g.los(cc.x, cc.y + 1.6, cc.z, p.x, py, p.z)) continue;
       bs = s; best = k;

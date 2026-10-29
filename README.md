@@ -1,4 +1,4 @@
-> **새 게임: [LAST NODE – 신서울 옥상 방어전](last-node/README.md)** — 비 내리는 사이버펑크 옥상에서 코어를 지키는 웨이브 생존 FPS · 플레이: https://vecar0.github.io/Sniper/last-node/
+> **새 게임: [COLDLINE – 콜드라인](coldline/README.md)** — 폭주한 극지 기지에서 엄폐·각 잡기로 군사 로봇 분대와 싸우는 전술 FPS. 플레이: https://vecar0.github.io/Sniper/coldline/
 
 # LONG SHOT – 옥상 저격전
 
