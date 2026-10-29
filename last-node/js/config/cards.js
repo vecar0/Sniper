@@ -2,7 +2,7 @@
 // kind: weapon(무기 획득) · upgrade(무기 강화) · perk(능력) · rare(보스 뒤 희귀)
 export const CARDS = [
   { id: 'get:shotgun', kind: 'weapon', name: 'M12 산탄총', desc: '근거리 압도 · 10펠릿 · 맞은 적이 밀려남', icon: 'shotgun' },
-  { id: 'get:rifle', kind: 'weapon', name: 'AR-7 소총', desc: '만능 연사 · 3초 연사하면 피해 +20%', icon: 'rifle' },
+  { id: 'get:rifle', kind: 'weapon', name: 'M416 소총', desc: '만능 연사 · 3초 연사하면 피해 +20%', icon: 'rifle' },
   { id: 'get:rail', kind: 'weapon', name: 'Kar98k 저격소총', desc: '볼트액션 · 적 3기 관통 · 한 방 240', icon: 'rail', minWave: 3 },
   { id: 'up:pistol', kind: 'upgrade', weapon: 'pistol', max: 3, icon: 'up' },
   { id: 'up:shotgun', kind: 'upgrade', weapon: 'shotgun', max: 3, icon: 'up' },

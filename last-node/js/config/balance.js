@@ -50,7 +50,7 @@ export const PLAYER = {
 // 무기: dmg=1발(산탄은 펠릿 1개) 피해, rate=초당 발사, spread=도(°)
 export const WEAPONS = {
   pistol: {
-    name: 'P9 권총', slot: 1,
+    name: 'P92 권총', slot: 1,
     dmg: 28, pellets: 1, rate: 6.5, auto: false, mag: 14, reserve: Infinity,
     reload: 1.1, spreadHip: 1.1, spreadAds: 0.25, recoil: 1.3, range: 120,
     falloffStart: 25, falloffEnd: 50, falloffMin: 0.65,
@@ -63,7 +63,7 @@ export const WEAPONS = {
     falloffStart: 10, falloffEnd: 28, falloffMin: 0.35, knockback: 3.5,
   },
   rifle: {
-    name: 'AR-7 소총', slot: 3,
+    name: 'M416 소총', slot: 3,
     dmg: 22, pellets: 1, rate: 11, auto: true, mag: 36, reserve: 216,
     reload: 1.6, spreadHip: 1.6, spreadAds: 0.35, recoil: 0.9, range: 150,
     falloffStart: 25, falloffEnd: 50, falloffMin: 0.65,
