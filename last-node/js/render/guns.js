@@ -227,6 +227,48 @@ export function viewmodelEnvironment(renderer) {
 // thumb.dir: 엄지 전체(손목 쪽 뿌리 → 끝)가 향할 방향(오른손 기준), thumb.curl: 엄지 끝마디 굽힘
 let HAND_GEO = null;
 const dec = (str, T) => { const b = Uint8Array.from(atob(str), (c) => c.charCodeAt(0)); return new T(b.buffer); };
+// 반장갑 구역(정점마다 한 번): 손끝 마디는 맨살(aSkin), 손등·손가락 첫마디 등쪽은 보호판(aPanel) — 가장 많이 붙은 뼈와 손바닥 반대쪽을 보는 법선으로 나눈다
+function gloveZones(geo, palmN) {
+  if (geo.getAttribute('aSkin')) return;
+  const si = geo.getAttribute('skinIndex'), sw = geo.getAttribute('skinWeight'), nr = geo.getAttribute('normal'), n = si.count;
+  const skin = new Float32Array(n), panel = new Float32Array(n), v = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    let bi = si.getX(i), bw = sw.getX(i);
+    for (const [c, w] of [[si.getY(i), sw.getY(i)], [si.getZ(i), sw.getZ(i)], [si.getW(i), sw.getW(i)]]) if (w > bw) { bw = w; bi = c; }
+    const name = HAND.bones[bi].name;
+    skin[i] = /phalanx-distal|tip/.test(name) ? 1 : 0;
+    const back = -v.fromBufferAttribute(nr, i).dot(palmN);
+    panel[i] = !skin[i] && /metacarpal|phalanx-proximal/.test(name) && !name.startsWith('thumb') && back > 0.35 ? 1 : 0;
+  }
+  geo.setAttribute('aSkin', new THREE.BufferAttribute(skin, 1));
+  geo.setAttribute('aPanel', new THREE.BufferAttribute(panel, 1));
+}
+// 반장갑 재질: 짙은 회색 천 + 손등 보호판(회색·검정 디지털 무늬, 살짝 매끈) + 손끝 맨살
+function halfFingerGlove() {
+  const m = new THREE.MeshStandardMaterial({ color: lin(0.03, 0.031, 0.034), roughness: 0.85, metalness: 0, envMapIntensity: 0.5, side: THREE.DoubleSide });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aSkin; attribute float aPanel; varying float vSkin; varying float vPanel; varying vec3 vHP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSkin = aSkin; vPanel = aPanel; vHP = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying float vSkin; varying float vPanel; varying vec3 vHP;
+float hh(vec3 p){ p = fract(p * 0.3183 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+float hp = 0.0;
+if (vSkin > 0.5) diffuseColor.rgb = vec3(0.42, 0.27, 0.2);
+else if (vPanel > 0.5) {
+  vec3 c = floor(vHP * 520.0); float a = hh(c), b = hh(floor(vHP * 230.0) + 3.0);
+  vec3 col = vec3(0.06, 0.062, 0.068);
+  col = mix(col, vec3(0.15, 0.152, 0.16), step(0.6, b));
+  col = mix(col, vec3(0.02, 0.02, 0.022), step(0.72, a));
+  diffuseColor.rgb = col; hp = 1.0;
+}`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = vSkin > 0.5 ? 0.55 : mix(roughnessFactor, 0.5, hp);');
+  };
+  m.customProgramCacheKey = () => 'half-finger-glove';
+  return m;
+}
 function handGeometry() {
   if (HAND_GEO) return HAND_GEO;
   const g = new THREE.BufferGeometry();
@@ -267,8 +309,8 @@ export function makeHand(M, { mirror = false, curls, thumb = { dir: [-0.6, 0.45,
     b.userData.Wq = new THREE.Quaternion().setFromRotationMatrix(b.userData.W);
     b.userData.Wp = new THREE.Vector3().setFromMatrixPosition(b.userData.W);
   }
-  // 손목 끝이 열린 메시라 뒷면도 그린다(안쪽이 보여도 장갑 안감처럼 어둡게) — 손 전용 재질
-  if (!M.gloveHand) { M.gloveHand = M.glove.clone(); M.gloveHand.side = THREE.DoubleSide; M.gloveHand.onBeforeCompile = M.glove.onBeforeCompile; M.gloveHand.customProgramCacheKey = () => 'finish-glovehand'; }
+  // 손목 끝이 열린 메시라 뒷면도 그린다(안쪽이 보여도 장갑 안감처럼 어둡게) — 손 전용 재질(반장갑: 손등 보호판 무늬 · 손끝 맨살)
+  if (!M.gloveHand) M.gloveHand = halfFingerGlove();
   const mesh = new THREE.SkinnedMesh(handGeometry(), M.gloveHand);
   mesh.frustumCulled = false;
   root.add(mesh);
@@ -286,6 +328,7 @@ export function makeHand(M, { mirror = false, curls, thumb = { dir: [-0.6, 0.45,
   const mid = W('middle-finger-tip').clone().sub(W('middle-finger-phalanx-proximal')).normalize();
   let palmN = new THREE.Vector3().crossVectors(mid, lateral).normalize();
   if (W('thumb-tip').clone().sub(W('middle-finger-phalanx-proximal')).dot(palmN) < 0) palmN.negate(); // 엄지는 손바닥 쪽에 있다
+  gloveZones(mesh.geometry, palmN);
   const flex = (b, dir, n = palmN) => { const ax = new THREE.Vector3().crossVectors(dir, n).normalize(); return ax.applyQuaternion(b.userData.Wq.clone().invert()); };
   const joints = FINGERS.map((f) => {
     const d = W(f + '-finger-tip').clone().sub(W(f + '-finger-phalanx-proximal')).normalize();
