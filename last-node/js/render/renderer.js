@@ -16,7 +16,7 @@ import { WEAPONS, PLAYER } from '../config/balance.js';
 import { scopedView } from '../sim/player.js';
 
 // 총 카메라 시야각(세로, 허리 사격): 산탄총은 배그 S1897 1인칭 화면과 겹쳐 맞춘 값(좁은 시야각 = 총이 크고 원근이 약하다)
-const VM_FOV = { pistol: 58, rifle: 66, shotgun: 58, rail: 66 };
+const VM_FOV = { pistol: 56, rifle: 66, shotgun: 58, rail: 66 };
 
 const FinalShader = {
   uniforms: {

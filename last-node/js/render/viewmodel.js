@@ -50,7 +50,7 @@ export class ViewModel {
         // 1인칭 게임처럼 화면 아래·뒤로 내려 팔이 화면 아래 모서리로 빠져나가게 한다(팔 길이는 실제 그대로)
         // 긴 총의 앞손: 아래팔이 화면 왼쪽 아래에서 비스듬히 올라와 총열 덮개 앞쪽 옆면을 잡는다(참고 사진)
         const fore = mirror && id !== 'pistol';
-        arm.userData.Sroot = fore ? new THREE.Vector3(-0.1, -0.75, 0.05) : new THREE.Vector3(mirror ? -0.2 : 0.22, -0.5, 0.1);
+        arm.userData.Sroot = fore ? new THREE.Vector3(id === 'rifle' ? -0.2 : -0.1, -0.75, 0.05) : new THREE.Vector3(mirror ? -0.2 : 0.22, -0.5, 0.1);
         arm.userData.poleRoot = (fore ? new THREE.Vector3(-0.6, -1, 0.2) : new THREE.Vector3(mirror ? -0.6 : 0.6, -1, 0.25)).normalize();
         arm.parent.updateWorldMatrix(true, false);
         const toP = _m2.copy(arm.parent.matrixWorld).invert().multiply(this.root.matrixWorld);
@@ -520,9 +520,9 @@ const SW_DROP = 0.4;
 // 허리 사격 위치 [x, y, z, 좌우 비틀기, 기울기, 총구 들기] — 총마다 길이·손잡이 위치가 다르다
 const HIP = {
   // 긴 총은 개머리를 어깨에 댄 자세: 앞손(왼손)과 손잡이 손(오른손)이 모두 화면 아래쪽에 보이게 조금 높고 멀리
-  pistol: [0.18, -0.15, -0.44, 0.25, 0.1, 0.1],   // 배그 P92 허리 자세 화면에 맞춤(화면 오른쪽 아래, 총구가 가운데 쪽 위)
+  pistol: [0.196, -0.172, -0.401, 0.453, -0.031, 0.281],   // 배그 P92 화면 실루엣에 겹쳐 맞춤(겹침 71%, 시야각 56)
   // 긴 총: 오른쪽 아래에 낮게, 기울이지 않고(조준경이 바로 섬) 총구만 십자선 쪽으로 모인다 — 참고 사진의 총구·조준경·총몸 화면 위치에 맞춘 값
-  rifle: [0.2, -0.21, -0.5, 0.25, 0, 0.15],   // 배그 M416 허리 자세 화면에 맞춤(총구가 가운데 살짝 오른쪽 아래)
+  rifle: [0.153, -0.195, -0.418, 0.154, -0.109, 0.111],   // 배그 M416 화면에 가늠쇠·총구·가늠자 귀를 겹쳐 맞춤(시야각 66)
   shotgun: [0.09, -0.16, -0.42, 0.05, 0.25, 0.02],   // 배그 S1897 1인칭 화면에 겹쳐 맞춘 값(총 카메라 시야각 58°와 함께, 리시버가 겹치게 살짝 눕힘)
   rail: [0.16, -0.36, -0.7, 0.15, 0, 0.3],   // 배그 Kar98k 1인칭 화면에 겹쳐 맞춘 값(총구·앞나무·리시버 화면 위치 + 굵기)
 };
