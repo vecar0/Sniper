@@ -380,7 +380,7 @@ export function makeHand(M, { mirror = false, curls, thumb = { dir: [-0.6, 0.45,
       const dirW = thumbAt.clone().sub(base).normalize();
       const dirM = dirW.transformDirection(new THREE.Matrix4().copy(root.matrixWorld).invert());          // 메시 좌표 방향
       aimQ.setFromUnitVectors(t0, dirM);
-      const ang = 2 * Math.acos(Math.min(1, Math.abs(aimQ.w))); if (ang > 1.1) aimQ.slerp(new THREE.Quaternion(), 1 - 1.1 / ang);
+      const lim = thumb.maxAim ?? 1.1, ang = 2 * Math.acos(Math.min(1, Math.abs(aimQ.w))); if (ang > lim) aimQ.slerp(new THREE.Quaternion(), 1 - lim / ang);
       last = ''; g.userData.pose(0, 0);
     }
     const rc = new THREE.Raycaster(), a = new THREE.Vector3(), c = new THREE.Vector3(), off = new THREE.Vector3();
@@ -539,6 +539,9 @@ function foregrip(add, parent, z, yTop) {
 const FORE_HAND = { mirror: true, curls: [[1.2, 1.45, 0.95], [1.25, 1.5, 1.0], [1.3, 1.5, 1.0], [1.35, 1.5, 1.0]], thumb: { dir: [-0.8, 0.6, -0.4], curl: 0.3 } };
 // C-클램프·펌프: 손바닥이 물체 중심을 보고, 손가락은 아래를 비스듬히 가로질러 중간마디(PIP)에서 꺾여 반대쪽 면을 감는다
 // 옆잡기: 첫마디는 거의 펴서 왼쪽 면을 타고 오르고, 둘째·셋째 마디를 굽혀 손끝이 윗면을 덮는다
+// 엄지 뻗어 잡기: 네 손가락은 핸드가드 밑을 감고, 엄지는 굽히지 않고 곧게
+// (엄지 뿌리를 크게 벌려 앞으로 뻗으므로 회전 한계를 넓힌다: 엄지 손목손허리관절은 벌림·맞섬이 넓다)
+const THUMB_HAND = { mirror: true, curls: [[0.9, 1.0, 0.6], [0.95, 1.05, 0.65], [1.0, 1.05, 0.65], [1.05, 1.0, 0.6]], thumb: { dir: [-0.1, 0.35, -0.93], curl: 0, maxAim: 2.6 } };
 const SIDE_HAND = { mirror: true, curls: [[0.3, 0.95, 0.55], [0.32, 1.0, 0.6], [0.35, 1.0, 0.6], [0.4, 0.95, 0.55]], thumb: { dir: [0.3, -0.2, -0.93], curl: 0.15 } };
 const CLAMP_HAND = { mirror: true, curls: [[0.85, 1.0, 0.65], [0.9, 1.05, 0.7], [0.95, 1.05, 0.7], [1.0, 1.0, 0.65]], thumb: { dir: [-0.24, 0.93, -0.27], curl: 0.08 } };
 // 펌프(지름 4.8 cm): 표면을 따라 감는 각 = 마디 길이 ÷ (반지름 + 손가락 두께)
@@ -981,10 +984,10 @@ function buildRifle(g, add, M, out, X) {
   const R = makeHand(M, { curls: [[0.3, 0.3, 0.2], [1.2, 1.45, 0.95], [1.25, 1.5, 1.0], [1.3, 1.5, 1.0]], thumb: { dir: [-0.9, 0.45, -0.45], curl: 0.3 } });
   // 권총손잡이: 검지 MCP는 오른쪽 리시버 바로 아래(방아쇠울 뒤), 새끼 MCP는 손잡이 아래쪽 뒤, 손목은 손잡이 뒤 · 엄지는 위로 넘어가 조정간 옆
   placeHand(R, { index: [0.021, -0.044, 0.066], pinky: [0.022, -0.108, 0.094], wrist: [0.03, -0.1, 0.19] }); R.userData.thumbAt = [-0.02, -0.014, 0.07]; g.add(R);
-  const L = makeHand(M, SIDE_HAND);
-  // 앞쪽 옆잡기(참고 사진): 손바닥을 핸드가드 왼쪽 면 앞쪽에 대고 손등이 바깥(화면 왼쪽)을 보며, 손가락은 왼쪽 면을 타고 올라가 윗면을 덮는다.
-  // MCP 줄은 왼쪽 면 아래쪽을 따라(검지가 앞), 손목은 그 아래 · 엄지는 밑면을 따라 앞으로
-  placeHand(L, { index: [-0.033, -0.012, -0.318], pinky: [-0.033, -0.016, -0.372], wrist: [-0.085, -0.085, -0.33] }); L.userData.thumbAt = [-0.004, -0.036, -0.29]; g.add(L);
+  const L = makeHand(M, THUMB_HAND);
+  // 엄지 뻗어 잡기(참고 사진): 손바닥이 핸드가드 왼쪽 아래 모서리를 받치고(손등은 왼쪽 아래 = 화면에 보임) 네 손가락은 밑을 지나 오른쪽 면으로(안 보임),
+  // 엄지는 왼쪽 면을 타고 올라가 윗모서리를 따라 총구 쪽으로 곧게 뻗는다. 손목은 손 아래·뒤 → 아래팔이 화면 왼쪽 아래로 내려간다
+  placeHand(L, { index: [-0.022, -0.037, -0.28], pinky: [-0.026, -0.03, -0.335], wrist: [-0.075, -0.07, -0.235] }); L.userData.thumbAt = [-0.024, 0.03, -0.44]; g.add(L);
   out.rightArm = armFrom(g, M, R, false, [0.1, -0.18, 0.4]);
   out.leftArm = armFrom(g, M, L, true, [-0.28, -0.16, 0.6]);
   out.rightHand = R; out.leftHand = L;
