@@ -69,10 +69,11 @@ export const WEAPONS = {
     sustainTime: 3.0, sustainBonus: 0.2, // 3초 연사하면 피해 +20%
   },
   rail: {
-    name: 'XM-1 레일건', slot: 4,
+    // 볼트액션 저격소총(배그 Kar98k형): 충전 없이 바로 쏘고, 한 발마다 노리쇠를 당겨 다음 탄을 넣는다(0.8발/초 = 1.25초)
+    name: 'Kar98k 저격소총', slot: 4,
     dmg: 240, pellets: 1, rate: 0.8, auto: false, mag: 5, reserve: 25,
     reload: 2.2, spreadHip: 0.6, spreadAds: 0.0, recoil: 7, range: 220,
-    charge: 0.35, pierce: 3, weakMul: 1.5,
+    pierce: 3, weakMul: 1.5,
   },
 };
 export const WEAPON_ORDER = ['pistol', 'shotgun', 'rifle', 'rail'];

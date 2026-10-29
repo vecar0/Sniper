@@ -155,14 +155,11 @@ export class Renderer {
         this.vm.onShot(ev.w, w ? w.player.ammo[ev.w].mag : 1);
         const muzzle = this.vm.muzzleWorld(this.camera);
         const W = WEAPONS[ev.w];
-        const energy = ev.w === 'rifle' || ev.w === 'rail';
-        const col = ev.w === 'rail' ? [0.8, 2.6, 3.2] : energy ? [0.6, 2.2, 3] : [3, 1.8, 0.8];
+        const energy = ev.w === 'rifle';
+        const col = ev.w === 'rail' ? [3.2, 2.0, 0.9] : energy ? [0.6, 2.2, 3] : [3, 1.8, 0.8];
         for (const e of ev.ends) {
-          if (ev.w === 'rail') {
-            fx.tracer(muzzle, e, col, 0.35, 0.09);
-            const n = 24, dx = e.x - muzzle.x, dy = e.y - muzzle.y, dz = e.z - muzzle.z;
-            for (let i = 0; i < n; i++) { const k = i / n; fx.energy.emit(muzzle.x + dx * k, muzzle.y + dy * k, muzzle.z + dz * k, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, 0.6, 0.4, 2, 3, 0.05, fx.now); }
-          } else if (W.pellets > 1 || Math.random() < 0.7) fx.tracer(muzzle, e, col, ev.w === 'shotgun' ? 0.06 : 0.07, ev.w === 'shotgun' ? 0.012 : 0.02);
+          if (ev.w === 'rail') fx.tracer(muzzle, e, col, 0.18, 0.035);   // 저격탄: 굵고 오래 남는 예광
+          else if (W.pellets > 1 || Math.random() < 0.7) fx.tracer(muzzle, e, col, ev.w === 'shotgun' ? 0.06 : 0.07, ev.w === 'shotgun' ? 0.012 : 0.02);
           if (e.wall) {
             const n = { x: e.nx, y: e.ny, z: e.nz };
             fx.sparkBurst(e, ev.w === 'shotgun' ? 2 : 6, n, energy ? [0.5, 2, 3] : [3, 1.6, 0.6], 5, 0.04, 0.25);

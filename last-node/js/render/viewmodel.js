@@ -107,6 +107,7 @@ export class ViewModel {
   }
 
   setWeapon(id, instant = false) {
+    this.boltK = 1;
     if (this.state && this.state.meleeK > 0 && this.guns[this.cur]) { this.state.meleeK = 0; this.meleeEnd(this.guns[this.cur]); }
     for (const k of Object.keys(this.guns)) this.guns[k].group.visible = k === id;
     this.cur = id;
@@ -132,14 +133,15 @@ export class ViewModel {
     s.kickYawV += (Math.random() - 0.5) * w.recoil * 0.9;     // 좌우로도 조금씩 튄다
     s.slideT = 0; s.boltT = 0; this.slideLock = id === 'pistol' && magLeft === 0;  // 마지막 발이면 슬라이드가 뒤로 멈춘다
     const gun = this.guns[id];
-    if (gun.casing && gun.casing !== 'shell') this.eject(gun, gun.casing);
+    if (gun.casing && gun.casing !== 'shell' && gun.casing !== 'bolt') this.eject(gun, gun.casing);
     s.flashT = 0;
     this.flash.rotation.z = Math.random() * Math.PI;
     const big = id === 'shotgun' ? 1.7 : id === 'rail' ? 1.4 : id === 'rifle' ? 1.15 : 0.85;
     this.flash.scale.setScalar(big * (0.85 + Math.random() * 0.3));
-    const col = id === 'rail' ? [0.7, 2.0, 2.8] : [2.6, 1.6 + Math.random() * 0.3, 0.9];
+    const col = [2.6, 1.6 + Math.random() * 0.3, 0.9];
     for (const c of this.flash.children) c.material.color.setRGB(...col);
-    this.muzzleLight.color.setRGB(...(id === 'rail' ? [0.45, 0.85, 1] : [1, 0.68, 0.38]));
+    this.muzzleLight.color.setRGB(1, 0.68, 0.38);
+    if (gun.bolt98) this.boltK = -0.12;   // 볼트액션: 반동이 가라앉으면(0.12초 뒤) 노리쇠 조작 시작
     if (this.guns[id].pump) { this.pumpT = 0; this.pumpEjected = false; }
   }
   onReload(id, time, empty = false) {
@@ -339,6 +341,7 @@ export class ViewModel {
     // 근접: 총으로 친다(긴 총 = 개머리판 수평 타격 후 공중에 던져 돌려 다시 잡기, 권총 = 손가락에 걸고 돌려 거꾸로 쥔 손잡이 밑으로 찍기)
     if (s.switchK > SW_DROP && s.switchK < 1 && s.meleeK <= 0) this.switchAnim(gun, s.switchK, pos, rot);
     else if (s.meleeK <= 0) { gun.rightHand.position.copy(gun.rightRest.p); gun.rightHand.quaternion.copy(gun.rightRest.q); }
+    const boltOpen = gun.bolt98 && s.meleeK <= 0 && s.switchK >= 1 ? this.boltAnim(gun, dt) : 0;
     if (s.meleeK > 0) {
       s.meleeK += dt / PLAYER.meleeDuration;
       if (s.meleeK >= 1) { s.meleeK = 0; this.meleeEnd(gun); }
@@ -351,7 +354,7 @@ export class ViewModel {
       if (s.reloadK > 0 && !gun.pump) { const r = s.reloadK; oL = 0.2 + 0.5 * Math.min(1, Math.exp(-(((r - 0.1) / 0.04) ** 2)) + Math.exp(-(((r - 0.78) / 0.04) ** 2))); }
       if (gun.pump && (s.shellLoad || s.shellK > 0)) oL = 0.3;
       const toss = this.tossOpen(s.switchK);
-      oL = Math.max(oL, toss); oR = Math.max(oR, toss);
+      oL = Math.max(oL, toss); oR = Math.max(oR, toss, boltOpen);
       if (k > 0) {
         if (this.cur === 'pistol') oL = 0.6 * Math.min(smooth(0, 0.18, k), 1 - smooth(0.82, 0.98, k));   // 권총: 놓은 왼손은 살짝 펴짐(긴 총은 두 손 다 쥔 채)
       }
@@ -481,6 +484,35 @@ export class ViewModel {
     }
   }
 
+  // ── 볼트액션: 쏜 뒤 오른손이 손목에서 노리쇠 손잡이로 → 들어 올림 → 뒤로 당김(빈 탄피 튐) → 밀기 → 내림 → 손목으로 ──
+  // 노리쇠 뭉치는 총열 축 둘레로 돌고(손잡이 90° 위로) 축을 따라 9 cm 미끄러진다. 손은 손바닥이 손잡이 공에 오도록 따라간다.
+  boltAnim(gun, dt) {
+    const B = gun.bolt98, R = gun.rightHand;
+    if (this.boltK === undefined) this.boltK = 1;
+    if (this.boltK >= 1) { B.rotation.z = 0; B.position.z = 0; return 0; }
+    this.boltK = Math.min(1, this.boltK + dt / 0.93);
+    const u = this.boltK;
+    if (u < 0) return 0;
+    const lift = smooth(0.15, 0.3, u) * (1 - smooth(0.68, 0.8, u)), pull = smooth(0.3, 0.48, u) * (1 - smooth(0.5, 0.68, u));
+    B.rotation.z = lift * 1.45; B.position.z = pull * 0.09;
+    if (u >= 0.44 && !this.boltEjected) { this.boltEjected = true; this.eject(gun, 'rifle'); }
+    if (u < 0.3) this.boltEjected = false;
+    // 손: 쉬는 자리 ↔ 손잡이 공(손바닥이 공에 닿게)
+    const reach = smooth(0.0, 0.15, u) * (1 - smooth(0.8, 1.0, u));
+    if (reach > 0) {
+      B.updateMatrix();
+      const knob = gun.boltKnob.clone().sub(new THREE.Vector3(0, B.position.y, 0)).applyMatrix4(B.matrix);
+      const palm = R.userData.palm.clone().applyQuaternion(R.quaternion);
+      const at = knob.sub(palm).add(new THREE.Vector3(0.012, 0.01, 0));
+      R.position.lerp(at, reach);
+    }
+    // 총: 노리쇠를 다루는 동안 총을 얼굴 쪽으로 30 cm 당겨 올리고(배그처럼 오른손이 화면 가까이 크게) 살짝 왼쪽으로 눕힌다
+    const tilt = reach * 0.12;
+    gun.group.rotation.z += tilt; gun.group.rotation.x += tilt * 0.4;
+    gun.group.position.add(new THREE.Vector3(-0.03, 0.17, 0.3).multiplyScalar(reach));
+    return 0.6 * Math.min(smooth(0.02, 0.1, u), 1 - smooth(0.12, 0.17, u)) + 0.6 * Math.min(smooth(0.78, 0.84, u), 1 - smooth(0.9, 0.98, u));
+  }
+
   // 팔 2관절 IK: 어깨(뷰모델 공간 고정) → 팔의 부모(총·펌프) 공간으로 옮겨 푼다
   solveArms(gun) {
     for (const a of [gun.leftArm, gun.rightArm]) {
@@ -513,7 +545,7 @@ const HIP = {
   // 긴 총: 오른쪽 아래에 낮게, 기울이지 않고(조준경이 바로 섬) 총구만 십자선 쪽으로 모인다 — 참고 사진의 총구·조준경·총몸 화면 위치에 맞춘 값
   rifle: [0.16, -0.14, -0.38, 0.2, 0, 0],
   shotgun: [0.09, -0.16, -0.42, 0.05, 0.25, 0.02],   // 배그 S1897 1인칭 화면에 겹쳐 맞춘 값(총 카메라 시야각 58°와 함께, 리시버가 겹치게 살짝 눕힘)
-  rail: [0.16, -0.14, -0.37, 0.2, 0, 0],
+  rail: [0.16, -0.36, -0.7, 0.15, 0, 0.3],   // 배그 Kar98k 1인칭 화면에 겹쳐 맞춘 값(총구·앞나무·리시버 화면 위치 + 굵기)
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = (x) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };

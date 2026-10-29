@@ -100,9 +100,10 @@ export class Audio {
       this.tone(o, t, 0.09, { type: 'sawtooth', f0: 900, f1: 180, gain: 0.22 });
       this.tone(o, t, 0.08, { type: 'sine', f0: 180, f1: 60, gain: 0.55 });
     } else if (w === 'rail') {
-      this.tone(o, t, 0.5, { type: 'sawtooth', f0: 2400, f1: 80, gain: 0.45 });
-      this.tone(o, t, 0.6, { type: 'sine', f0: 90, f1: 30, gain: 1.0 });
-      this.noise(o, t, 0.7, { type: 'highpass', freq: 3000, gain: 0.4, f2: 600 });
+      // 볼트액션 저격소총: 날카로운 큰 총성 + 긴 울림, 뒤이어 노리쇠 올림·당김·밀기·내림 쇳소리
+      this.noise(o, t, 0.35, { freq: 2600, q: 0.9, gain: 1.0, f2: 500 });
+      this.tone(o, t, 0.5, { type: 'sine', f0: 140, f1: 34, gain: 1.2 });
+      for (const [d, f] of [[0.2, 1800], [0.36, 2600], [0.62, 2200], [0.8, 1500]]) this.noise(o, t + d, 0.05, { freq: f, q: 5, gain: 0.45 });
     }
   }
   charge() { if (!this.ctx) return; const t = this.ctx.currentTime, o = this.out(0.5, 0, 0.1); this.tone(o, t, 0.35, { type: 'sawtooth', f0: 200, f1: 1600, gain: 0.18, attack: 0.3 }); }
@@ -114,7 +115,6 @@ export class Audio {
     this.noise(o, t + 0.1, 0.05, { freq: 2200, q: 5, gain: 0.7 });
     this.noise(o, t + time * 0.55, 0.06, { freq: 1500, q: 5, gain: 0.8 });
     this.noise(o, t + time * 0.85, 0.05, { freq: 3000, q: 6, gain: 0.7 });
-    if (w === 'rail') this.tone(o, t + time * 0.8, 0.3, { type: 'sine', f0: 300, f1: 1200, gain: 0.15 });
   }
   shell() { if (!this.ctx) return; const t = this.ctx.currentTime; this.noise(this.out(0.5, 0.15, 0.05), t, 0.05, { freq: 1800, q: 5, gain: 0.7 }); }
   switchW() { if (!this.ctx) return; const t = this.ctx.currentTime, o = this.out(0.4, 0, 0); this.noise(o, t, 0.06, { freq: 1200, q: 3, gain: 0.5 }); this.noise(o, t + 0.12, 0.05, { freq: 2500, q: 5, gain: 0.5 }); }

@@ -7,7 +7,7 @@ import { WEAPONS } from '../config/balance.js';
 const ICON = {
   shotgun: '<path d="M2 11h15l3-2h2v4h-5l-2 3H9l-1 3H5l1-4H2z"/>',
   rifle: '<path d="M2 10h12l2-2h6v3h-4l-2 2h-3l-1 5h-3l1-5H8l-1 3H4l1-3H2z"/>',
-  rail: '<path d="M2 10h20v4H2z"/><path d="M6 10v4M10 10v4M14 10v4M18 10v4"/>',
+  rail: '<path d="M1 12h15l2-1h5v2h-4l-3 2H8l-2 3H2l2-3H1z"/><path d="M7 9h8v2H7z"/>',
   up: '<path d="M12 4l7 7h-4v9H9v-9H5z"/>',
   heart: '<path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>',
   shield: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>',

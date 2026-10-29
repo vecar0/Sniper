@@ -2,7 +2,7 @@
 import { WEAPONS, PLAYER, SCORE } from '../config/balance.js';
 import { scopedView } from '../sim/player.js';
 
-const SHORT = { pistol: '권총', shotgun: '산탄총', rifle: '소총', rail: '레일건' };
+const SHORT = { pistol: '권총', shotgun: '산탄총', rifle: '소총', rail: 'Kar98k' };
 
 // 군용 계기판처럼: 숫자는 좁은 고딕(Barlow Condensed), 설명은 IBM Plex Sans KR. 상자 없이 화면에 바로 쓴다.
 // 색은 의미에만: 빨강 = 위협·피해, 호박 = 점수·연속 처치(투광등과 같은 색), 그 밖은 차가운 흰색.
@@ -128,7 +128,7 @@ export class Hud {
       t.style.top = `${-gap - 8}px`; b.style.top = `${gap}px`; l.style.left = `${-gap - 8}px`; r.style.left = `${gap}px`;
     }
     E.cross.classList.toggle('ads', p.ads > 0.7 && p.weapon !== 'shotgun');
-    // 레일건 조준경: 정조준하면 화면 전체가 조준경 시야(총 모델은 숨긴다)
+    // 저격소총 조준경: 정조준하면 화면 전체가 조준경 시야(총 모델은 숨긴다)
     const scoped = scopedView(p);
     E.scope.classList.toggle('hidden', !scoped);
     E.cross.classList.toggle('hidden', scoped);
