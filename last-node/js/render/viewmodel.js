@@ -37,6 +37,7 @@ export class ViewModel {
       this.root.add(gun.group);
       this.guns[id] = gun;
     }
+    this.hip = HIP;   // 허리 사격 자세(테스트에서 바꿔 볼 수 있게)
     // 사람 관절 범위 맞춤: 허리 사격 자세·몸에 붙은 어깨 기준으로 손목이 가동 범위 안에 들도록 손 각도를 고르고 손가락을 다시 감싼다
     for (const [id, gun] of Object.entries(this.guns)) {
       const H = HIP[id];
@@ -47,8 +48,10 @@ export class ViewModel {
         const mirror = arm.userData.mirror;
         // 뷰모델 어깨: 실제 어깨 자리(눈 아래 20 cm)에 두면 아래팔이 카메라 바로 앞을 가로질러 화면을 덮는다.
         // 1인칭 게임처럼 화면 아래·뒤로 내려 팔이 화면 아래 모서리로 빠져나가게 한다(팔 길이는 실제 그대로)
-        arm.userData.Sroot = new THREE.Vector3(mirror ? -0.2 : 0.22, -0.5, 0.1);
-        arm.userData.poleRoot = new THREE.Vector3(mirror ? -0.6 : 0.6, -1, 0.25).normalize();
+        // 긴 총의 앞손: 팔이 화면 아래 가운데에서 곧게 올라와 총열 덮개 앞을 받친다(아래팔이 거의 세로)
+        const fore = mirror && id !== 'pistol';
+        arm.userData.Sroot = fore ? new THREE.Vector3(0.1, -0.8, -0.1) : new THREE.Vector3(mirror ? -0.2 : 0.22, -0.5, 0.1);
+        arm.userData.poleRoot = (fore ? new THREE.Vector3(0.5, -1, 0) : new THREE.Vector3(mirror ? -0.6 : 0.6, -1, 0.25)).normalize();
         arm.parent.updateWorldMatrix(true, false);
         const toP = _m2.copy(arm.parent.matrixWorld).invert().multiply(this.root.matrixWorld);
         gun.wrist = gun.wrist || {};
@@ -222,7 +225,7 @@ export class ViewModel {
     s.roll += (rollT - s.roll) * Math.min(1, dt * 10);
     s.flashT += dt;
 
-    const H = HIP[this.cur];
+    const H = this.hip[this.cur];
     const hip = new THREE.Vector3(H[0], H[1], H[2]);
     const adsPos = new THREE.Vector3(0, -gun.sightY, gun.adsZ);
     const pos = hip.lerp(adsPos, ads);
@@ -507,9 +510,10 @@ const SW_DROP = 0.24, SW_CATCH = 0.82;
 const HIP = {
   // 긴 총은 개머리를 어깨에 댄 자세: 앞손(왼손)과 손잡이 손(오른손)이 모두 화면 아래쪽에 보이게 조금 높고 멀리
   pistol: [0.05, -0.068, -0.35, 0.05, -0.03],   // 두 손이 다 보이게 조금 높고 가운데로
-  rifle: [0.12, -0.1, -0.36, 0.26, -0.08, 0.07],   // 오른쪽 아래에 낮게, 총구는 십자선 쪽으로 모이며 살짝 들림
-  shotgun: [0.12, -0.115, -0.4, 0.26, -0.08, 0.07],
-  rail: [0.12, -0.1, -0.34, 0.26, -0.08, 0.07],
+  // 긴 총: 오른쪽 아래에 낮게, 기울이지 않고(조준경이 바로 섬) 총구만 십자선 쪽으로 모인다 — 참고 사진의 총구·조준경·총몸 화면 위치에 맞춘 값
+  rifle: [0.16, -0.14, -0.38, 0.2, 0, 0],
+  shotgun: [0.16, -0.15, -0.42, 0.2, 0, 0],
+  rail: [0.16, -0.14, -0.37, 0.2, 0, 0],
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = (x) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
