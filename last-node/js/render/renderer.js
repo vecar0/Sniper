@@ -96,6 +96,12 @@ export class Renderer {
     vmPass.clear = false; vmPass.clearDepth = true;
     composer.addPass(vmPass);
     this.vmPass = vmPass;
+    // 블룸 앞 정리: NaN·무한대 한 픽셀이 블룸 흐림에 번지면 큰 검은 얼룩으로 깜빡인다 → 0으로 바꾸고 너무 밝은 값은 자른다
+    composer.addPass(new ShaderPass({
+      uniforms: { tDiffuse: { value: null } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ vec4 c = texture2D(tDiffuse, vUv); bool bad = !(c.r == c.r && c.g == c.g && c.b == c.b) || max(c.r, max(c.g, c.b)) > 6.0e4; gl_FragColor = bad ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(clamp(c.rgb, 0.0, 32.0), 1.0); }',
+    }));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.5, 0.88);
     this.bloom.enabled = this.quality !== 'low';
     composer.addPass(this.bloom);

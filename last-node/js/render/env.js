@@ -55,7 +55,7 @@ void main(){
   vec3 col = mix(uMid, uZenith, smoothstep(0.08, 0.7, y));
   col = mix(uHorizon, col, smoothstep(-0.05, 0.3, y));
   // 노을 잔광: 서쪽 지평선 가까이만, 낮을수록 따뜻하게
-  float az = max(dot(normalize(vec3(d.x, 0.0, d.z)), uDuskDir), 0.0);
+  float az = max(dot(vec3(d.x, 0.0, d.z) / max(length(d.xz), 1e-4), uDuskDir), 0.0);   // 바로 위(천정)에서 normalize(0) = NaN이 되지 않게
   col += uDusk * pow(az, 3.0) * smoothstep(0.35, 0.0, y) * smoothstep(-0.08, 0.04, y) * 0.9;
   // 별(구름 뒤에선 가려짐)
   vec3 sp = floor(d * 420.0);
@@ -210,7 +210,7 @@ void main(){
   drift.x += sin(t * 0.7 + aOff.y * 30.0) * 0.8; drift.z += cos(t * 0.6 + aOff.x * 25.0) * 0.6;
   vec3 p = mod(aOff.xyz * uBox + drift - cameraPosition, uBox) - uBox * 0.5 + cameraPosition;
   vec3 view = normalize(cameraPosition - p);
-  vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), view)), up = cross(view, right);
+  vec3 rr = cross(vec3(0.0, 1.0, 0.0), view); vec3 right = dot(rr, rr) > 1e-8 ? normalize(rr) : vec3(1.0, 0.0, 0.0), up = cross(view, right);
   float size = 0.035 * aOff.w;
   vec3 w = p + (right * position.x + up * position.y) * size;
   vUv = uv;

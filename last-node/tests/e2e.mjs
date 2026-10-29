@@ -159,7 +159,8 @@ const browser = await playwright.chromium.launch({ args: ARGS });
   await check('게임 오버 → 다시 하기 5번 반복해도 지오메트리·텍스처 수가 늘지 않는다', async () => {
     const counts = [];
     for (let i = 0; i < 6; i++) {
-      await W(page, () => { __ln.app.state = 'play'; __ln.world.hurtPlayer(1e9, null, 'test', true); });
+      // 이미 쓰러져 결과를 기다리는 중이면 상태를 되돌리지 않는다(되돌리면 결과 화면 타이머가 건너뛴다)
+      await W(page, () => { if (__ln.app.state !== 'over') { __ln.app.state = 'play'; __ln.world.hurtPlayer(1e9, null, 'test', true); } });
       const shown = await page.waitForSelector('[data-a=retry]', { timeout: 15000 }).then(() => true).catch(() => false);
       assert(shown, `다시 하기 버튼 없음 (${i}) ${JSON.stringify(await W(page, () => ({ app: __ln.app.state, w: __ln.world.state, alive: __ln.world.player.alive, hp: __ln.world.player.hp, menu: __ln.app.menus.current, body: document.body.className, ui: document.getElementById('ui').innerHTML.slice(0, 80) })))}`);
       await page.click('[data-a=retry]');

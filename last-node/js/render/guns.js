@@ -121,7 +121,9 @@ if (uBump > 0.0) {
   vec3 r1 = cross(dpdy, normal), r2 = cross(normal, dpdx);
   float det = dot(dpdx, r1);
   vec3 grad = sign(det) * (dFdx(hh) * r1 + dFdy(hh) * r2) * amp;
-  normal = normalize(abs(det) * normal - grad);
+  // 아주 작은·비스듬한 면에선 det·grad가 0에 가까워 normalize(0) = NaN → 화면에 검은 얼룩(블룸이 번진다). 길이가 있을 때만
+  vec3 nb = abs(det) * normal - grad;
+  if (dot(nb, nb) > 1e-16) normal = normalize(nb);
 }`);
   };
   m.customProgramCacheKey = () => 'finish-' + key;
