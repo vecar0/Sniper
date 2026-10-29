@@ -1,5 +1,3 @@
-> **부스 호출 버튼: [booth-call](https://vecar0.github.io/Sniper/booth-call/)** — 동아리 부스에서 어떤 게임이든 옆에 띄워 두고 누르면 부원 휴대폰(ntfy 앱)과 현황판에 알림. 설정 화면에서 노트북별 주소를 만든다(`booth-call/index.html`).
-
 > **새 게임: [LAST NODE – 신서울 옥상 방어전](last-node/README.md)** — 비 내리는 사이버펑크 옥상에서 코어를 지키는 웨이브 생존 FPS · 플레이: https://vecar0.github.io/Sniper/last-node/
 
 # LONG SHOT – 옥상 저격전
