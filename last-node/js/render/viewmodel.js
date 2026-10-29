@@ -3,7 +3,7 @@
 // · 왼손이 실제로 탄창을 빼고 끼우는 단계별 재장전(탄창이 비었으면 슬라이드·장전 손잡이 당김) · 교체 · 근접 · 투척 · 대시 기울기
 import * as THREE from 'three';
 import { WEAPONS, PLAYER } from '../config/balance.js';
-import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm, viewmodelLights, shadowGun, fitHand } from './guns.js';
+import { gunMaterials, viewmodelEnvironment, buildGun, buildKnifeHand, aimArm, viewmodelLights, shadowGun, fitHand, placeBoltHand } from './guns.js';
 
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _v1 = new THREE.Vector3();
 
@@ -497,20 +497,21 @@ export class ViewModel {
     B.rotation.z = lift * 1.45; B.position.z = pull * 0.09;
     if (u >= 0.44 && !this.boltEjected) { this.boltEjected = true; this.eject(gun, 'rifle'); }
     if (u < 0.3) this.boltEjected = false;
-    // 손: 쉬는 자리 ↔ 손잡이 공(손바닥이 공에 닿게)
+    // 손: 쉬는 자리 ↔ 손잡이 공. 손바닥을 아래로 해 공을 위에서 감아 쥐고, 노리쇠와 함께 돌고 뒤로 간다.
+    // 손잡이가 내려가 있을 때(들기 전·민 뒤)는 공이 개머리 나무에 붙어 있으니 손을 조금 바깥(오른쪽 위)에 띄운다
     const reach = smooth(0.0, 0.15, u) * (1 - smooth(0.8, 1.0, u));
     if (reach > 0) {
-      B.updateMatrix();
-      const knob = gun.boltKnob.clone().sub(new THREE.Vector3(0, B.position.y, 0)).applyMatrix4(B.matrix);
-      const palm = R.userData.palm.clone().applyQuaternion(R.quaternion);
-      const at = knob.sub(palm).add(new THREE.Vector3(0.012, 0.01, 0));
-      R.position.lerp(at, reach);
+      const p0 = R.position.clone(), q0 = R.quaternion.clone();
+      placeBoltHand(R, B, gun.boltHand, gun.boltKnob);
+      R.position.add(new THREE.Vector3(0.018, 0.012, 0).multiplyScalar(1 - lift));
+      R.position.lerpVectors(p0, R.position, reach); R.quaternion.slerpQuaternions(q0, R.quaternion, reach);
     }
-    // 총: 노리쇠를 다루는 동안 총을 얼굴 쪽으로 30 cm 당겨 올리고(배그처럼 오른손이 화면 가까이 크게) 살짝 왼쪽으로 눕힌다
-    const tilt = reach * 0.12;
-    gun.group.rotation.z += tilt; gun.group.rotation.x += tilt * 0.4;
-    gun.group.position.add(new THREE.Vector3(-0.03, 0.17, 0.3).multiplyScalar(reach));
-    return 0.6 * Math.min(smooth(0.02, 0.1, u), 1 - smooth(0.12, 0.17, u)) + 0.6 * Math.min(smooth(0.78, 0.84, u), 1 - smooth(0.9, 0.98, u));
+    // 총: 노리쇠를 다루는 동안 총을 들어 올려 왼쪽으로 눕힌다 — 노리쇠와 손이 화면 가운데 아래에 보이게
+    const P = this.boltPose || BOLT_POSE;
+    gun.group.position.add(new THREE.Vector3(P[0], P[1], P[2]).multiplyScalar(reach));
+    gun.group.rotation.z += P[3] * reach; gun.group.rotation.x += P[4] * reach; gun.group.rotation.y += P[5] * reach;
+    // 손가락: 다가갈 때 펴고, 손잡이가 들려 있는 동안만 공을 감아 쥔다
+    return reach * (0.75 - 0.6 * lift);
   }
 
   // 팔 2관절 IK: 어깨(뷰모델 공간 고정) → 팔의 부모(총·펌프) 공간으로 옮겨 푼다
@@ -536,6 +537,8 @@ export class ViewModel {
 }
 
 // 교체 동작: 0~SW_DROP 든 총 내리기, ~SW_CATCH 새 총이 날아옴(받는 순간), 이후 받은 무게에 눌렸다 올라옴
+// 노리쇠를 다룰 때 총 자세 변화 [x, y, z, 기울기, 총구 들기, 좌우] — 노리쇠 쪽이 화면 가운데 아래로 오게 들어 올린다
+const BOLT_POSE = [-0.06, 0.22, 0.2, 0.14, -0.12, 0.05];
 const SW_DROP = 0.24, SW_CATCH = 0.82;
 
 // 허리 사격 위치 [x, y, z, 좌우 비틀기, 기울기, 총구 들기] — 총마다 길이·손잡이 위치가 다르다

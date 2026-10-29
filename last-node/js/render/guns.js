@@ -452,6 +452,15 @@ export function placeHand(hand, { index, pinky, wrist }) {
   hand.updateMatrix();
 }
 
+// 노리쇠를 다루는 손: 손 기준점(노리쇠 좌표)을 손잡이 공을 따라 옮긴다 — 공 위치는 노리쇠와 똑같이, 손목은 노리쇠 회전의 일부(spin)만 따라 돈다
+export function placeBoltHand(hand, bolt, grip, knob, spin = 0.4) {
+  bolt.updateMatrix();
+  const k0 = new THREE.Vector3(knob.x, knob.y - bolt.position.y, knob.z), k1 = k0.clone().applyMatrix4(bolt.matrix);
+  const M = new THREE.Matrix4().makeTranslation(k1.x, k1.y, k1.z).multiply(new THREE.Matrix4().makeRotationZ(bolt.rotation.z * spin)).multiply(new THREE.Matrix4().makeTranslation(-k0.x, -k0.y, -k0.z));
+  const t = (k) => new THREE.Vector3(...grip[k]).applyMatrix4(M).toArray();
+  placeHand(hand, { index: t('index'), pinky: t('pinky'), wrist: t('wrist') });
+}
+
 export function fitHand(gunGroup, hand, others = [], trigger = null) {
   gunGroup.updateMatrixWorld(true);
   let targets = [];
@@ -1100,6 +1109,8 @@ function buildRail(g, add, M, out, X) {
   add(new THREE.SphereGeometry(0.0085, 14, 10).translate(0.041, -0.024, 0.118), 'gunsteel', bolt);                                     // 손잡이 끝 공
   add(side([[0.15, 0.006], [0.156, 0.016, 0.002], [0.15, 0.02], [0.145, 0.008]], 0.004, { bevel: 0.0008 }), 'steel', bolt);
   out.boltKnob = new THREE.Vector3(0.041, -0.024 + A, 0.118);
+  // 노리쇠를 다룰 때 오른손 자리(노리쇠 기준 좌표): 손바닥을 아래로 해 손잡이 공을 오른쪽 위에서 감아 쥔다 — 손은 총 바깥에 머문다
+  out.boltHand = { index: [0.071, -0.009, 0.148], pinky: [0.076, -0.014, 0.088], wrist: [0.141, -0.024, 0.168] };
   // ── 방아쇠울 · 방아쇠 · 탄창 바닥판 ──
   add(side([[0.095, -0.044], [0.088, -0.064, 0.006], [0.05, -0.068, 0.008], [0.03, -0.046]], 0.014, { holes: [[[0.084, -0.047], [0.08, -0.058, 0.004], [0.054, -0.06, 0.004], [0.042, -0.047]]], bevel: 0.001 }), 'gunsteel');
   add(side([[0.072, -0.044], [0.068, -0.054, 0.003], [0.073, -0.06], [0.076, -0.06], [0.076, -0.044]], 0.005, { bevel: 0.0006 }), 'steel');

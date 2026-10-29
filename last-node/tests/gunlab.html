@@ -10,7 +10,7 @@
 <script type="module">
 // 개발용: ?gun=rifle&yaw=0.6&pitch=0.2&dist=1.1 — 총 하나를 어두운 배경에서 돌려 본다(손·재질·윤곽 검수)
 import * as THREE from 'three';
-import { gunMaterials, viewmodelEnvironment, buildGun, viewmodelLights, shadowGun } from '../js/render/guns.js';
+import { gunMaterials, viewmodelEnvironment, buildGun, viewmodelLights, shadowGun, placeBoltHand } from '../js/render/guns.js';
 const q = new URLSearchParams(location.search);
 const r = new THREE.WebGLRenderer({ antialias: true });
 r.setSize(innerWidth, innerHeight); r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap; r.setPixelRatio(1);
@@ -24,6 +24,8 @@ const M = gunMaterials(env);
 const ammo = new THREE.MeshBasicMaterial({ color: 0x223322 });
 const gun = buildGun(q.get('gun') || 'rifle', M, { ammoMat: ammo, reticleMat: ammo, scopeMat: ammo });
 scene.add(gun.group); shadowGun(gun.group);
+if (q.get('bolt') && gun.bolt98) { const [rz, pz] = q.get('bolt').split(',').map(Number); gun.bolt98.rotation.z = rz; gun.bolt98.position.z = pz; }
+if (q.get('bg') && gun.boltHand) { const v = q.get('bg') === '1' ? null : q.get('bg').split(',').map(Number); placeBoltHand(gun.rightHand, gun.bolt98, v ? { index: v.slice(0, 3), pinky: v.slice(3, 6), wrist: v.slice(6, 9) } : gun.boltHand, gun.boltKnob); }
 if (q.get("noarms")) gun.group.traverse((o) => { if (o.userData && o.userData.rig) o.visible = false; });
 if (q.get("noarm")) gun.group.traverse((o) => { if (o.isMesh && [M.sleeve, M.glove, M.knuckle].includes(o.material)) o.visible = false; });
 const box = new THREE.Box3(); gun.group.updateMatrixWorld(true); gun.group.traverse((o) => { if (o.isMesh && o.visible && o.parent.visible) box.expandByObject(o); }); const c = q.get("tgt") ? new THREE.Vector3(...q.get("tgt").split(",").map(Number)) : box.getCenter(new THREE.Vector3());
