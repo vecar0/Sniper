@@ -48,10 +48,10 @@ export class ViewModel {
         const mirror = arm.userData.mirror;
         // 뷰모델 어깨: 실제 어깨 자리(눈 아래 20 cm)에 두면 아래팔이 카메라 바로 앞을 가로질러 화면을 덮는다.
         // 1인칭 게임처럼 화면 아래·뒤로 내려 팔이 화면 아래 모서리로 빠져나가게 한다(팔 길이는 실제 그대로)
-        // 긴 총의 앞손: 팔이 화면 아래 가운데에서 곧게 올라와 총열 덮개 앞을 받친다(아래팔이 거의 세로)
+        // 긴 총의 앞손: 아래팔이 화면 왼쪽 아래에서 비스듬히 올라와 총열 덮개 앞쪽 옆면을 잡는다(참고 사진)
         const fore = mirror && id !== 'pistol';
-        arm.userData.Sroot = fore ? new THREE.Vector3(0.1, -0.8, -0.1) : new THREE.Vector3(mirror ? -0.2 : 0.22, -0.5, 0.1);
-        arm.userData.poleRoot = (fore ? new THREE.Vector3(0.5, -1, 0) : new THREE.Vector3(mirror ? -0.6 : 0.6, -1, 0.25)).normalize();
+        arm.userData.Sroot = fore ? new THREE.Vector3(-0.1, -0.75, 0.05) : new THREE.Vector3(mirror ? -0.2 : 0.22, -0.5, 0.1);
+        arm.userData.poleRoot = (fore ? new THREE.Vector3(-0.6, -1, 0.2) : new THREE.Vector3(mirror ? -0.6 : 0.6, -1, 0.25)).normalize();
         arm.parent.updateWorldMatrix(true, false);
         const toP = _m2.copy(arm.parent.matrixWorld).invert().multiply(this.root.matrixWorld);
         gun.wrist = gun.wrist || {};
