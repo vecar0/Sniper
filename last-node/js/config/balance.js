@@ -11,18 +11,19 @@ export const PLAYER = {
   crouchHeight: 1.1,
   eye: 1.65,             // 서 있을 때 눈높이
   crouchEye: 1.0,
-  speed: 7.0,            // 기본 이동이 빠르다(달리기 키 없음)
-  crouchSpeed: 3.0,
+  speed: 4.8,            // 느린 전술 템포: 걸어서 엄폐물 사이를 옮겨 다닌다
+  crouchSpeed: 2.3,
+  crouchSpread: 0.65,    // 앉아 쏘면 탄 퍼짐 ×0.65
   groundAccel: 70,
   airAccel: 22,
   friction: 12,
   gravity: 22,           // 현실(9.8)보다 강하게 → 점프가 둔하지 않다
   jumpHeight: 1.3,
   stepUp: 0.55,          // 계단 한 칸(0.25)은 그냥 걸어 오른다
-  dashDist: 6,
+  dashDist: 4,
   dashTime: 0.18,
-  dashCharges: 2,
-  dashRecharge: 1.4,
+  dashCharges: 1,
+  dashRecharge: 3,
   dashDamageMul: 0.5,
   slideTime: 0.7,
   slideBoost: 10.5,
@@ -90,34 +91,34 @@ export const EMP = {
 
 // 적(북천 기지 방어 로봇). 내부 키는 이전 이름 그대로: reaper=하운드, enforcer=보병 로봇, leech=수리 로봇, drone=FPV 드론, mech=무인 전투차량, boss=틸트로터 건십.
 // hp는 웨이브 배수 적용 전 값, points=처치 점수
-// 이동 속도는 전보다 약 15% 느리게(하운드 6.2→5.3, 보병 3.4→2.9, 수리 4.0→3.4, 드론 5.5→4.7, 전투차량 2.2→1.9)
+// 이동 속도: 느린 전술 템포에 맞춰 다시 약 20% 느리게(하운드 4.2, 보병 2.4, 수리 2.8, 드론 4.0, 전투차량 1.6)
 export const ENEMIES = {
   reaper: {
-    name: '하운드', hp: 50, speed: 5.3, radius: 0.38, height: 1.0, target: 'player', points: 50,
+    name: '하운드', hp: 50, speed: 4.2, radius: 0.38, height: 1.0, target: 'player', points: 50,
     meleeDmg: 14, meleeRate: 0.8, leapRange: 3.0, leapWindup: 0.3, leapTime: 0.35, leapStagger: 0.6, hitRange: 1.5,
     parts: [ // [오른쪽, 위, 앞, 반지름, 배수] — 4족: 앞쪽 센서 머리가 약점
       [0, 0.74, 0.52, 0.17, 'weak'], [0, 0.62, 0.18, 0.3, 1], [0, 0.6, -0.24, 0.3, 1], [0, 0.3, 0, 0.26, 1],
     ],
   },
   enforcer: {
-    name: '보병 로봇', hp: 120, speed: 2.9, radius: 0.36, height: 1.9, target: 'player', points: 80,
-    burst: 3, burstGap: 0.11, dmg: 4, fireEvery: 2.3, aimTime: 0.4, accuracy: 0.3,
+    name: '보병 로봇', hp: 120, speed: 2.4, radius: 0.36, height: 1.9, target: 'player', points: 80,
+    burst: 3, burstGap: 0.11, dmg: 6, fireEvery: 2.3, aimTime: 0.4, accuracy: 0.3,
     rangeMin: 10, rangeMax: 26, repositionMin: 5, repositionMax: 8, tooClose: 5, bulletSpeed: 70,
     parts: [[0, 1.72, 0.04, 0.21, 'weak'], [0, 1.3, 0, 0.36, 1], [0, 0.9, 0, 0.32, 1], [0, 0.45, 0, 0.3, 1]],
   },
   leech: {
-    name: '수리 로봇', hp: 70, speed: 3.4, radius: 0.5, height: 1.2, target: 'ally', points: 90,
+    name: '수리 로봇', hp: 70, speed: 2.8, radius: 0.5, height: 1.2, target: 'ally', points: 90,
     heal: 18, healRange: 10, keepDist: 14, interrupt: 0.4, // 다친 아군에게 초당 18 회복, 맞으면 0.4초 끊김
     parts: [[0, 1.02, -0.1, 0.2, 'weak'], [0, 0.55, 0, 0.42, 1], [0, 0.5, 0.42, 0.3, 1], [0, 0.5, -0.42, 0.3, 1]],
   },
   drone: {
-    name: 'FPV 드론', hp: 20, speed: 4.7, radius: 0.35, height: 0.5, target: 'player', points: 30,
+    name: 'FPV 드론', hp: 20, speed: 4.0, radius: 0.35, height: 0.5, target: 'player', points: 30,
     // 대처할 틈: 4.5m 안에 오면 0.9초 동안 깜빡이며 멈칫한 뒤, 그 순간 방향으로 곧게 돌진(따라 꺾지 않는다 → 옆으로 피할 수 있다)
     flyMin: 2, flyMax: 4, triggerDist: 4.5, windup: 0.9, diveSpeed: 9.5, boomDmg: 12, boomRadius: 1.8, chain: 1.5,
     parts: [[0, 0, 0.1, 0.22, 'weak'], [0, 0, 0, 0.45, 1]], // 맞히기 쉽게 판정을 조금 크게
   },
   mech: {
-    name: '무인 전투차량', hp: 600, speed: 1.9, radius: 1.1, height: 2.4, target: 'player', points: 350,
+    name: '무인 전투차량', hp: 600, speed: 1.6, radius: 1.1, height: 2.4, target: 'player', points: 350,
     punchDmg: 30, punchEvery: 2.5, punchRange: 3.2, missileDmg: 25, missileRadius: 3, missileEvery: 6, // punch = 들이받기
     missileRange: 25, missileWarn: 1, missileSpeed: 18, turnRate: 1.0, shieldMul: 0.3, backMul: 2.5, holdDist: 9,
     parts: [ // 정면 장갑판 ×0.3, 뒤 엔진 덮개 ×2.5
@@ -135,19 +136,19 @@ export const ENEMIES = {
 };
 
 export const WAVES = {
-  count: (w) => Math.min(45, 6 + 3 * w),   // 적 양을 줄였다(1웨이브 9, 5웨이브 21)
-  aliveCap: 12,
-  bossAliveCap: 8,
+  count: (w) => Math.min(30, 5 + 2 * w),   // 느린 템포: 한 웨이브 적이 적고(1웨이브 7, 5웨이브 15) 한 번에 많이 몰려오지 않는다
+  aliveCap: 7,
+  bossAliveCap: 5,
   hpMul: (w) => Math.min(2.2, 1 + 0.07 * (w - 1)),
   dmgMul: (w) => Math.min(2.2, 1 + 0.04 * (w - 1)),
   bossEvery: 5,
-  intermission: 3,        // 보급 화면을 닫은 뒤 다음 웨이브까지
+  intermission: 5,        // 보급 화면을 닫은 뒤 다음 웨이브까지
   firstDelay: 6,
-  stairsEvery: [1.0, 1.6],   // 적이 줄어든 만큼 천천히 나와 숨 돌릴 틈이 있다
-  elevatorFrom: 2, elevatorEvery: 12, elevatorGroup: [4, 6],
-  dropshipFrom: 4, dropshipEvery: 18, dropshipGroup: 3, dropshipWarn: 1.5,
+  stairsEvery: [2.5, 4.0],   // 적이 줄어든 만큼 천천히 나와 숨 돌릴 틈이 있다
+  elevatorFrom: 2, elevatorEvery: 18, elevatorGroup: [2, 3],
+  dropshipFrom: 4, dropshipEvery: 26, dropshipGroup: 3, dropshipWarn: 1.5,
   droneFrom: 3, leechFrom: 2, mechFrom: 6,
-  mix: { reaper: 40, enforcer: 25, leech: 12, drone: 10 },
+  mix: { reaper: 22, enforcer: 50, leech: 12, drone: 8 },   // 엄폐물 사이 총격전 위주(보병 로봇이 절반)
   medicMax: (w) => 1 + Math.floor(w / 4), // 동시에 있을 수 있는 수리 로봇
   mechMax: (w) => Math.floor(w / 3),
   mechChance: 0.06,
@@ -158,7 +159,7 @@ export const WAVES = {
 export const SCORE = {
   weakBonus: 0.5, meleeBonus: 0.3,
   comboWindow: 2.5, comboStep: 0.1, comboMax: 2.0,
-  par: (w) => 30 + 4 * w,   // 웨이브 기준 시간(초)
+  par: (w) => 50 + 6 * w,   // 웨이브 기준 시간(초)
   parPerSec: 20, parHeal: 15,
   waveHeal: 25,             // 웨이브를 정리하면 기본 회복(상점 회복 대신)
 };

@@ -194,17 +194,15 @@ test('EMP: 반경 5m 기계 적 2.5초 기절, 기절한 적 근접 처치 = 체
 });
 
 // ── 이동 ────────────────────────────────────────────────
-test('대시: 2회 충전, 1.4초마다 1회 회복, 대시 중 피해 50%', () => {
+test('대시: 1회 충전, PLAYER.dashRecharge초마다 회복, 대시 중 피해 50%', () => {
   const w = sandbox(12);
   put(w, 0, 16);
   const p = w.player;
   w.input.dash = true; w.step(DT);
-  assert.equal(p.dashCharges, 1);
-  run(w, 0.25); w.input.dash = true; w.step(DT);
-  assert.equal(p.dashCharges, 0);
+  assert.equal(p.dashCharges, PLAYER.dashCharges - 1);
   w.input.dash = true; w.step(DT);
   assert.equal(p.dashCharges, 0, '충전 없이 대시됨');
-  run(w, 1.45); assert.equal(p.dashCharges, 1);
+  run(w, PLAYER.dashRecharge + 0.05); assert.equal(p.dashCharges, 1);
   w.input.dash = true; w.step(DT);
   const hp = p.hp; w.hurtPlayer(20, null, 'test', true); assert.equal(hp - p.hp, 10);
 });
@@ -329,7 +327,7 @@ test('카드: 효과 적용 · 최대 단계 카드는 다시 안 나옴', () =>
   const w = new World({ seed: 5 });
   const p = w.player;
   w.applyCard('maxhp'); assert.equal(p.maxHp, 125);
-  w.applyCard('dash+'); assert.equal(p.dashMax, 3);
+  w.applyCard('dash+'); assert.equal(p.dashMax, PLAYER.dashCharges + 1);
   w.applyCard('emp'); assert.equal(p.emp, 2); assert.equal(p.empMax, PLAYER.empMax + 1);
   w.taken['dash+'] = 1;
   for (let i = 0; i < 30; i++) { w.wave = 1; w.state = 'wave'; w.clearWave(); assert.ok(!w.offer.includes('dash+')); w.state = 'wave'; }

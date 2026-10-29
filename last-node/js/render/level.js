@@ -2,7 +2,7 @@
 // 레이돔 탑·컨테이너·콘크리트 블록·연료 탱크·발전기·투광등). 위를 향한 면에는 눈이 쌓인다(snowMaterial).
 import * as THREE from 'three';
 import { mergeGeometries } from '../../vendor/three/addons/utils/BufferGeometryUtils.js';
-import { BOXES, ROOF, LAMPS, SPAWNS } from '../config/map.js';
+import { BOXES, ROOF, LAMPS, SPAWNS, HOUSES } from '../config/map.js';
 import { loadSurface, snowMaterial } from './materials.js';
 
 // 월드 좌표 기준 UV를 가진 상자(타일 밀도 일정)
@@ -95,6 +95,9 @@ export class Level {
       hazard: new THREE.MeshStandardMaterial({ map: hazardTexture(), roughness: 0.7, metalness: 0.2 }),
       rubber: new THREE.MeshStandardMaterial({ color: 0x1a1b1d, roughness: 0.9, metalness: 0 }),
       lamp: glowMat(new THREE.Color(1.0, 0.62, 0.3), 5.0),
+      sand: S(wall, { roughness: 1, metalness: 0, envMapIntensity: 0.4, color: 0x9a8c6c }, { amount: 0.7 }),
+      plaster: new THREE.MeshStandardMaterial({ color: 0x6c7068, roughness: 0.95, metalness: 0, envMapIntensity: 0.5 }),
+      tile: new THREE.MeshStandardMaterial({ color: 0x4a4d50, roughness: 0.8, metalness: 0, envMapIntensity: 0.5 }),
       lampWarm: glowMat(new THREE.Color(1.0, 0.7, 0.4), 2.2),
       window: glowMat(new THREE.Color(1.0, 0.72, 0.42), 1.25),
       ledGreen: glowMat(new THREE.Color(0.3, 1.0, 0.4), 2.2),
@@ -211,6 +214,66 @@ export class Level {
         G.add(m.ledGreen, boxGeo(x1 + 0.01, 1.4, cz - 0.05, x1 + 0.03, 1.46, cz + 0.05, 1));
         break;
       }
+      case 'hwall': {
+        // 건물 벽: 바깥 콘크리트 + 안쪽 면은 회벽(벽 두께 가운데로 나눠 두 겹) — 문·창 위 인방은 같은 재질
+        const alongX = x1 - x0 > z1 - z0;
+        const H = HOUSES.find((h) => cx > h.x0 - 0.01 && cx < h.x1 + 0.01 && cz > h.z0 - 0.01 && cz < h.z1 + 0.01);
+        const edge = H && (alongX ? (Math.abs(z0 - H.z0) < 0.01 || Math.abs(z1 - H.z1) < 0.01) : (Math.abs(x0 - H.x0) < 0.01 || Math.abs(x1 - H.x1) < 0.01));
+        if (!edge) { B.add(m.plaster, boxGeo(x0, y0, z0, x1, y1, z1, 1.5)); break; }
+        const outNeg = alongX ? Math.abs(z0 - H.z0) < 0.01 : Math.abs(x0 - H.x0) < 0.01;   // 바깥이 음(−) 쪽
+        if (alongX) { const zm = (z0 + z1) / 2; B.add(m.concrete, boxGeo(x0, y0, outNeg ? z0 : zm, x1, y1, outNeg ? zm : z1, 2)); B.add(m.plaster, boxGeo(x0, y0, outNeg ? zm : z0, x1, y1, outNeg ? z1 : zm, 1.5)); }
+        else { const xm = (x0 + x1) / 2; B.add(m.concrete, boxGeo(outNeg ? x0 : xm, y0, z0, outNeg ? xm : x1, y1, z1, 2)); B.add(m.plaster, boxGeo(outNeg ? xm : x0, y0, z0, outNeg ? x1 : xm, y1, z1, 1.5)); }
+        if (y0 < 0.01) B.add(m.black, alongX ? boxGeo(x0, 0, z0 - 0.01, x1, 0.12, z1 + 0.01, 1) : boxGeo(x0 - 0.01, 0, z0, x1 + 0.01, 0.12, z1, 1));   // 걸레받이
+        else if (y0 < 1.5) B.add(m.steelDark, alongX ? boxGeo(x0, y1 - 0.05, z0 - 0.06, x1, y1, z1 + 0.06, 1) : boxGeo(x0 - 0.06, y1 - 0.05, z0, x1 + 0.06, y1, z1, 1));   // 창턱
+        break;
+      }
+      case 'hroof': {
+        // 지붕 판 + 처마 테 + 안쪽 바닥 타일 + 천장 형광등 줄
+        B.add(m.concreteDark, boxGeo(x0, y0, z0, x1, y1, z1, 3));
+        B.add(m.steelDark, boxGeo(x0 - 0.05, y1 - 0.12, z0 - 0.05, x1 + 0.05, y1 + 0.04, z1 + 0.05, 2));
+        B.add(m.tile, boxGeo(x0 + 0.45, 0, z0 + 0.45, x1 - 0.45, 0.012, z1 - 0.45, 1.2));
+        const along = x1 - x0 > z1 - z0;
+        for (let k = 0.25; k < 1; k += 0.25) {
+          if (along) { const lx = x0 + (x1 - x0) * k; G.add(m.lampWarm, boxGeo(lx - 0.6, y0 - 0.05, cz - 0.08, lx + 0.6, y0 - 0.01, cz + 0.08, 1)); }
+          else { const lz = z0 + (z1 - z0) * k; G.add(m.lampWarm, boxGeo(cx - 0.08, y0 - 0.05, lz - 0.6, cx + 0.08, y0 - 0.01, lz + 0.6, 1)); }
+        }
+        break;
+      }
+      case 'sandbag': {
+        // 모래주머니: 길이 0.55m 자루를 엇갈려 3단으로 쌓는다
+        const alongX = x1 - x0 > z1 - z0, L = alongX ? x1 - x0 : z1 - z0, rows = 3, h = (y1 - y0) / rows;
+        for (let r = 0; r < rows; r++) {
+          const n = Math.max(1, Math.round(L / 0.55)), off = r % 2 ? 0.27 : 0, ins = r * 0.05;
+          for (let i = 0; i < n; i++) {
+            const a = (alongX ? x0 : z0) + Math.min(L - 0.5, (L / n) * i + off * (i < n - 1 ? 1 : 0)), c = Math.min(alongX ? x1 : z1, a + L / n - 0.02);
+            const g = alongX ? boxGeo(a, y0 + r * h, z0 + ins, c, y0 + (r + 1) * h - 0.015, z1 - ins, 1) : boxGeo(x0 + ins, y0 + r * h, a, x1 - ins, y0 + (r + 1) * h - 0.015, c, 1);
+            B.add(m.sand, g);
+          }
+        }
+        break;
+      }
+      case 'table': // 철제 작업대
+        B.add(m.steelGrey, boxGeo(x0, y1 - 0.06, z0, x1, y1, z1, 1));
+        for (const [lx, lz] of [[x0 + 0.05, z0 + 0.05], [x1 - 0.1, z0 + 0.05], [x0 + 0.05, z1 - 0.1], [x1 - 0.1, z1 - 0.1]]) B.add(m.black, boxGeo(lx, 0, lz, lx + 0.05, y1 - 0.06, lz + 0.05, 1));
+        B.add(m.steelDark, boxGeo(x0 + 0.05, 0.25, z0 + 0.05, x1 - 0.05, 0.28, z1 - 0.05, 1));
+        break;
+      case 'shelf': { // 철제 선반(2m): 기둥 4개 + 판 4단 + 위에 상자
+        for (const [lx, lz] of [[x0, z0], [x1 - 0.05, z0], [x0, z1 - 0.05], [x1 - 0.05, z1 - 0.05]]) B.add(m.steelDark, boxGeo(lx, 0, lz, lx + 0.05, y1, lz + 0.05, 1));
+        for (const y of [0.15, 0.7, 1.25, 1.8]) B.add(m.steelGrey, boxGeo(x0, y, z0, x1, y + 0.04, z1, 1));
+        const alongX = x1 - x0 > z1 - z0, L = alongX ? x1 - x0 : z1 - z0;
+        for (const [y, k] of [[0.19, 0.1], [0.74, 0.45], [1.29, 0.2], [0.19, 0.6]]) {
+          const a = (alongX ? x0 : z0) + L * k, c = a + Math.min(0.6, L * 0.3);
+          B.add(m.olive, alongX ? boxGeo(a, y, z0 + 0.05, c, y + 0.4, z1 - 0.05, 1) : boxGeo(x0 + 0.05, y, a, x1 - 0.05, y + 0.4, c, 1));
+        }
+        break;
+      }
+      case 'barrel': // 드럼통 2~3개 묶음
+        for (const [fx, fz] of [[0.28, 0.3], [0.72, 0.3], [0.5, 0.72]]) {
+          const bx = x0 + (x1 - x0) * fx, bz = z0 + (z1 - z0) * fz;
+          B.add(m.olive, cyl(0.28, 0.28, y1 - 0.02, bx, (y1 - 0.02) / 2, bz, 14));
+          for (const y of [0.3, 0.6]) B.add(m.steelDark, cyl(0.29, 0.29, 0.03, bx, y, bz, 14, true));
+        }
+        break;
       case 'pole': break;                  // 투광등은 buildFloodlights
       case 'crate': // 군용 하드케이스(올리브) + 걸쇠
         B.add(m.olive, boxGeo(x0 + 0.02, y0, z0 + 0.02, x1 - 0.02, y1 - 0.02, z1 - 0.02, 1.2));
@@ -458,6 +521,7 @@ void main(){ float f = pow(abs(dot(vN, vV)), 1.6);
     const add = (color, intensity, dist, x, y, z, decay = 1.6) => { const l = new THREE.PointLight(color, intensity, dist, decay); l.position.set(x, y, z); this.root.add(l); this.lights.push(l); return l; };
     add(0xffa860, 14, 10, SPAWNS.stairs.x + 1.5, 5.4, SPAWNS.stairs.z);   // 터널 입구 등
     this.elevLight = add(0xff2a1a, 0, 12, 0, 3.8, -21.5);
+    for (const h of HOUSES) add(0xffc890, 5, Math.max(h.x1 - h.x0, h.z1 - h.z0) * 0.9, (h.x0 + h.x1) / 2, 2.8, (h.z0 + h.z1) / 2, 1.4);   // 건물 안 형광등 빛
   }
 
   update(dt, t, world, camPos) {

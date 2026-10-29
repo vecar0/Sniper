@@ -148,13 +148,15 @@ export class World {
     if (this.state !== 'wave') return;
     const s = this.spawn;
     s.t += dt;
-    const alive = this.enemies.filter((e) => e.type !== 'boss').length;
+    const aliveNow = () => this.enemies.filter((e) => e.type !== 'boss').length;   // 같은 틱 안에서 여러 입구가 나오므로 매번 센다
+    let alive = aliveNow();
     const cap = s.boss ? WAVES.bossAliveCap : WAVES.aliveCap;
     // 계단실: 1.0~1.6초마다 1기
     s.stairsT -= dt;
     if (s.stairsT <= 0 && s.left > 0 && alive < cap) {
       s.stairsT = this.rng.range(...WAVES.stairsEvery);
       this.spawnFrom('stairs', 1);
+      alive = aliveNow();
     }
     // 엘리베이터: 12초마다 4~6기 한꺼번에
     if (this.wave >= WAVES.elevatorFrom) {
@@ -165,6 +167,7 @@ export class World {
         if (room >= 2) {
           this.events.push({ t: 'elevator' });
           this.spawnFrom('elevator', Math.min(room, this.rng.int(...WAVES.elevatorGroup)));
+          alive = aliveNow();
         }
       }
     }
@@ -175,11 +178,11 @@ export class World {
       if (s.dropT <= 0) {
         s.dropT = WAVES.dropshipEvery; s.dropWarned = false;
         const room = cap - alive;
-        if (room > 0 && s.left > 0) this.spawnFrom('dropship', Math.min(room, WAVES.dropshipGroup));
+        if (room > 0 && s.left > 0) { this.spawnFrom('dropship', Math.min(room, WAVES.dropshipGroup)); alive = aliveNow(); }
       }
     }
     // 메크: 웨이브 진행도에 맞춰 엘리베이터로
-    if (s.mechs > 0 && s.left > 0) {
+    if (s.mechs > 0 && s.left > 0 && alive < cap) {
       const frac = 1 - s.left / s.total;
       if (frac >= s.mechNext) {
         s.mechs--; s.mechNext += 1 / (s.mechTotal + 1);
@@ -380,7 +383,7 @@ export class World {
     const s = this.spawn;
     for (let i = 0; i < n && s.left > 0; i++) {
       const type = this.pickType();
-      if (type === 'drone') { this.spawnSwarm(); continue; }
+      if (type === 'drone') { i += this.spawnSwarm(n - i) - 1; continue; }   // 드론 떼도 남은 자리만큼만
       const sp = SPAWNS[source];
       const jx = source === 'elevator' ? this.rng.range(-2.4, 2.4) : this.rng.range(-0.4, 0.4);
       const jz = source === 'stairs' ? this.rng.range(-1.2, 1.2) : this.rng.range(-0.4, 0.4);
@@ -390,9 +393,9 @@ export class World {
     }
   }
 
-  spawnSwarm() {
+  spawnSwarm(room = Infinity) {
     const s = this.spawn;
-    const n = Math.min(s.left, this.rng.int(...WAVES.swarm));
+    const n = Math.min(s.left, room, this.rng.int(...WAVES.swarm));
     const a = this.rng.next() * Math.PI * 2;
     const cx = Math.cos(a) * (ROOF + 8), cz = Math.sin(a) * (ROOF + 8), cy = this.rng.range(7, 10);
     const target = 'player';
@@ -401,6 +404,7 @@ export class World {
         { target, slot: i, alt: this.rng.range(ENEMIES.drone.flyMin, ENEMIES.drone.flyMax) });
       s.left--;
     }
+    return n;
   }
 
   spawnEnemy(type, x, y, z, source, extra = {}) {
@@ -584,7 +588,7 @@ export class World {
     const eye = eyePos(p);
     let f = forward(p);
     const moveBloom = Math.min(1, p.speed / PLAYER.speed) * 0.9 + (p.grounded ? 0 : 1.2);
-    const spread = (w.spreadHip + (w.spreadAds - w.spreadHip) * p.ads) + moveBloom * (1 - 0.6 * p.ads) * (w.pellets > 1 ? 0.3 : 1);
+    const spread = ((w.spreadHip + (w.spreadAds - w.spreadHip) * p.ads) + moveBloom * (1 - 0.6 * p.ads) * (w.pellets > 1 ? 0.3 : 1)) * (p.crouch ? PLAYER.crouchSpread : 1);   // 앉으면 더 정확
     if (w.homing && p.ads > 0.6) f = this.homingDir(eye, f, w.homing);
     this.stats.shots++;
     const ends = [];
