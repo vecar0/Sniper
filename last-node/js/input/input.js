@@ -3,9 +3,9 @@ const BIND = {
   KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r',
   Space: 'jump', ShiftLeft: 'dash', ShiftRight: 'dash', KeyC: 'crouch', ControlLeft: 'crouch', KeyV: 'melee',
   KeyR: 'reload', KeyQ: 'leanL', KeyE: 'leanR', KeyF: 'lastWeapon', KeyG: 'emp', Enter: 'ready',
-  Digit1: 's1', Digit2: 's2', Digit3: 's3', Digit4: 's4',
+  Digit1: 's1', Digit2: 's2', Numpad1: 's1', Numpad2: 's2',
 };
-const SLOTS = { s1: 'pistol', s2: 'shotgun', s3: 'rifle', s4: 'rail' };
+const SLOTS = { s1: 1, s2: 2 }; // 1번 주무기 · 2번 보조무기
 
 export class Input {
   constructor(canvas, settings) {

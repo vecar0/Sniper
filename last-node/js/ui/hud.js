@@ -32,7 +32,7 @@ export class Hud {
         <div class="reload"></div>
         <div class="ammo"><span class="mag">0</span><span class="res">0</span></div>
         <div class="wname"></div>
-        <div class="slots">${['pistol', 'shotgun', 'rifle', 'rail'].map((w, i) => `<span data-w="${w}"><kbd>${i + 1}</kbd>${SHORT[w]}</span>`).join('')}</div>
+        <div class="slots"><span data-i="0"><kbd>1</kbd><b></b></span><span data-i="1"><kbd>2</kbd><b></b></span></div>
         <div class="emp"></div>
       </div>
       <div class="cross"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><div class="dot"></div></div>
@@ -116,7 +116,8 @@ export class Hud {
     this.set('rs', E.res, am.reserve === Infinity ? '∞' : String(am.reserve));
     E.ammo.classList.toggle('empty', am.mag === 0);
     this.set('rl', E.reload, p.reloadT >= 0 ? '재장전 중' : am.mag === 0 && am.reserve > 0 ? (this.touch ? '장전 버튼을 누르세요' : 'R 키로 재장전') : am.mag === 0 ? '탄약이 없습니다' : '');
-    E.slots.forEach((s) => { s.classList.toggle('own', !!p.owned[s.dataset.w]); s.classList.toggle('cur', s.dataset.w === p.weapon); });
+    // 1번 주무기 · 2번 보조무기 칸
+    E.slots.forEach((s, i) => { const w = p.loadout[i]; s.classList.toggle('own', !!w); s.classList.toggle('cur', !!w && w === p.weapon); this.set('sl' + i, s.lastChild, w ? SHORT[w] : ''); });
     this.set('emp', E.emp, `EMP 수류탄 ${p.emp}/${p.empMax}`);
     // 십자선 퍼짐
     const spread = (w.spreadHip + (w.spreadAds - w.spreadHip) * p.ads) + Math.min(1, p.speed / 7) * 0.9 + (p.grounded ? 0 : 1.2);

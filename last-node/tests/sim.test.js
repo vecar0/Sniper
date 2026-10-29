@@ -449,3 +449,18 @@ test('기울이기: 눈이 옆으로 나가고 사격 시작점도 따라간다'
   for (let i = 0; i < 60; i++) { w.input.lean = 0; w.step(DT); }
   assert.ok(Math.abs(p.lean) < 0.01);
 });
+
+test('1번 = 주무기, 2번 = 보조무기(권총)', () => {
+  const w = new World({ seed: 7 });
+  const p = w.player;
+  assert.deepEqual(p.loadout, [null, 'pistol']);
+  w.applyCard('get:rifle');
+  assert.deepEqual(p.loadout, ['rifle', 'pistol']);
+  for (let i = 0; i < 60; i++) w.step(DT);
+  w.input.slot = 2; w.step(DT); assert.equal(p.weapon, 'pistol');
+  for (let i = 0; i < 60; i++) w.step(DT);
+  w.input.slot = 1; w.step(DT); assert.equal(p.weapon, 'rifle');
+  // 꽉 찼을 때 새 총은 손에 든 총(주무기)의 칸으로
+  w.applyCard('get:shotgun');
+  assert.deepEqual(p.loadout, ['shotgun', 'pistol']);
+});

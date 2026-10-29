@@ -318,7 +318,7 @@ export class World {
   // 새 총 w를 얻을 때 내려놓을 총(두 자루 미만이면 없음)
   dropFor(w) {
     const p = this.player;
-    if (p.owned[w] || WEAPON_ORDER.filter((k) => p.owned[k]).length < PLAYER.carry) return null;
+    if (p.owned[w] || p.loadout.some((k) => !k)) return null;
     return p.weapon;
   }
 
@@ -328,10 +328,13 @@ export class World {
       const w = id.slice(4);
       // 총은 두 자루까지: 이미 두 자루면 손에 든 총을 내려놓고 새 총을 든다
       const drop = this.dropFor(w);
+      // 빈 칸이 있으면 주무기(1번) 칸부터 채우고, 꽉 찼으면 손에 든 총의 칸을 바꾼다
+      const slot = drop ? p.loadout.indexOf(drop) : p.loadout[0] ? 1 : 0;
       if (drop) { delete p.owned[drop]; this.events.push({ t: 'drop', w: drop }); }
+      p.loadout[slot] = w;
       p.owned[w] = true;
       p.ammo[w] = { mag: WEAPONS[w].mag, reserve: WEAPONS[w].reserve };
-      p.lastWeapon = drop ? WEAPON_ORDER.find((k) => p.owned[k] && k !== w) : p.weapon; p.weapon = w; p.switchT = PLAYER.switchTime; p.reloadT = -1;
+      p.lastWeapon = drop ? p.loadout.find((k) => k && k !== w) : p.weapon; p.weapon = w; p.switchT = PLAYER.switchTime; p.reloadT = -1;
       this.events.push({ t: 'switch', w });
       return;
     }

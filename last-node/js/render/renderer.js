@@ -43,7 +43,9 @@ void main(){
   // 비네트 + 미세 그레인
   col *= 1.0 - uVignette * smoothstep(0.25, 0.95, r);
   col += (h(vUv * uRes + fract(uTime) * 100.0) - 0.5) * 0.018;
-  gl_FragColor = vec4(col, 1.0);
+  // 잘못된 값(NaN·무한대)이 검은 점으로 번쩍이지 않게
+  if (!(col.r == col.r && col.g == col.g && col.b == col.b)) col = vec3(0.0);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`,
 };
 
@@ -56,7 +58,7 @@ export class Renderer {
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.05;
     r.shadowMap.enabled = this.quality !== 'low';
-    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.shadowMap.type = this.quality === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     container.appendChild(r.domElement);
     this.renderer = r;
     r.info.autoReset = false; // 여러 패스의 그리기 호출을 합산
@@ -77,6 +79,7 @@ export class Renderer {
     moon.shadow.mapSize.set(this.quality === 'high' ? 2048 : 1024, this.quality === 'high' ? 2048 : 1024);
     const sc = moon.shadow.camera; sc.left = -34; sc.right = 34; sc.top = 34; sc.bottom = -34; sc.near = 5; sc.far = 110;
     moon.shadow.bias = -0.0004; moon.shadow.normalBias = 0.03;
+    moon.shadow.autoUpdate = false; moon.shadow.needsUpdate = true; // 그림자 지도는 두 프레임에 한 번(움직이는 건 로봇뿐이라 티가 안 난다)
     this.scene.add(moon, moon.target);
     this.moon = moon;
     this.scene.add(new THREE.HemisphereLight(0x4a6088, 0x2a2a2c, 1.05)); // 하늘(청) / 눈 반사(회)
@@ -117,7 +120,8 @@ export class Renderer {
 
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    const base = Math.min(window.devicePixelRatio || 1, this.quality === 'high' ? 2 : this.quality === 'mid' ? 1.5 : 1);
+    // 고해상도 화면(레티나 2~3배)을 다 채우면 픽셀 수가 4~9배 → 상한을 둔다
+    const base = Math.min(window.devicePixelRatio || 1, this.quality === 'high' ? 1.5 : this.quality === 'mid' ? 1.25 : 1);
     const pr = Math.max(0.5, base * this.resScale * (this.lowSpec ? 0.6 : 1));
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
@@ -289,6 +293,10 @@ export class Renderer {
     u.uTime.value = t; u.uHurt.value = this.hurt; u.uAberr.value = this.aberr;
     u.uLow.value = p.alive && p.hp < 30 ? 1 - p.hp / 30 : 0;
     u.uDash.value = this.dash;
+    // 해상도 바꾸기는 그리기 전에: 그린 뒤에 바꾸면 캔버스가 지워져 그 프레임이 검게 보인다
+    if (this.pendingRes) { this.pendingRes = false; this.resize(); }
+    this.frameNo = (this.frameNo || 0) + 1;
+    if (this.moon.castShadow && this.frameNo % 2 === 0) this.moon.shadow.needsUpdate = true;
     r0(this.renderer);
     this.composer.render(dt);
     this.lastInfo = { calls: this.renderer.info.render.calls, tris: this.renderer.info.render.triangles };
@@ -296,15 +304,17 @@ export class Renderer {
     // 동적 해상도
     this.frameAvg += (dt * 1000 - this.frameAvg) * 0.05;
     this.resTimer += dt;
-    if (this.resTimer > 2 && settings.dynRes !== false) {
-      this.resTimer = 0;
-      if (this.frameAvg > 22 && this.resScale > 0.6) { this.resScale = Math.max(0.6, this.resScale - 0.1); this.resize(); }
-      else if (this.frameAvg < 13 && this.resScale < 1) { this.resScale = Math.min(1, this.resScale + 0.1); this.resize(); }
+    // 느리면 바로 낮추고, 올리는 건 오래(8초) 넉넉할 때만 — 오르내림을 반복하지 않게
+    if (settings.dynRes !== false) {
+      if (this.resTimer > 3 && this.frameAvg > 24 && this.resScale > 0.6) { this.resTimer = 0; this.resScale = Math.max(0.6, this.resScale - 0.1); this.pendingRes = true; }
+      else if (this.resTimer > 8 && this.frameAvg < 11 && this.resScale < 1) { this.resTimer = 0; this.resScale = Math.min(1, this.resScale + 0.1); this.pendingRes = true; }
+      else if (this.resTimer > 8) this.resTimer = 0;
     }
   }
 
   // 메뉴 배경: 광장 위를 천천히 도는 카메라
   renderMenu(dt) {
+    if (this.pendingRes) { this.pendingRes = false; this.resize(); }
     const t = this.env.time.value + dt;
     this.env.update(dt, t);
     // 남동쪽 낮은 곳에서 레이돔 탑과 북쪽 산을 올려다보며 천천히 좌우로 흔든다(왼쪽은 메뉴 글줄 자리)

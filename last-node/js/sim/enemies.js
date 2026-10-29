@@ -251,9 +251,12 @@ function leech(world, e, dt) {
   // 지켜 줄 아군이 하나도 없으면 숨지 않고 플레이어 쪽으로 나온다(웨이브가 끝나지 않는 교착 방지)
   const allies = world.enemies.some((o) => o.alive && o !== e && o.type !== 'leech' && o.type !== 'drone');
   if (!allies) {
-    const v = dP > 7 ? steer(world, e, world.fieldPlayer, c.speed * 0.7) : { x: 0, z: 0 };
+    // 7 m 안이라도 플레이어가 못 보는 곳(높은 단 위·벽 뒤)이면 보일 때까지 계속 다가온다
+    const seen = world.geom.los(e.x, e.y + 1, e.z, p.x, p.y + 1.4, p.z);
+    const go = dP > 7 || !seen;
+    const v = go ? steer(world, e, world.fieldPlayer, c.speed * 0.7) : { x: 0, z: 0 };
     physics(world, e, v.x, v.z, dt);
-    if (dP > 7) faceMove(e, dt); else e.yaw = turn(e.yaw, angTo(e.x, e.z, p.x, p.z), 4 * dt);
+    if (go) faceMove(e, dt); else e.yaw = turn(e.yaw, angTo(e.x, e.z, p.x, p.z), 4 * dt);
     return;
   }
   // 아니면: 다친 아군 쪽으로 / 플레이어와 거리를 유지(가까우면 물러나고 멀면 다가감)

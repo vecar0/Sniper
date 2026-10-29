@@ -78,8 +78,8 @@ class App {
     this.input.onKey = (e) => this.key(e);
     document.addEventListener('visibilitychange', () => { if (document.hidden) { if (this.state === 'play') this.pause(); this.audio.suspend(); } else this.audio.resume(); });
     addEventListener('blur', () => { if (this.state === 'play' && !this.coarse && !TEST) this.pause(); });
-    addEventListener('resize', () => this.r.resize());
-    addEventListener('orientationchange', () => setTimeout(() => this.r.resize(), 200));
+    addEventListener('resize', () => { this.r.pendingRes = true; }); // 다음 그리기 직전에 적용(그린 뒤 바꾸면 한 프레임 검게 깜빡인다)
+    addEventListener('orientationchange', () => setTimeout(() => { this.r.pendingRes = true; }, 200));
     // 첫 입력에서 소리 켜기(브라우저 정책)
     const unlockAudio = () => { this.audio.init(); this.audio.setVolumes(this.settings.sfx, this.settings.music); };
     addEventListener('pointerdown', unlockAudio, { once: false });

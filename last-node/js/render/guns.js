@@ -162,9 +162,9 @@ export function gunMaterials(envMap) {
     // 장갑(천) · 너클 보호판 · 소매
     glove: finishMaterial({ color: lin(0.03, 0.03, 0.032), metalness: 0, roughness: 0.82, envMapIntensity: 0.5 }, { smear: 0.05, scratch: 0, grain: 0.1, key: 'glove' }),
     knuckle: finishMaterial({ color: lin(0.035, 0.037, 0.04), metalness: 0, roughness: 0.5, envMapIntensity: 0.8 }, { smear: 0.08, scratch: 0.08, grain: 0.04, key: 'knuckle' }),
-    // 전투복 소매(위장 무늬 면직 + 짠 결 요철) · 소매 끝단·벨크로(진한 단색) · 팔꿈치 패드(고무 코팅)
-    sleeve: finishMaterial({ color: lin(0.05, 0.055, 0.042), metalness: 0, roughness: 0.92, envMapIntensity: 0.35 }, { smear: 0.04, scratch: 0, grain: 0.08, bump: 0.0006, bumpF: 2600, camo: 1, key: 'sleeve' }),
-    cuff: finishMaterial({ color: lin(0.035, 0.038, 0.03), metalness: 0, roughness: 0.88, envMapIntensity: 0.35 }, { smear: 0.04, scratch: 0, grain: 0.12, bump: 0.0008, bumpF: 3000, key: 'cuff' }),
+    // 전투복 소매(검은 단색 면직 + 짠 결 요철) · 소매 끝단·벨크로 · 팔꿈치 패드(고무 코팅) — 모두 검정 계열
+    sleeve: finishMaterial({ color: lin(0.024, 0.024, 0.026), metalness: 0, roughness: 0.92, envMapIntensity: 0.35 }, { smear: 0.04, scratch: 0, grain: 0.08, bump: 0.0006, bumpF: 2600, camo: 0, key: 'sleeve' }),
+    cuff: finishMaterial({ color: lin(0.02, 0.02, 0.022), metalness: 0, roughness: 0.88, envMapIntensity: 0.35 }, { smear: 0.04, scratch: 0, grain: 0.12, bump: 0.0008, bumpF: 3000, key: 'cuff' }),
     pad: finishMaterial({ color: lin(0.03, 0.032, 0.03), metalness: 0, roughness: 0.6, envMapIntensity: 0.6 }, { smear: 0.08, scratch: 0.05, grain: 0.06, bump: 0.0008, bumpF: 1200, key: 'pad' }),
     bore: new THREE.MeshBasicMaterial({ color: 0x050505 }),
     port: new THREE.MeshStandardMaterial({ color: 0x0a0a0b, metalness: 0.6, roughness: 0.6 }),
@@ -184,7 +184,7 @@ export function viewmodelLights(scene, camera, target = [0, 0, 0]) {
   // 키 조명만 그림자: 조준경·손·장전 손잡이가 총 몸통에 그림자를 드리워 부품 사이 깊이가 생긴다(뷰모델 크기만 덮는 작은 상자)
   const key = new THREE.DirectionalLight(0xffd6a8, 2.1); key.position.set(-1.2 + target[0], 1.5 + target[1], 0.5 + target[2]);
   key.target.position.set(...target); scene.add(key, key.target);
-  key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0002; key.shadow.normalBias = 0.002; key.shadow.radius = 2;
+  key.castShadow = true; key.shadow.mapSize.set(512, 512); key.shadow.bias = -0.0002; key.shadow.normalBias = 0.002; key.shadow.radius = 2;
   Object.assign(key.shadow.camera, { left: -0.55, right: 0.55, top: 0.55, bottom: -0.55, near: 0.5, far: 4 });
   const rim = new THREE.DirectionalLight(0xa8c8ff, 1.5); rim.position.set(0.9, 1.2, -1.1); scene.add(rim);
   const fill = new THREE.DirectionalLight(0x9aa6c0, 0.45); fill.position.set(-0.3, -1, 0.4); scene.add(fill);

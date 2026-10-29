@@ -15,6 +15,8 @@ export function makePlayer() {
     dashMax: P.dashCharges, dashCdMul: 1, empMax: P.empMax,
     dashCharges: P.dashCharges, dashRecharge: 0, dashT: 0, dashDx: 0, dashDz: 0,
     airJumps: 1, crouch: false, slideT: 0, slideCd: 0, eye: P.eye,
+    // 총 두 자루: loadout[0] = 주무기(1번), loadout[1] = 보조무기(2번). 시작은 보조무기 권총만
+    loadout: [null, 'pistol'],
     weapon: 'pistol', lastWeapon: 'pistol', owned: { pistol: true }, levels: { pistol: 0, shotgun: 0, rifle: 0, rail: 0 }, ammo,
     fireCd: 0, reloadT: -1, switchT: 0, charge: 0, sustain: 0, lastShot: -9, recoilDebt: 0,
     ads: 0, lean: 0, leanX: 0, leanZ: 0, meleeCd: 0, meleeT: 0, meleeHitT: 0, emp: P.empStart, hurtT: 9, bob: 0, speed: 0,
@@ -177,9 +179,11 @@ function updateWeapons(world, p, inp, dt) {
 
   // 무기 교체
   let want = null;
-  if (inp.slot && p.owned[inp.slot] && inp.slot !== id) want = inp.slot;
+  // 1번 = 주무기, 2번 = 보조무기(숫자) — 무기 이름으로도 받는다(봇·테스트)
+  const slotId = typeof inp.slot === 'number' ? p.loadout[inp.slot - 1] : inp.slot;
+  if (slotId && p.owned[slotId] && slotId !== id) want = slotId;
   if (inp.cycle) {
-    const owned = WEAPON_ORDER.filter((k) => p.owned[k]);
+    const owned = p.loadout.filter(Boolean);
     const i = owned.indexOf(id);
     want = owned[(i + (inp.cycle > 0 ? 1 : owned.length - 1)) % owned.length];
     if (want === id) want = null;

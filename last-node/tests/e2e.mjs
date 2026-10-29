@@ -160,7 +160,8 @@ const browser = await playwright.chromium.launch({ args: ARGS });
     const counts = [];
     for (let i = 0; i < 6; i++) {
       await W(page, () => { __ln.app.state = 'play'; __ln.world.hurtPlayer(1e9, null, 'test', true); });
-      await page.waitForSelector('[data-a=retry]', { timeout: 15000 });
+      const shown = await page.waitForSelector('[data-a=retry]', { timeout: 15000 }).then(() => true).catch(() => false);
+      assert(shown, `다시 하기 버튼 없음 (${i}) ${JSON.stringify(await W(page, () => ({ app: __ln.app.state, w: __ln.world.state, alive: __ln.world.player.alive, hp: __ln.world.player.hp, menu: __ln.app.menus.current, body: document.body.className, ui: document.getElementById('ui').innerHTML.slice(0, 80) })))}`);
       await page.click('[data-a=retry]');
       await sleep(1200);
       await W(page, () => { const w = __ln.world; w.input.ready = true; });

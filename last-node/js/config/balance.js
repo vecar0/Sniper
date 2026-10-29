@@ -40,7 +40,7 @@ export const PLAYER = {
   leanDist: 0.45,       // 기울이기(Q/E): 눈이 옆으로 나가는 거리(m)
   leanRoll: 0.2,        // 화면이 기우는 각(라디안, 약 11°)
   switchTime: 0.62,     // 무기 교체: 든 총을 내리고 새 총을 위로 던져 돌려 받아 쥔다(이 동안은 못 쏜다)
-  carry: 2,             // 들고 다닐 수 있는 총(세 번째를 얻으면 손에 든 총과 바꾼다)
+  carry: 2,             // 들고 다닐 수 있는 총: 1번 주무기 · 2번 보조무기(세 번째를 얻으면 손에 든 총과 바꾼다)
   empMax: 3,
   empStart: 1,
   dashDamageMulSlide: 0.5, // 강화 '낮은 자세': 슬라이드 중 피해 배수
@@ -89,33 +89,34 @@ export const EMP = {
 
 // 적(북천 기지 방어 로봇). 내부 키는 이전 이름 그대로: reaper=하운드, enforcer=보병 로봇, leech=수리 로봇, drone=FPV 드론, mech=무인 전투차량, boss=틸트로터 건십.
 // hp는 웨이브 배수 적용 전 값, points=처치 점수
+// 이동 속도는 전보다 약 15% 느리게(하운드 6.2→5.3, 보병 3.4→2.9, 수리 4.0→3.4, 드론 5.5→4.7, 전투차량 2.2→1.9)
 export const ENEMIES = {
   reaper: {
-    name: '하운드', hp: 50, speed: 6.2, radius: 0.38, height: 1.0, target: 'player', points: 50,
+    name: '하운드', hp: 50, speed: 5.3, radius: 0.38, height: 1.0, target: 'player', points: 50,
     meleeDmg: 14, meleeRate: 0.8, leapRange: 3.0, leapWindup: 0.3, leapTime: 0.35, leapStagger: 0.6, hitRange: 1.5,
     parts: [ // [오른쪽, 위, 앞, 반지름, 배수] — 4족: 앞쪽 센서 머리가 약점
       [0, 0.74, 0.52, 0.17, 'weak'], [0, 0.62, 0.18, 0.3, 1], [0, 0.6, -0.24, 0.3, 1], [0, 0.3, 0, 0.26, 1],
     ],
   },
   enforcer: {
-    name: '보병 로봇', hp: 120, speed: 3.4, radius: 0.36, height: 1.9, target: 'player', points: 80,
+    name: '보병 로봇', hp: 120, speed: 2.9, radius: 0.36, height: 1.9, target: 'player', points: 80,
     burst: 3, burstGap: 0.11, dmg: 4, fireEvery: 2.3, aimTime: 0.4, accuracy: 0.3,
     rangeMin: 10, rangeMax: 26, repositionMin: 5, repositionMax: 8, tooClose: 5, bulletSpeed: 70,
     parts: [[0, 1.72, 0.04, 0.21, 'weak'], [0, 1.3, 0, 0.36, 1], [0, 0.9, 0, 0.32, 1], [0, 0.45, 0, 0.3, 1]],
   },
   leech: {
-    name: '수리 로봇', hp: 70, speed: 4.0, radius: 0.5, height: 1.2, target: 'ally', points: 90,
+    name: '수리 로봇', hp: 70, speed: 3.4, radius: 0.5, height: 1.2, target: 'ally', points: 90,
     heal: 18, healRange: 10, keepDist: 14, interrupt: 0.4, // 다친 아군에게 초당 18 회복, 맞으면 0.4초 끊김
     parts: [[0, 1.02, -0.1, 0.2, 'weak'], [0, 0.55, 0, 0.42, 1], [0, 0.5, 0.42, 0.3, 1], [0, 0.5, -0.42, 0.3, 1]],
   },
   drone: {
-    name: 'FPV 드론', hp: 20, speed: 5.5, radius: 0.35, height: 0.5, target: 'player', points: 30,
+    name: 'FPV 드론', hp: 20, speed: 4.7, radius: 0.35, height: 0.5, target: 'player', points: 30,
     // 대처할 틈: 4.5m 안에 오면 0.9초 동안 깜빡이며 멈칫한 뒤, 그 순간 방향으로 곧게 돌진(따라 꺾지 않는다 → 옆으로 피할 수 있다)
-    flyMin: 2, flyMax: 4, triggerDist: 4.5, windup: 0.9, diveSpeed: 11, boomDmg: 12, boomRadius: 1.8, chain: 1.5,
+    flyMin: 2, flyMax: 4, triggerDist: 4.5, windup: 0.9, diveSpeed: 9.5, boomDmg: 12, boomRadius: 1.8, chain: 1.5,
     parts: [[0, 0, 0.1, 0.22, 'weak'], [0, 0, 0, 0.45, 1]], // 맞히기 쉽게 판정을 조금 크게
   },
   mech: {
-    name: '무인 전투차량', hp: 600, speed: 2.2, radius: 1.1, height: 2.4, target: 'player', points: 350,
+    name: '무인 전투차량', hp: 600, speed: 1.9, radius: 1.1, height: 2.4, target: 'player', points: 350,
     punchDmg: 30, punchEvery: 2.5, punchRange: 3.2, missileDmg: 25, missileRadius: 3, missileEvery: 6, // punch = 들이받기
     missileRange: 25, missileWarn: 1, missileSpeed: 18, turnRate: 1.0, shieldMul: 0.3, backMul: 2.5, holdDist: 9,
     parts: [ // 정면 장갑판 ×0.3, 뒤 엔진 덮개 ×2.5
@@ -125,7 +126,7 @@ export const ENEMIES = {
   },
   boss: {
     name: '틸트로터 건십', hp: 4000, perAppear: 0.25, radius: 3, points: 2500,
-    orbitR: 17, altMin: 13, altMax: 17, orbitSpeed: 0.18, engineHp: 900, cockpitMul: 3,
+    orbitR: 17, altMin: 13, altMax: 17, orbitSpeed: 0.15, engineHp: 900, cockpitMul: 3,
     patternGap: 3, patternGapRage: 2, gatlingWarn: 1, gatlingTime: 2.5, gatlingDps: 30, gatlingWidth: 1.2,
     missileCount: 6, missileWarn: 1.2, missileDmg: 25, missileRadius: 3,
     drop: ['enforcer', 'enforcer', 'leech'], engineAltLoss: 4,
