@@ -155,6 +155,9 @@ export function gunMaterials(envMap) {
     blkPoly: finishMaterial({ color: lin(0.045, 0.039, 0.033), metalness: 0, roughness: 0.58, envMapIntensity: 0.7 }, { smear: 0.12, scratch: 0.06, grain: 0.1, wear: 0.4, bump: 0.0005, bumpF: 2200, key: 'blkpoly' }),
     blkCera: finishMaterial({ color: lin(0.055, 0.048, 0.04), metalness: 0, roughness: 0.5, envMapIntensity: 0.8 }, { smear: 0.1, scratch: 0.14, grain: 0.05, wear: 0.7, key: 'blkcera' }),
     fdeCera: finishMaterial({ color: lin(0.158, 0.122, 0.082), metalness: 0, roughness: 0.5, envMapIntensity: 0.8 }, { smear: 0.1, scratch: 0.14, grain: 0.05, wear: 0.9, key: 'fdecera' }),
+    // 옛 펌프 산탄총(배그 S1897): 회색 파커라이징 강철 · 호두나무
+    gunsteel: finishMaterial({ color: lin(0.21, 0.215, 0.22), metalness: 0.9, roughness: 0.42, envMapIntensity: 0.9 }, { smear: 0.12, scratch: 0.22, grain: 0.05, wear: 1, key: 'gunsteel' }),
+    wood: finishMaterial({ color: lin(0.11, 0.05, 0.025), metalness: 0, roughness: 0.5, envMapIntensity: 0.6 }, { smear: 0.08, scratch: 0.08, grain: 0.18, bump: 0.0004, bumpF: 900, key: 'wood' }),
     od: finishMaterial({ color: lin(0.07, 0.078, 0.05), metalness: 0, roughness: 0.6, envMapIntensity: 0.7 }, { smear: 0.12, scratch: 0.06, grain: 0.1, bump: 0.0005, bumpF: 2200, key: 'od' }),
     // 손잡이 점각(스티플링): 같은 FDE에 굵은 요철
     stip: finishMaterial({ color: lin(0.15, 0.116, 0.078), metalness: 0, roughness: 0.78, envMapIntensity: 0.6 }, { smear: 0.05, scratch: 0, grain: 0.15, bump: 0.0011, bumpF: 1000, key: 'stip' }),
@@ -996,8 +999,10 @@ function buildRifle(g, add, M, out, X) {
 }
 
 function buildShotgun(g, add, M, out, X) {
-  // 리시버(세라코트, 둥근 윗면) + 배출구 + 위 레일 짧게
-  add(side([[0.12, -0.02], [0.12, 0.034, 0.006], [0.1, 0.047, 0.006], [-0.1, 0.047, 0.004], [-0.105, 0.04], [-0.105, -0.02]], 0.036, { bevel: 0.0035 }), 'anod');
+  // 배그 S1897(윈체스터 1897)형: 회색 강철 리시버(둥근 윗면, 레일 없음) · 구멍 뚫린 열 차단 덮개 · 나무 펌프·개머리
+  add(side([[0.12, -0.02], [0.12, 0.034, 0.006], [0.1, 0.047, 0.006], [-0.1, 0.047, 0.004], [-0.105, 0.04], [-0.105, -0.02]], 0.036, { bevel: 0.0035 }), 'gunsteel');
+  // 노출 공이치기(리시버 뒤 위)
+  add(side([[0.13, 0.03], [0.142, 0.05, 0.003], [0.136, 0.054, 0.002], [0.122, 0.036]], 0.008, { bevel: 0.001 }), 'steel');
   // 리시버 각인 · 핀 · 크로스볼트 안전장치 · 탄 넣는 구멍(아래)
   engrave(add, M, 'M12 12GA', -0.0182, 0.032, 0.04, 0.05, 0.0065);
   engrave(add, M, '3" CHAMBER · NORDVAG ARMS', -0.0182, 0.0, -0.06, 0.06, 0.0042);
@@ -1006,19 +1011,15 @@ function buildShotgun(g, add, M, out, X) {
   add(new THREE.CircleGeometry(0.0024, 12).rotateY(-Math.PI / 2).translate(-0.0158, -0.03, 0.098), 'accent');
   add(box(0.024, 0.0008, 0.08, 0, -0.0204, -0.04), 'port');
   add(box(0.0008, 0.018, 0.07, 0.0181, 0.02, -0.02), 'port');
-  add(picatinny(0.08, -0.06, 0.052, 0.02), 'anod');
   // 방아쇠울 · 방아쇠 · 손잡이 · 개머리판(일체형 폴리머)
-  add(side([[0.11, -0.02], [0.1, -0.04, 0.004], [0.04, -0.044, 0.006], [0.02, -0.02]], 0.026, { holes: [[[0.09, -0.024], [0.084, -0.036, 0.004], [0.048, -0.038, 0.004], [0.034, -0.024]]], bevel: 0.0014 }), 'anod');
+  add(side([[0.11, -0.02], [0.1, -0.04, 0.004], [0.04, -0.044, 0.006], [0.02, -0.02]], 0.026, { holes: [[[0.09, -0.024], [0.084, -0.036, 0.004], [0.048, -0.038, 0.004], [0.034, -0.024]]], bevel: 0.0014 }), 'gunsteel');
   add(side([[0.068, -0.024], [0.064, -0.033, 0.003], [0.07, -0.038], [0.073, -0.038], [0.071, -0.024]], 0.006, { bevel: 0.0007 }), 'bright');
   // 레밍턴 870 전통 개머리판(권총손잡이 없음): 손목(잡는 곳)이 가늘고 아래로 휘며 뒤로 갈수록 높아진다. 빗장 낙차 38 mm · 뒤꿈치 64 mm(총열 리브 기준)
-  add(side([[0.118, 0.036], [0.15, 0.033, 0.01], [0.215, 0.014, 0.03], [0.372, -0.012, 0.01], [0.38, -0.016], [0.38, -0.142], [0.362, -0.144, 0.012], [0.25, -0.1, 0.03], [0.2, -0.066, 0.03], [0.15, -0.04, 0.012], [0.118, -0.022]], 0.04, { bevel: 0.006, seg: 12 }), 'od');
+  add(side([[0.118, 0.036], [0.15, 0.033, 0.01], [0.215, 0.014, 0.03], [0.372, -0.012, 0.01], [0.38, -0.016], [0.38, -0.142], [0.362, -0.144, 0.012], [0.25, -0.1, 0.03], [0.2, -0.066, 0.03], [0.15, -0.04, 0.012], [0.118, -0.022]], 0.04, { bevel: 0.006, seg: 12 }), 'wood');
   add(side([[0.38, -0.014], [0.394, -0.014, 0.006], [0.396, -0.144, 0.006], [0.38, -0.146]], 0.042, { bevel: 0.002 }), 'rubber');
-  for (const sx of [-1, 1]) add(side([[0.16, -0.03], [0.205, -0.008, 0.01], [0.235, -0.06, 0.012], [0.19, -0.07, 0.01]], 0.0012, { cx: sx * 0.0196, bevel: 0.0003 }), 'stip');  // 손목 점각
   // 총열 + 탄창관 + 고정 고리 + 가늠쇠 구슬
   add(lathe([[0, -0.1], [0.0112, -0.1], [0.0112, -0.55], [0.0125, -0.552], [0.0125, -0.56], [0, -0.56]], 22, 0.03), 'steel');
   // 총열 위 통풍 리브(얇은 띠 + 기둥) · 펌프 아래 액션 바 2개 · 탄창관 마개 멜빵 고리
-  add(box(0.006, 0.0015, 0.41, 0, 0.0445, -0.335), 'anod');
-  for (let z = -0.15; z > -0.54; z -= 0.035) add(box(0.004, 0.003, 0.004, 0, 0.0427, z), 'anod');
   for (const x of [0.008, -0.008]) add(box(0.0025, 0.004, 0.11, x, 0.004, -0.15), 'steel');
   add(new THREE.TorusGeometry(0.007, 0.0016, 6, 16).translate(0, -0.008, -0.542), 'steel');
   add(cylZ(0.0085, 0.002, 0, 0.03, -0.561, 14), 'bore');
@@ -1028,30 +1029,24 @@ function buildShotgun(g, add, M, out, X) {
   add(side([[-0.44, 0.04], [-0.44, -0.008, 0.004], [-0.47, -0.008, 0.004], [-0.47, 0.04]], 0.026, { holes: [], bevel: 0.002 }), 'anod');
   add(new THREE.SphereGeometry(0.0028, 10, 8).translate(0, 0.044, -0.545), 'bright');
   // 열 차단 덮개(구멍 뚫린 반원통)
-  { const sh = new THREE.CylinderGeometry(0.0155, 0.0155, 0.28, 18, 1, true, -Math.PI * 0.55, Math.PI * 1.1); sh.rotateX(Math.PI / 2); sh.translate(0, 0.03, -0.25); add(sh, 'cerakote').material.side = THREE.DoubleSide; }
-  for (let i = 0; i < 7; i++) add(new THREE.CircleGeometry(0.0042, 12).rotateX(-Math.PI / 2).translate(0, 0.0457, -0.135 - i * 0.036), 'port');
+  // 펌프 앞에서 총구 바로 뒤까지 총열을 덮는 덮개(윗반 원통) + 위·양옆 세 줄의 긴 구멍(배그 S1897처럼 촘촘하게)
+  { const sh = new THREE.CylinderGeometry(0.0165, 0.0165, 0.2, 20, 1, true, -Math.PI * 0.62, Math.PI * 1.24); sh.rotateX(Math.PI / 2); sh.translate(0, 0.03, -0.45); add(sh, 'gunsteel').material.side = THREE.DoubleSide; }
+  for (let z = -0.362; z > -0.54; z -= 0.013) for (const a of [-0.55, 0, 0.55]) add(box(0.0042, 0.0012, 0.008, 0, 0, 0).rotateZ(-a).translate(Math.sin(a) * 0.0166, 0.03 + Math.cos(a) * 0.0166, z), 'bore');
   // 펌프(홈 있는 손받침) — 사격 후 앞뒤로
   const pump = new THREE.Group(); g.add(pump);
   const pp = [[0, -0.2], [0.021, -0.2]];
   for (let i = 0; i < 8; i++) { const z = -0.205 - i * 0.017; pp.push([0.024, z], [0.024, z - 0.011], [0.021, z - 0.013], [0.021, z - 0.017]); }
   pp.push([0.021, -0.345], [0, -0.345]);
-  const pg = lathe(pp, 24, 0.0); pg.scale(1.15, 1, 1); add(pg, 'od', pump);
+  const pg = lathe(pp, 24, 0.0); pg.scale(1.15, 1, 1); add(pg, 'wood', pump);
   pump.position.y = 0.004;
   out.pump = pump; out.pumpRest = 0;
-  // 왼쪽 산탄 받침(4발: 붉은 탄피 + 황동 바닥)
-  add(side([[0.07, 0.036], [0.07, -0.006, 0.003], [-0.03, -0.006, 0.003], [-0.03, 0.036]], 0.006, { cx: -0.021, bevel: 0.0012 }), 'anod');
-  for (let i = 0; i < 4; i++) {
-    const z = 0.055 - i * 0.022;
-    add(new THREE.CylinderGeometry(0.0095, 0.0095, 0.05, 14).translate(-0.031, 0.015, z), 'hull');
-    add(new THREE.CylinderGeometry(0.0098, 0.0098, 0.012, 14).translate(-0.031, -0.006, z), 'brass');
-  }
   // 탄수 표시
   out.display = add(new THREE.PlaneGeometry(0.03, 0.013), X.ammoMat); out.display.position.set(-0.0185, 0.032, -0.07); out.display.rotation.y = -Math.PI / 2;
   // ── 표면 디테일 ──
   for (const sx of [-1, 1]) {
     // 리시버 옆 밀링 홈(한 단 낮은 판) · 위 모서리 모따기 · 나사
     add(side([[0.105, 0.03], [0.105, 0.0, 0.004], [-0.09, 0.0, 0.004], [-0.09, 0.03, 0.004]], 0.0012, { cx: sx * 0.0184, bevel: 0.0003 }), 'steel');
-    add(chamfer(sx * 0.016, 0.044, 0.105, -0.098, 0.006, sx * Math.PI / 4), 'anod');
+    add(chamfer(sx * 0.016, 0.044, 0.105, -0.098, 0.006, sx * Math.PI / 4), 'gunsteel');
     for (const z of [0.1, -0.095]) screw(add, sx * 0.0186, 0.038, z, 0.0016);
     // 개머리판 가공선(뺨 받침 경계) · 멜빵 고리
     add(panelLine([[0.15, 0.03], [0.36, 0.026], [0.372, -0.08]], sx * 0.0193), 'port');

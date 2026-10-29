@@ -15,6 +15,9 @@ import { BATTERIES } from '../config/map.js';
 import { WEAPONS, PLAYER } from '../config/balance.js';
 import { scopedView } from '../sim/player.js';
 
+// 총 카메라 시야각(세로, 허리 사격): 산탄총은 배그 S1897 1인칭 화면과 겹쳐 맞춘 값(좁은 시야각 = 총이 크고 원근이 약하다)
+const VM_FOV = { pistol: 58, rifle: 66, shotgun: 58, rail: 66 };
+
 const FinalShader = {
   uniforms: {
     tDiffuse: { value: null }, uTime: { value: 0 }, uHurt: { value: 0 }, uLow: { value: 0 }, uAberr: { value: 0 },
@@ -280,7 +283,7 @@ export class Renderer {
     const vfov = (2 * Math.atan(Math.tan((h * Math.PI) / 360) * (9 / 16)) * 180) / Math.PI;
     if (Math.abs(this.camera.fov - vfov) > 0.01) { this.camera.fov = vfov; this.camera.updateProjectionMatrix(); }
     // 허리 사격은 넓게(양손이 다 보이게), 조준하면 좁혀 조준경을 크게
-    { const base = p.weapon === "pistol" ? 58 : 66, aimF = p.weapon === "rail" ? 32 : 44; this.vm.camera.fov = base - ads * (base - aimF); this.vm.camera.updateProjectionMatrix(); }
+    { const base = (this.vmFov || VM_FOV)[p.weapon] ?? 66, aimF = Math.min(base, p.weapon === "rail" ? 32 : 44); this.vm.camera.fov = base - ads * (base - aimF); this.vm.camera.updateProjectionMatrix(); }
 
     // 장면 갱신
     this.level.update(dt, t, w, this.camera.position);
